@@ -33,7 +33,7 @@ from courier_emu.timebase import ASIC_DSP_CLOCK_HZ
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_IMODEM = ROOT / "Ie030002.nac"
 DEFAULT_ANALOG = (
-    ROOT / "artifacts/courier-board-21210-capture-403/courier-board.rom"
+    ROOT / "dumps/courier-board-21210-capture-403/courier-board.rom"
 )
 PROTOCOL_S58 = {"default": None, "x2": 32, "v90": 1, "v34": 33, "bell103": None}
 

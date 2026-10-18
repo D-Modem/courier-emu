@@ -8,7 +8,7 @@ in supervisor and DSP revision, so the two differ only in clock.
 ## The answer to the question this was run for
 
 `0x0000`-`0x07FF` off this board is **byte-identical** to
-`artifacts/dsp-onchip-rom-01`, taken off the 20.16 MHz unit -
+`dumps/dsp-onchip-rom-01`, taken off the 20.16 MHz unit -
 `sha256 3e30fb31ac87fc9d0b8a85da245511ef3caa4e83249f56b5852d9d0829e93f67` on
 both. Same mask, both generations. Nothing about the DSP boot path needs to be
 modelled twice.
@@ -32,7 +32,7 @@ read under this probe, so identical reads mean nothing either way.
 > read off the manual instead of the part.
 
 The test that does work is a write-readback, and it is in
-[artifacts/dsp-memory-test-2806](../dsp-memory-test-2806/README.md). **The part
+[artifacts/dsp-memory-test-2806](../../artifacts/dsp-memory-test-2806/README.md). **The part
 is a 'C51: 8K of on-chip ROM at `0x0000`-`0x1FFF`.** So this directory's
 `0x0000`-`0x07FF` capture was indeed a quarter of the ROM, and the rest is now
 here too.
@@ -108,9 +108,9 @@ is why reading program `0x1000`-`0x13FF` never collided with it.
 
 ```sh
 python -m courier_emu.probe_transport --reference IDSDL302.ROM --rom-dump \
-    --rom-origin 0 --rom-words 0x400 --output artifacts/dsp-onchip-rom-2806/half0
-python artifacts/dsp-onchip-rom-2806/run-board.py \
-    artifacts/dsp-onchip-rom-2806/half0 /dev/cu.usbserial-FT4TQOFT
+    --rom-origin 0 --rom-words 0x400 --output dumps/dsp-onchip-rom-2806/half0
+python dumps/dsp-onchip-rom-2806/run-board.py \
+    dumps/dsp-onchip-rom-2806/half0 /dev/cu.usbserial-FT4TQOFT
 ```
 
 `--reference IDSDL302.ROM` is not a claim about what is flashed. It is where the

@@ -6,7 +6,7 @@ timer word. This board is a different unit, so the vector is read and recorded
 rather than asserted, and what is still checked is that the watchdog puts back
 whatever was there.
 
-    python artifacts/dsp-onchip-rom-2806/run-board.py <half-dir> <port>
+    python dumps/dsp-onchip-rom-2806/run-board.py <half-dir> <port>
 """
 from pathlib import Path
 import serial, time, json, re, struct, sys

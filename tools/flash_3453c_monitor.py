@@ -84,7 +84,7 @@ def upload(port,data,log):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--candidate',type=Path,default=ROOT/'artifacts/3453c-dsp-monitor-patch-20261003/2_3_33-dsp-monitor.candidate.xmf')
-    p.add_argument('--backup',type=Path,default=ROOT/'artifacts/3453c-firmware-read-20261003/firmware.bin')
+    p.add_argument('--backup',type=Path,default=ROOT/'dumps/3453c-firmware-read-20261003/firmware.bin')
     p.add_argument('--device',default='/dev/cu.usbserial-FT4TQOFT');p.add_argument('--baud',type=int,default=19200)
     p.add_argument('--flash',action='store_true',help='erase/program application flash using option 2')
     p.add_argument('--log',type=Path)

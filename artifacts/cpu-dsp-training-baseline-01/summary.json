@@ -298,6 +298,6 @@
     }
   },
   "hardware_tested": false,
-  "command": "./courier run artifacts/courier-board-21210-capture-403/courier-board.rom --with-dsp --exchange --exchange-number 6245=answer --board-id 7 --nvram-fixture idsdl403 --tick-ms 5 --at ATDT6245 --instructions 150000000 --summary",
+  "command": "./courier run dumps/courier-board-21210-capture-403/courier-board.rom --with-dsp --exchange --exchange-number 6245=answer --board-id 7 --nvram-fixture idsdl403 --tick-ms 5 --at ATDT6245 --instructions 150000000 --summary",
   "note": "Baseline before the reply-accounting correction. Empty runtime_inbound_delivered does not imply unconsumed replies; dsp_messages_taken counts CPU acknowledgements."
 }

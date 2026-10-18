@@ -43,7 +43,7 @@ def scalar(state, value, count, tap, receive=False):
 
 def main():
     blob, bias = extract_x2()
-    rom = CourierRom.load(ROOT / 'artifacts/courier-board-21210-capture-403/courier-board.rom')
+    rom = CourierRom.load(ROOT / 'dumps/courier-board-21210-capture-403/courier-board.rom')
     resident = rom.dsp_download
     image403 = rom.data[resident.offset:resident.end]
     builds = [('x2', blob[bias+0x10000:bias+0x10000+0x4000], 0x8c63, 0x8c94),

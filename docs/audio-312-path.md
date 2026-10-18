@@ -62,7 +62,7 @@ following `SQRA` instruction. That decoding is fixed separately.
 
 ```sh
 .venv/bin/python -m courier_emu.audio312 \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/courier-audio-reproduction
 ```
 

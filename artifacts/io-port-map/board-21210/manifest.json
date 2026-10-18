@@ -1,5 +1,5 @@
 {
- "image": "/Users/scottcryan/courier-emu/artifacts/courier-board-21210-capture-01/courier-board.rom",
+ "image": "/Users/scottcryan/courier-emu/dumps/courier-board-21210-capture-01/courier-board.rom",
  "code_regions": [
   [
    "0x00000",

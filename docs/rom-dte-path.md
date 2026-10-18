@@ -82,7 +82,7 @@ is understood:
 
 ## 403 has an additional image-layout failure
 
-Disassembly of `artifacts/courier-board-21210-capture-403/courier-board.rom`
+Disassembly of `dumps/courier-board-21210-capture-403/courier-board.rom`
 shows that the 302 addresses are not portable:
 
 | item | IDSDL302 | captured 403 |

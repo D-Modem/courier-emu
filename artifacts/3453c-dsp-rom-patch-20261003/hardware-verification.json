@@ -29,5 +29,5 @@
   },
   "rom_protection_observation": "External monitor obtained a repeatable, coherent mapped ROM image; protection did not block this read route.",
   "flash_log": "flash-log.json",
-  "capture_manifest": "/Users/scottcryan/courier-emu/artifacts/3453c-dsp-mask-rom-read-20261003/manifest.json"
+  "capture_manifest": "/Users/scottcryan/courier-emu/dumps/3453c-dsp-mask-rom-read-20261003/manifest.json"
 }

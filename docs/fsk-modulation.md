@@ -88,7 +88,7 @@ holding the bit produces 1270.0 Hz and 1070.0 Hz measured.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/fsk --mode v21-answer
 ```
 
@@ -177,7 +177,7 @@ not established here.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk --loopback \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/loopback --mode v21-answer   # BROKEN, see above
 ```
 
@@ -238,7 +238,7 @@ band it is transmitting in.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk --band-scan --mode v21-answer \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --bits 111111111000000000... --output /tmp/band
 ```
 

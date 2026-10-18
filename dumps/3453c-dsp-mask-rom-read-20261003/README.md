@@ -295,7 +295,7 @@ times, or the two directions are not what they seem, was not resolved.
 ### Relation to the 302/403 mask ROM
 
 None of this V.34 material is in the older C51 mask ROM
-(`artifacts/dsp-onchip-rom-20mhz-8k/`). No 16-word chunk of the probe
+(`dumps/dsp-onchip-rom-20mhz-8k/`). No 16-word chunk of the probe
 signal, the 672-point constellation, the label lookup, the scale tables, the
 FFT, the precoder solve or the inverse shell mapper appears in it. What the
 two ROMs share is the vector layout, part of the V.32-family constellations

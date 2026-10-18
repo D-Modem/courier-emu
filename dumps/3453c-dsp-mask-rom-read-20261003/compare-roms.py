@@ -3,7 +3,7 @@ import struct,json
 from difflib import SequenceMatcher
 root=Path(__file__).resolve().parents[2]
 p=Path(__file__).resolve().parent
-old_path=root/'artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin'
+old_path=root/'dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin'
 a=struct.unpack('<8192H',old_path.read_bytes());b=struct.unpack('<4096H',(p/'dsp-mask-rom-0000-0fff.bin').read_bytes())
 blocks=sorted(SequenceMatcher(None,a,b,autojunk=False).get_matching_blocks(),key=lambda m:m.size,reverse=True)
 report={'older_rom':str(old_path),'old_words':len(a),'new_words':len(b),

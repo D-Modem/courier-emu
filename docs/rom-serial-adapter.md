@@ -16,7 +16,7 @@ For the bundled 302 image:
 The captured 403 image can be used with the same options:
 
 ```sh
-./courier run artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier run dumps/courier-board-21210-capture-403/courier-board.rom \
   --instructions 60000000 --tick-ms 5 --board-id 7 \
   --nvram-fixture idsl302 --at AT --summary
 ```

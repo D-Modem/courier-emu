@@ -3816,7 +3816,7 @@ firmware.
 ### What the firmware says a second is: 200 ticks
 
 Found 2026-09-05 in the user's own board image,
-`artifacts/courier-board-21210-capture-403/courier-board.rom` (supervisor
+`dumps/courier-board-21210-capture-403/courier-board.rom` (supervisor
 7.4.16 / DSP 3.1.2), and confirmed against `main211.xmf`.
 
 Both builds convert an S-register byte, which is in seconds, to a countdown by

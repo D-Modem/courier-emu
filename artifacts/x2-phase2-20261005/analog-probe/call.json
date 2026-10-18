@@ -5,7 +5,7 @@
     "-m",
     "courier_emu",
     "run",
-    "/Users/scottcryan/courier-emu/artifacts/courier-board-21210-capture-403/courier-board.rom",
+    "/Users/scottcryan/courier-emu/dumps/courier-board-21210-capture-403/courier-board.rom",
     "--instructions",
     "200000000",
     "--line-link",

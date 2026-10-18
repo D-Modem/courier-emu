@@ -1030,7 +1030,7 @@ The boot block copies the whole 512-byte part into RAM `0x058e..0x078d` and
 checksums it there at `0x81412`: byte 511 holds the sum of bytes 0..509, with
 byte 510 added and taken straight back out.
 
-That window is why `artifacts/courier-board-21210-ram-403/` contains the part
+That window is why `dumps/courier-board-21210-ram-403/` contains the part
 itself, and `CourierNvram.idsl403_fixture()` is those 512 bytes rather than
 anything synthesised. Three things agree it is the store: it is identical across
 both capture passes, its stored byte `0xbd` matches the rule where the
@@ -1381,7 +1381,7 @@ space, and writable memory above it.
 | **'C51 / 'LC51** | **1K** | **8K** | 2 | **the part** |
 | 'C52 | none | 4K | 1 | excluded by the `PQ` suffix and by SARAM use |
 
-The full 8K is read - `artifacts/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin` -
+The full 8K is read - `dumps/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin` -
 and is mostly unprogrammed: 1920 words of boot code at `0x0000`-`0x077F`, a
 128-word mailbox block at `0x1F80`, and 6144 words of a 32-word `FFFF`/`0000`
 array pattern. The 20.16 MHz board's part has since been read in full too and

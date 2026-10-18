@@ -15,8 +15,8 @@ risk:
 
 Nothing here talks to a modem. It prints commands for you to send and check.
 
-    python tools/emit_ram_writes.py artifacts/dsp-rom-dump-v1/diagnostic-ram.bin \\
-        --base 0x2000 --output artifacts/dsp-rom-dump-v1/commands
+    python tools/emit_ram_writes.py dumps/dsp-rom-dump-v1/diagnostic-ram.bin \\
+        --base 0x2000 --output dumps/dsp-rom-dump-v1/commands
 """
 import argparse
 from pathlib import Path

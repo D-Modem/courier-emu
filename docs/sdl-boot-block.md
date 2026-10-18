@@ -4,7 +4,7 @@ This is the downloader FreeLSD and SDL.EXE talk to. It lives in the top 16 KiB
 flash block and is a different mechanism from the application's `AT~X!` XMODEM
 updater: it takes a raw 512 KiB flash image rather than an `.XMD` container, and
 it speaks its own binary protocol. Everything here is disassembled from
-`artifacts/courier-board-21210-capture-01/courier-board.rom`, the user's own
+`dumps/courier-board-21210-capture-01/courier-board.rom`, the user's own
 supervisor 7.3.14 unit. Physical addresses are file offset plus `0x80000`, and
 segment `fc00` is file `0x7c000`.
 
@@ -196,7 +196,7 @@ window is a failure while block 6 is erased or being written.
 
 ```sh
 .venv/bin/python -m courier_emu.sdl_download IDSDL302.ROM \
-  --preserved artifacts/courier-board-21210-capture-01/courier-board.rom \
+  --preserved dumps/courier-board-21210-capture-01/courier-board.rom \
   --image-type 4 --output artifacts/sdl-download-idsdl302-type4
 ```
 

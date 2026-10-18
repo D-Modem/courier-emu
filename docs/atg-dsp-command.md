@@ -97,7 +97,7 @@ see [the comparison analysis](mailbox-312-comparison.md).
 
 Measured 2026-09-15 on the leased-line unit at `/dev/cu.usbserial-FT4TQOFT`,
 supervisor 7.6.7 / DSP 3.1.2, serial `21OWZ849PS95` - the board whose flash is
-`artifacts/courier-board-11430-flash-20260914-unit2-02/courier-board.rom`.
+`dumps/courier-board-11430-flash-20260914-unit2-02/courier-board.rom`.
 
 **`LK2` is mandatory on this build.** Bare `ATG00070000` answers `ERROR`, and so
 does bare `ATG`. The handler itself is byte-equivalent to 4.03d's, relocated to

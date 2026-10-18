@@ -1,6 +1,6 @@
 {
   "status": "complete",
-  "image": "artifacts/courier-2806-25mhz-flash-20260912/courier-board.rom",
+  "image": "dumps/courier-2806-25mhz-flash-20260912/courier-board.rom",
   "command": "ATI7",
   "instructions": 60000000,
   "nvram": "CourierNvram.idsl302_fixture()",

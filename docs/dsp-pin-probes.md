@@ -113,7 +113,7 @@ resolving carefully, because it contradicts the firmware in **both** builds.
 
 The disassembly work in this repository has mostly used `IDSDL302.ROM`, which
 is **DSP 3.0.2**. The board runs **3.1.2**, so the check was redone against
-`artifacts/courier-board-21210-capture-403/courier-board.rom` - the board's own
+`dumps/courier-board-21210-capture-403/courier-board.rom` - the board's own
 flash - whose DSP payload starts at `0x29140` (anchor at `0x2914a`). The second
 port is configured identically:
 

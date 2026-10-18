@@ -40,7 +40,7 @@
 > the loaders are real and the reasoning is what led to the measurement - but
 > the conclusion it was reaching for is superseded.
 
-The recovered on-chip ROM (`artifacts/dsp-onchip-rom-01/c5x-onchip-rom.bin`)
+The recovered on-chip ROM (`dumps/dsp-onchip-rom-01/c5x-onchip-rom.bin`)
 contains **two** boot loaders, not one. Earlier notes here -
 [dsp-onchip-rom.md](dsp-onchip-rom.md), and the first version of
 [ac01-codec-protocol.md](ac01-codec-protocol.md) - describe only the serial one,

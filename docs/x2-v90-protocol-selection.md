@@ -58,7 +58,7 @@ to the client/server role pair.  The symmetric server mode is analysed in
 This is deliberately separate from `codec-sample-rates.md`.  That document
 describes the six-row V.34 rate machinery; it must not be used to identify the
 V.90 protocol selector.  Addresses below are for
-`artifacts/courier-board-21210-capture-403/courier-board.rom`; the bundled
+`dumps/courier-board-21210-capture-403/courier-board.rom`; the bundled
 update ROMs retain x2/V.90 result vocabulary but relocate their executable
 code, so an absolute-address match is not a cross-version test.
 

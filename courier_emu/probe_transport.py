@@ -397,7 +397,7 @@ class _EmptyDSP:
 # to check the chain rather than the silicon; `rom_image` puts the real one
 # under the dumper instead. The 2K capture this used to point at is the same
 # bytes, and is now the first quarter of this file.
-CAPTURED_ROM = Path(__file__).resolve().parent.parent / "artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin"
+CAPTURED_ROM = Path(__file__).resolve().parent.parent / "dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin"
 ROM_CAPACITY = 8192
 
 
@@ -802,7 +802,7 @@ def main() -> int:
                         help="map this file (little-endian words) as the DSP's on-chip "
                              "ROM instead of the synthetic pattern; with no path, the "
                              "ROM read off the board in "
-                             "artifacts/dsp-onchip-rom-20mhz-8k")
+                             "dumps/dsp-onchip-rom-20mhz-8k")
     parser.add_argument("--fault", choices=("reset", "checksum", "no-dsp", "tag", "uart", "stale"))
     parser.add_argument("--rom-words", type=lambda v: int(v, 0), default=ROM_DUMP_WORDS,
                         help="how many words this run reads (default 2048)")

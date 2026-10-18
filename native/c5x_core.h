@@ -50,7 +50,7 @@ namespace courier {
 // The part is a 'C51, measured on both boards: 8K of on-chip ROM at
 // 0x0000-0x1FFF and 1K of SARAM. See artifacts/dsp-memory-test-2806. MP/MC
 // reads 0, so this window is mapped on the real board and is not the fixture
-// it used to be - artifacts/dsp-onchip-rom-20mhz-8k has its contents.
+// it used to be - dumps/dsp-onchip-rom-20mhz-8k has its contents.
 constexpr uint16_t C5X_B2_FIRST = 0x0060, C5X_B2_WORDS = 0x0020;
 constexpr uint16_t C5X_B0_FIRST = 0x0100, C5X_B0_WORDS = 0x0200;
 constexpr uint16_t C5X_B1_FIRST = 0x0300, C5X_B1_WORDS = 0x0200;

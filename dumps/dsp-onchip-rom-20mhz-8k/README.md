@@ -1,8 +1,8 @@
 # The 20.16 MHz board's full 8K on-chip ROM
 
 Board: ID_SDL v4.03d, supervisor 7.4.16, DSP 3.1.2, 20.16 MHz, serial
-`0009540034268322` - the unit `artifacts/courier-board-21210-capture-403` and
-`artifacts/dsp-onchip-rom-01` came from. Read 2026-09-13 on
+`0009540034268322` - the unit `dumps/courier-board-21210-capture-403` and
+`dumps/dsp-onchip-rom-01` came from. Read 2026-09-13 on
 `/dev/cu.usbserial-FT4TQOFT` (the adapter name the 25 MHz board also used; the
 serial number and clock are what identify the unit, not the port).
 
@@ -54,8 +54,8 @@ programmed ROM is `0x0000`-`0x077F` plus `0x1F80`-`0x1FFF`, identical on both.
 Same runner as the 25 MHz set:
 
 ```sh
-python artifacts/dsp-onchip-rom-2806/run-board.py \
-    artifacts/dsp-onchip-rom-20mhz-8k/at0c00 /dev/cu.usbserial-FT4TQOFT
+python dumps/dsp-onchip-rom-2806/run-board.py \
+    dumps/dsp-onchip-rom-20mhz-8k/at0c00 /dev/cu.usbserial-FT4TQOFT
 ```
 
 Every run restored the board - `AT` answering and the timer-0 vector back,

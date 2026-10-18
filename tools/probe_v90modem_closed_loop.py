@@ -96,7 +96,7 @@ def analog(args):
     with tempfile.TemporaryDirectory(prefix='x2-loop-') as temp:
         socket=str(Path(temp)/'line.sock')
         command=[sys.executable,'-m','courier_emu','run',
-            str(ROOT/'artifacts/courier-board-21210-capture-403/courier-board.rom'),
+            str(ROOT/'dumps/courier-board-21210-capture-403/courier-board.rom'),
             '--instructions',str(args.instructions),'--line-link',socket,'--line-listen',
             '--with-dsp','--nvram-fixture','idsdl403','--board-id','7','--dip-preset','default',
             '--tick-ms','5','--at','ATX1S27=1S54=0S58=48&A3&B1Q0&U26&N39DT5551234',

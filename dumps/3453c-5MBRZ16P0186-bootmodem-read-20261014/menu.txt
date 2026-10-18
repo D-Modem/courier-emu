@@ -1,0 +1,13 @@
+
+ATXMODEM
+
+
+Firmware Update
+---------------
+Options:
+(1) Read firmware
+(2) Write firmware
+(#) Read bootmodem
+($) Write bootmodem
+ESCape Exits
+>

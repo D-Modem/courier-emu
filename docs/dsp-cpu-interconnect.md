@@ -20,7 +20,7 @@ physical objection, resolved" below.
 
 ## The proven part
 
-The evidence is `artifacts/dsp-onchip-rom-01/`, and **only** that one - "read
+The evidence is `dumps/dsp-onchip-rom-01/`, and **only** that one - "read
 from the DSP of a live Courier", 20.16 MHz board, ID_SDL v4.03d, 2026-09-07. A
 kernel placed in supervisor RAM with `ATGLK2W` and started from Timer 0's
 interrupt ran at DSP program `0x8000`, read the on-chip ROM with `RPT`/`TBLR`,
@@ -34,7 +34,7 @@ is measured.
 
 The ROM came off the board **in two halves**, because the watchdog resets it
 before a 2048-word frame can finish. The two real captures are
-`artifacts/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`, and
+`dumps/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`, and
 `dsp-onchip-rom-01/manifest.json` records how they were joined.
 
 > **Mind which directory you cite.** The top-level `dsp-rom-half0/`,
@@ -875,7 +875,7 @@ Measured on the failing 403 plain dial, with `--trace-pc` on each branch of the
 handler:
 
 ```sh
-./courier run artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier run dumps/courier-board-21210-capture-403/courier-board.rom \
     --with-dsp --exchange --exchange-number 6245=answer --tick-ms 5 \
     --board-id 7 --nvram-fixture idsdl403 --at 'ATDT6245' \
     --instructions 150000000 --summary \

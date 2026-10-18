@@ -7,7 +7,7 @@
 
 **These addresses are `IDSDL302.ROM` (DSP 3.0.13) and nothing else.** They are
 not the ones in [who-produces-the-events.md](who-produces-the-events.md), which
-were read off `artifacts/courier-board-21210-capture-403/courier-board.rom`
+were read off `dumps/courier-board-21210-capture-403/courier-board.rom`
 (DSP 3.1.2). The two builds differ in more than offsets - they use different
 cells and a different ring - so transplanting an address between them produces
 a probe that reads the wrong memory and reports nothing, which is exactly the

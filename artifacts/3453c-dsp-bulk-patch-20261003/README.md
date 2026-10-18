@@ -24,7 +24,7 @@ Capture a full program map as little-endian 16-bit words:
 
 ```
 .venv/bin/python tools/3453c_monitor.py dump program 0000 7fff --fast \
-  --output artifacts/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin
+  --output dumps/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin
 ```
 
 The host checks the opening marker, exact word count, hexadecimal encoding,

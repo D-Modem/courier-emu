@@ -11,7 +11,7 @@ was reached by a plausible route.
 
 ```
 artifacts/boot-2806-capture-20260913/boot_run.py \
-    artifacts/courier-2806-25mhz-flash-20260912/courier-board.rom 60000000
+    dumps/courier-2806-25mhz-flash-20260912/courier-board.rom 60000000
 ```
 
 **Since 2026-09-13 that needs no arguments at all** beyond the image: the tick

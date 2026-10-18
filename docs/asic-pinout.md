@@ -9,7 +9,7 @@ owner's continuity readings.
 
 > **These readings are from the 25 MHz Courier 2806** - the AC03 board,
 > supervisor 7.3.14 / DSP 3.0.13, dumped in
-> `artifacts/courier-2806-25mhz-flash-20260912`.
+> `dumps/courier-2806-25mhz-flash-20260912`.
 >
 > The marking above is **not** from that board. It was read off a photo of the
 > **20.16 MHz** unit running ID_SDL 4.03d that [asic-port-map.md](asic-port-map.md)

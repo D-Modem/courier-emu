@@ -7,8 +7,27 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 
 | Experiment | Result evidence | Storage |
 |---|---|---|
-| 3453c-board-identity-20261003 | No compact report | Archive verified; generated output pruned |
-| 3453c-parameter-sector-20261003 | No compact report | recently modified; left untouched |
+| 3453-audio-calibration-trace-20261014 | No compact report | retained in place |
+| 3453-bell103-data-path-20261015 | No compact report | retained in place |
+| 3453-data-channel-decomp-20261015 | No compact report | retained in place |
+| 3453-download-recovery-trace-20261015 | No compact report | retained in place |
+| 3453-line-control-decomp-20261014 | No compact report | retained in place |
+| 3453-native-bell103-link-20261015 | No compact report | retained in place |
+| 3453-online-uart-trace-20261015 | No compact report | retained in place |
+| 3453-originate-queue-trace-20261015 | No compact report | retained in place |
+| 3453-peer-pcm-probe-20261014 | No compact report | retained in place |
+| 3453-product-ram-audit-20261014 | No compact report | retained in place |
+| 3453c-board-identity-20261003 | No compact report | retained in place |
+| 3453c-codec-call-audit-20261003 | No compact report | retained in place |
+| 3453c-connect-20261003 | No compact report | retained in place |
+| 3453c-dsp-bulk-patch-20261003 | No compact report | retained in place |
+| 3453c-dsp-monitor-20261003 | No compact report | retained in place |
+| 3453c-dsp-monitor-patch-20261003 | No compact report | retained in place |
+| 3453c-dsp-rom-patch-20261003 | No compact report | retained in place |
+| 3453c-emulator-boot-20261003 | No compact report | retained in place |
+| 3453c-si3034-20261003 | No compact report | retained in place |
+| 3453c-watchdog-20261003 | No compact report | retained in place |
+| 3453c-x2-decomp-20261004 | [report](3453c-x2-decomp-20261004/verification.json) | retained in place |
 | analog-loopback-403 | No compact report | retained in place |
 | answer-tone-01 | No compact report | retained in place |
 | asic-ports-01 | No compact report | retained in place |
@@ -24,6 +43,8 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | audio-only-peer-01 | [report](audio-only-peer-01/summary.json) | retained in place |
 | audio-only-peer-02 | No compact report | retained in place |
 | boot-2806-capture-20260913 | No compact report | retained in place |
+| bootmodem-command-audit-20261014 | No compact report | retained in place |
+| bootmodem-emulator-check-20261014 | No compact report | retained in place |
 | call-ram-sweep-01 | No compact report | retained in place |
 | clock-recalibration-01 | No compact report | retained in place |
 | coop-chain-01 | No compact report | retained in place |
@@ -37,23 +58,12 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | coop-loadonly-01 | No compact report | retained in place |
 | coop-sampler-01 | No compact report | retained in place |
 | coop-timer0-safe-01 | No compact report | retained in place |
-| courier-2806-25mhz-flash-20260912 | No compact report | retained in place |
 | courier-2806-codec-control-20260913 | No compact report | retained in place |
 | courier-2806-mailbox-20260913 | No compact report | retained in place |
 | courier-2806-probe-20260913 | No compact report | retained in place |
 | courier-board-11430-flash-20260914 | No compact report | retained in place |
-| courier-board-11430-flash-20260914-02 | No compact report | retained in place |
 | courier-board-11430-flash-20260914-unit2 | No compact report | retained in place |
-| courier-board-11430-flash-20260914-unit2-02 | No compact report | retained in place |
-| courier-board-11430-ram-20260914 | No compact report | retained in place |
-| courier-board-11430-ram-20260914-unit2 | No compact report | retained in place |
-| courier-board-11430-upper-ram-20260914 | No compact report | retained in place |
-| courier-board-11430-upper-ram-20260914-unit2 | No compact report | retained in place |
-| courier-board-21210-capture-01 | No compact report | retained in place |
-| courier-board-21210-capture-403 | No compact report | retained in place |
-| courier-board-21210-ram-01 | No compact report | retained in place |
-| courier-board-21210-ram-403 | No compact report | retained in place |
-| courier-board-21210-upper-ram-01 | No compact report | retained in place |
+| courier-x2-service | No compact report | retained in place |
 | cpu-dsp-training-baseline-01 | [report](cpu-dsp-training-baseline-01/summary.json) | retained in place |
 | cpu-port-map-01 | No compact report | retained in place |
 | datapump-gate-403-cells | No compact report | retained in place |
@@ -75,16 +85,8 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | dsp-mailbox-queue-02 | No compact report | retained in place |
 | dsp-mailbox-write-01 | No compact report | retained in place |
 | dsp-memory-test-2806 | No compact report | retained in place |
-| dsp-onchip-rom-01 | No compact report | retained in place |
-| dsp-onchip-rom-20mhz-8k | No compact report | retained in place |
-| dsp-onchip-rom-20mhz-8k-saram | No compact report | retained in place |
-| dsp-onchip-rom-2806 | No compact report | retained in place |
 | dsp-port-fold-01 | No compact report | retained in place |
 | dsp-port-sample-01 | No compact report | retained in place |
-| dsp-rom-dump-v1 | No compact report | retained in place |
-| dsp-rom-dump-v2 | No compact report | retained in place |
-| dsp-rom-half0 | No compact report | retained in place |
-| dsp-rom-half1 | No compact report | retained in place |
 | dsp-rom-mapping-v1 | No compact report | retained in place |
 | dsp-rom-probe-v1 | No compact report | retained in place |
 | dsp-rom-sample-v1 | No compact report | retained in place |
@@ -108,21 +110,22 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | gate-cells-attempt-9898 | No compact report | retained in place |
 | gate-cells-live-call | No compact report | retained in place |
 | host-ram-rate-01 | No compact report | retained in place |
-| imodem-8416-fixed-dte-diagnostics-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-8416-rate-diagnostics-20261002 | No compact report | Archive verified; generated output pruned |
+| imodem-3453c-pair-20261003 | No compact report | retained in place |
+| imodem-8416-fixed-dte-diagnostics-20261002 | No compact report | retained in place |
+| imodem-8416-rate-diagnostics-20261002 | No compact report | retained in place |
 | imodem-analog-pair-20260913-synced | No compact report | retained in place |
 | imodem-analog-pair-20261001 | No compact report | retained in place |
 | imodem-analog-pair-300bps-20261001 | No compact report | retained in place |
 | imodem-analog-pair-300bps-dial-20261001 | No compact report | retained in place |
 | imodem-analog-pair-302-20261001 | [report](imodem-analog-pair-302-20261001/summary.json) | retained in place |
 | imodem-analog-pair-bell103-20261001 | [report](imodem-analog-pair-bell103-20261001/summary.json) | retained in place |
-| imodem-analog-pair-bell103-adc-edge-20261002 | [report](imodem-analog-pair-bell103-adc-edge-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-bell103-clock-continuity-20261002 | [report](imodem-analog-pair-bell103-clock-continuity-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-bell103-cpu-audit-20261002 | [report](imodem-analog-pair-bell103-cpu-audit-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-bell103-adc-edge-20261002 | [report](imodem-analog-pair-bell103-adc-edge-20261002/summary.json) | retained in place |
+| imodem-analog-pair-bell103-clock-continuity-20261002 | [report](imodem-analog-pair-bell103-clock-continuity-20261002/summary.json) | retained in place |
+| imodem-analog-pair-bell103-cpu-audit-20261002 | [report](imodem-analog-pair-bell103-cpu-audit-20261002/summary.json) | retained in place |
 | imodem-analog-pair-bell103-data-20261001 | [report](imodem-analog-pair-bell103-data-20261001/summary.json) | retained in place |
 | imodem-analog-pair-bell103-data-framed-20261001 | [report](imodem-analog-pair-bell103-data-framed-20261001/summary.json) | retained in place |
-| imodem-analog-pair-bell103-tx-clock-20261002 | [report](imodem-analog-pair-bell103-tx-clock-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-bell103-unassisted-20261002 | [report](imodem-analog-pair-bell103-unassisted-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-bell103-tx-clock-20261002 | [report](imodem-analog-pair-bell103-tx-clock-20261002/summary.json) | retained in place |
+| imodem-analog-pair-bell103-unassisted-20261002 | [report](imodem-analog-pair-bell103-unassisted-20261002/summary.json) | retained in place |
 | imodem-analog-pair-bidir-baud-follow-20261001 | [report](imodem-analog-pair-bidir-baud-follow-20261001/summary.json) | retained in place |
 | imodem-analog-pair-bidir-long-20261001 | [report](imodem-analog-pair-bidir-long-20261001/summary.json) | retained in place |
 | imodem-analog-pair-bidir-long-gain6-20261001 | [report](imodem-analog-pair-bidir-long-gain6-20261001/summary.json) | retained in place |
@@ -141,97 +144,97 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | imodem-analog-pair-native-finish-20261001 | No compact report | retained in place |
 | imodem-analog-pair-overlay-ack-20261001 | No compact report | retained in place |
 | imodem-analog-pair-overlay-ack-long-20261001 | No compact report | retained in place |
-| imodem-analog-pair-overlay-audit-20261002 | [report](imodem-analog-pair-overlay-audit-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-overlay-write-audit-20261002 | [report](imodem-analog-pair-overlay-write-audit-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-unassisted-overlay-20261002 | [report](imodem-analog-pair-unassisted-overlay-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-overlay-audit-20261002 | [report](imodem-analog-pair-overlay-audit-20261002/summary.json) | retained in place |
+| imodem-analog-pair-overlay-write-audit-20261002 | [report](imodem-analog-pair-overlay-write-audit-20261002/summary.json) | retained in place |
+| imodem-analog-pair-unassisted-overlay-20261002 | [report](imodem-analog-pair-unassisted-overlay-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v21-bidir-20261001 | [report](imodem-analog-pair-v21-bidir-20261001/summary.json) | retained in place |
 | imodem-analog-pair-v22bis-20261001 | [report](imodem-analog-pair-v22bis-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v32-audit-20261002 | [report](imodem-analog-pair-v32-audit-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v32-cycle-fix-20261002 | [report](imodem-analog-pair-v32-cycle-fix-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v32-dmov-fix-20261002 | [report](imodem-analog-pair-v32-dmov-fix-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v32-no-v8-20261002 | [report](imodem-analog-pair-v32-no-v8-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v32-audit-20261002 | [report](imodem-analog-pair-v32-audit-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v32-cycle-fix-20261002 | [report](imodem-analog-pair-v32-cycle-fix-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v32-dmov-fix-20261002 | [report](imodem-analog-pair-v32-dmov-fix-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v32-no-v8-20261002 | [report](imodem-analog-pair-v32-no-v8-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v32-only-20261001 | [report](imodem-analog-pair-v32-only-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v32-overlay-audit-20261002 | [report](imodem-analog-pair-v32-overlay-audit-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v32-overlay-audit-20261002 | [report](imodem-analog-pair-v32-overlay-audit-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v32bis-20261001 | [report](imodem-analog-pair-v32bis-20261001/summary.json) | retained in place |
 | imodem-analog-pair-v34-20261001 | No compact report | retained in place |
 | imodem-analog-pair-v34-2400baud-20261001 | [report](imodem-analog-pair-v34-2400baud-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-adc-edge-20261002 | [report](imodem-analog-pair-v34-adc-edge-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-adc-edge-20261002 | [report](imodem-analog-pair-v34-adc-edge-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-clock-20261001 | [report](imodem-analog-pair-v34-clock-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-clock-continuity-20261002 | [report](imodem-analog-pair-v34-clock-continuity-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-codec-underruns-20261002 | [report](imodem-analog-pair-v34-codec-underruns-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-cycle-fix-20261002 | [report](imodem-analog-pair-v34-cycle-fix-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-clock-continuity-20261002 | [report](imodem-analog-pair-v34-clock-continuity-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-codec-underruns-20261002 | [report](imodem-analog-pair-v34-codec-underruns-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-cycle-fix-20261002 | [report](imodem-analog-pair-v34-cycle-fix-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-decoded-input-20261001 | [report](imodem-analog-pair-v34-decoded-input-20261001/summary.json) | retained in place |
 | imodem-analog-pair-v34-demod-input-20261001 | [report](imodem-analog-pair-v34-demod-input-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-dispatch-audit-20261002 | [report](imodem-analog-pair-v34-dispatch-audit-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-dmov-fix-20261002 | [report](imodem-analog-pair-v34-dmov-fix-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-dispatch-audit-20261002 | [report](imodem-analog-pair-v34-dispatch-audit-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-dmov-fix-20261002 | [report](imodem-analog-pair-v34-dmov-fix-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-fixed-20261001 | [report](imodem-analog-pair-v34-fixed-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-live-gaps-20261002 | [report](imodem-analog-pair-v34-live-gaps-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-live-gaps-20261002 | [report](imodem-analog-pair-v34-live-gaps-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-local-hybrid-20261001 | [report](imodem-analog-pair-v34-local-hybrid-20261001/summary.json) | retained in place |
 | imodem-analog-pair-v34-low-level-20261001 | [report](imodem-analog-pair-v34-low-level-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-receive-wait-20261002 | [report](imodem-analog-pair-v34-receive-wait-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-retrain-caller-20261002 | [report](imodem-analog-pair-v34-retrain-caller-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-retrain-condition-20261002 | [report](imodem-analog-pair-v34-retrain-condition-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-receive-wait-20261002 | [report](imodem-analog-pair-v34-receive-wait-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-retrain-caller-20261002 | [report](imodem-analog-pair-v34-retrain-caller-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-retrain-condition-20261002 | [report](imodem-analog-pair-v34-retrain-condition-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-rx-pcm-20261001 | [report](imodem-analog-pair-v34-rx-pcm-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-rx-phase-20261002 | [report](imodem-analog-pair-v34-rx-phase-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-scrambler-progress-20261002 | [report](imodem-analog-pair-v34-scrambler-progress-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-rx-phase-20261002 | [report](imodem-analog-pair-v34-rx-phase-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-scrambler-progress-20261002 | [report](imodem-analog-pair-v34-scrambler-progress-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-short-delay-20261001 | [report](imodem-analog-pair-v34-short-delay-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-sustained-training-20261002 | [report](imodem-analog-pair-v34-sustained-training-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-sustained-training-20261002 | [report](imodem-analog-pair-v34-sustained-training-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v34-training-20261001 | [report](imodem-analog-pair-v34-training-20261001/summary.json) | retained in place |
-| imodem-analog-pair-v34-tx-clock-20261002 | [report](imodem-analog-pair-v34-tx-clock-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v34-unassisted-training-20261002 | [report](imodem-analog-pair-v34-unassisted-training-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-v90-digital-codec-fix-20261002 | [report](imodem-analog-pair-v90-digital-codec-fix-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-v34-tx-clock-20261002 | [report](imodem-analog-pair-v34-tx-clock-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v34-unassisted-training-20261002 | [report](imodem-analog-pair-v34-unassisted-training-20261002/summary.json) | retained in place |
+| imodem-analog-pair-v90-digital-codec-fix-20261002 | [report](imodem-analog-pair-v90-digital-codec-fix-20261002/summary.json) | retained in place |
 | imodem-analog-pair-v90-loss3-bidir-20260929 | No compact report | retained in place |
-| imodem-analog-pair-x2-20ms-20261003 | [report](imodem-analog-pair-x2-20ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-20ms-default-filter-20261003 | [report](imodem-analog-pair-x2-20ms-default-filter-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-5ms-20261003 | [report](imodem-analog-pair-x2-5ms-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-asymmetric-ni1-20261003 | [report](imodem-analog-pair-x2-asymmetric-ni1-20261003/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-x2-20ms-20261003 | [report](imodem-analog-pair-x2-20ms-20261003/summary.json) | retained in place |
+| imodem-analog-pair-x2-20ms-default-filter-20261003 | [report](imodem-analog-pair-x2-20ms-default-filter-20261003/verification.json) | retained in place |
+| imodem-analog-pair-x2-5ms-20261003 | [report](imodem-analog-pair-x2-5ms-20261003/verification.json) | retained in place |
+| imodem-analog-pair-x2-asymmetric-ni1-20261003 | [report](imodem-analog-pair-x2-asymmetric-ni1-20261003/summary.json) | retained in place |
 | imodem-analog-pair-x2-baseline-20261001 | [report](imodem-analog-pair-x2-baseline-20261001/summary.json) | retained in place |
 | imodem-analog-pair-x2-both-training-20261001 | [report](imodem-analog-pair-x2-both-training-20261001/summary.json) | retained in place |
-| imodem-analog-pair-x2-digital-codec-fix-20261002 | [report](imodem-analog-pair-x2-digital-codec-fix-20261002/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-x2-digital-codec-fix-20261002 | [report](imodem-analog-pair-x2-digital-codec-fix-20261002/summary.json) | retained in place |
 | imodem-analog-pair-x2-filter-timing-20261001 | [report](imodem-analog-pair-x2-filter-timing-20261001/summary.json) | retained in place |
-| imodem-analog-pair-x2-full-nyquist-20261003 | [report](imodem-analog-pair-x2-full-nyquist-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-high-power-ni1-20261003 | [report](imodem-analog-pair-x2-high-power-ni1-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-min41333-20261003 | [report](imodem-analog-pair-x2-min41333-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-normal-ni1-20261003 | [report](imodem-analog-pair-x2-normal-ni1-20261003/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-x2-full-nyquist-20261003 | [report](imodem-analog-pair-x2-full-nyquist-20261003/summary.json) | retained in place |
+| imodem-analog-pair-x2-high-power-ni1-20261003 | [report](imodem-analog-pair-x2-high-power-ni1-20261003/verification.json) | retained in place |
+| imodem-analog-pair-x2-min41333-20261003 | [report](imodem-analog-pair-x2-min41333-20261003/summary.json) | retained in place |
+| imodem-analog-pair-x2-normal-ni1-20261003 | [report](imodem-analog-pair-x2-normal-ni1-20261003/summary.json) | retained in place |
 | imodem-analog-pair-x2-phase3-20261001 | [report](imodem-analog-pair-x2-phase3-20261001/summary.json) | retained in place |
-| imodem-analog-pair-x2-rate27-20261003 | [report](imodem-analog-pair-x2-rate27-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-rx-minus6-20261003 | [report](imodem-analog-pair-x2-rx-minus6-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-pair-x2-rx-plus6-20261003 | [report](imodem-analog-pair-x2-rx-plus6-20261003/summary.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-x2-rate27-20261003 | [report](imodem-analog-pair-x2-rate27-20261003/verification.json) | retained in place |
+| imodem-analog-pair-x2-rx-minus6-20261003 | [report](imodem-analog-pair-x2-rx-minus6-20261003/summary.json) | retained in place |
+| imodem-analog-pair-x2-rx-plus6-20261003 | [report](imodem-analog-pair-x2-rx-plus6-20261003/summary.json) | retained in place |
 | imodem-analog-pair-x2-training-20261001 | [report](imodem-analog-pair-x2-training-20261001/summary.json) | retained in place |
-| imodem-analog-pair-x2-v8-high-power-20261002 | [report](imodem-analog-pair-x2-v8-high-power-20261002/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-v90-ideal-20ms-20261003 | [report](imodem-analog-v90-ideal-20ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-41333-repeat-20261003 | [report](imodem-analog-x2-41333-repeat-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-53333-production-20261003 | [report](imodem-analog-x2-53333-production-20261003/verification.json) | Archive verified; raw preserved |
-| imodem-analog-x2-56000-beta5-20261003 | [report](imodem-analog-x2-56000-beta5-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-56000-phases3072-20261003 | [report](imodem-analog-x2-56000-phases3072-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-56000-request-20261003 | [report](imodem-analog-x2-56000-request-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-56000-rx-plus1p5-20261003 | [report](imodem-analog-x2-56000-rx-plus1p5-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-56000-serverpower-20261003 | [report](imodem-analog-x2-56000-serverpower-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-asymmetric-20ms-20261003 | [report](imodem-analog-x2-asymmetric-20ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-calibration-capture-20261003 | [report](imodem-analog-x2-calibration-capture-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-capture-a688-20261003 | [report](imodem-analog-x2-capture-a688-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-capture-ece8-20261003 | [report](imodem-analog-x2-capture-ece8-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-detailed-result-20261003 | [report](imodem-analog-x2-detailed-result-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-filter256-16ms-20261003 | [report](imodem-analog-x2-filter256-16ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-filter256-20261003 | [report](imodem-analog-x2-filter256-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-filter499-20261003 | [report](imodem-analog-x2-filter499-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-fullband-highpower-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-analog-x2-fullband-highpower-20ms-20261003 | [report](imodem-analog-x2-fullband-highpower-20ms-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-fullband-soak-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-analog-x2-fullband128-matched-20261003 | [report](imodem-analog-x2-fullband128-matched-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-higher-15ms-20261003 | [report](imodem-analog-x2-higher-15ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-higher-25ms-20261003 | [report](imodem-analog-x2-higher-25ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-ideal-10ms-20261003 | [report](imodem-analog-x2-ideal-10ms-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-ideal-filter512-20261003 | [report](imodem-analog-x2-ideal-filter512-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-ideal-rx-minus3-20261003 | [report](imodem-analog-x2-ideal-rx-minus3-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-ideal-rx-plus3-20261003 | [report](imodem-analog-x2-ideal-rx-plus3-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-matched-x1-20261003 | [report](imodem-analog-x2-matched-x1-20261003/verification.json) | Archive verified; generated output pruned |
-| imodem-analog-x2-normal-power-x1-20261003 | [report](imodem-analog-x2-normal-power-x1-20261003/verification.json) | Archive verified; generated output pruned |
+| imodem-analog-pair-x2-v8-high-power-20261002 | [report](imodem-analog-pair-x2-v8-high-power-20261002/verification.json) | retained in place |
+| imodem-analog-v90-ideal-20ms-20261003 | [report](imodem-analog-v90-ideal-20ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-41333-repeat-20261003 | [report](imodem-analog-x2-41333-repeat-20261003/verification.json) | retained in place |
+| imodem-analog-x2-53333-production-20261003 | [report](imodem-analog-x2-53333-production-20261003/verification.json) | retained in place |
+| imodem-analog-x2-56000-beta5-20261003 | [report](imodem-analog-x2-56000-beta5-20261003/verification.json) | retained in place |
+| imodem-analog-x2-56000-phases3072-20261003 | [report](imodem-analog-x2-56000-phases3072-20261003/verification.json) | retained in place |
+| imodem-analog-x2-56000-request-20261003 | [report](imodem-analog-x2-56000-request-20261003/verification.json) | retained in place |
+| imodem-analog-x2-56000-rx-plus1p5-20261003 | [report](imodem-analog-x2-56000-rx-plus1p5-20261003/verification.json) | retained in place |
+| imodem-analog-x2-56000-serverpower-20261003 | [report](imodem-analog-x2-56000-serverpower-20261003/verification.json) | retained in place |
+| imodem-analog-x2-asymmetric-20ms-20261003 | [report](imodem-analog-x2-asymmetric-20ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-calibration-capture-20261003 | [report](imodem-analog-x2-calibration-capture-20261003/summary.json) | retained in place |
+| imodem-analog-x2-capture-a688-20261003 | [report](imodem-analog-x2-capture-a688-20261003/summary.json) | retained in place |
+| imodem-analog-x2-capture-ece8-20261003 | [report](imodem-analog-x2-capture-ece8-20261003/summary.json) | retained in place |
+| imodem-analog-x2-detailed-result-20261003 | [report](imodem-analog-x2-detailed-result-20261003/summary.json) | retained in place |
+| imodem-analog-x2-filter256-16ms-20261003 | [report](imodem-analog-x2-filter256-16ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-filter256-20261003 | [report](imodem-analog-x2-filter256-20261003/summary.json) | retained in place |
+| imodem-analog-x2-filter499-20261003 | [report](imodem-analog-x2-filter499-20261003/summary.json) | retained in place |
+| imodem-analog-x2-fullband-highpower-20261003 | No compact report | retained in place |
+| imodem-analog-x2-fullband-highpower-20ms-20261003 | [report](imodem-analog-x2-fullband-highpower-20ms-20261003/verification.json) | retained in place |
+| imodem-analog-x2-fullband-soak-20261003 | No compact report | retained in place |
+| imodem-analog-x2-fullband128-matched-20261003 | [report](imodem-analog-x2-fullband128-matched-20261003/summary.json) | retained in place |
+| imodem-analog-x2-higher-15ms-20261003 | [report](imodem-analog-x2-higher-15ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-higher-25ms-20261003 | [report](imodem-analog-x2-higher-25ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-ideal-10ms-20261003 | [report](imodem-analog-x2-ideal-10ms-20261003/summary.json) | retained in place |
+| imodem-analog-x2-ideal-filter512-20261003 | [report](imodem-analog-x2-ideal-filter512-20261003/summary.json) | retained in place |
+| imodem-analog-x2-ideal-rx-minus3-20261003 | [report](imodem-analog-x2-ideal-rx-minus3-20261003/summary.json) | retained in place |
+| imodem-analog-x2-ideal-rx-plus3-20261003 | [report](imodem-analog-x2-ideal-rx-plus3-20261003/summary.json) | retained in place |
+| imodem-analog-x2-matched-x1-20261003 | [report](imodem-analog-x2-matched-x1-20261003/verification.json) | retained in place |
+| imodem-analog-x2-normal-power-x1-20261003 | [report](imodem-analog-x2-normal-power-x1-20261003/verification.json) | retained in place |
 | imodem-at | No compact report | retained in place |
-| imodem-audio-clock-audit-20261002 | No compact report | Archive verified |
+| imodem-audio-clock-audit-20261002 | No compact report | retained in place |
 | imodem-ceml4 | No compact report | retained in place |
-| imodem-direct-8416-8423-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-direct-8416-8423-retry-20261002 | No compact report | Archive verified; generated output pruned |
+| imodem-direct-8416-8423-20261002 | No compact report | retained in place |
+| imodem-direct-8416-8423-retry-20261002 | No compact report | retained in place |
 | imodem-inbound-sip-live-20260913 | No compact report | retained in place |
 | imodem-inbound-sip-paced-20260913 | No compact report | retained in place |
 | imodem-mailbox-service | No compact report | retained in place |
@@ -242,9 +245,9 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | imodem-pair-connect-20260930 | [report](imodem-pair-connect-20260930/summary.json) | retained in place |
 | imodem-pair-connect-fix-20260930 | [report](imodem-pair-connect-fix-20260930/summary.json) | retained in place |
 | imodem-pair-control-order-20260930 | [report](imodem-pair-control-order-20260930/summary.json) | retained in place |
-| imodem-pair-full-rate-v34-control-20261002 | [report](imodem-pair-full-rate-v34-control-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-keepalive-20261002 | [report](imodem-pair-keepalive-20261002/summary.json) | Archive verified |
-| imodem-pair-keepalive-regression-20261002 | [report](imodem-pair-keepalive-regression-20261002/summary.json) | Archive verified |
+| imodem-pair-full-rate-v34-control-20261002 | [report](imodem-pair-full-rate-v34-control-20261002/summary.json) | retained in place |
+| imodem-pair-keepalive-20261002 | [report](imodem-pair-keepalive-20261002/summary.json) | retained in place |
+| imodem-pair-keepalive-regression-20261002 | [report](imodem-pair-keepalive-regression-20261002/summary.json) | retained in place |
 | imodem-pair-loader-profile-20260930 | [report](imodem-pair-loader-profile-20260930/summary.json) | retained in place |
 | imodem-pair-nmi-20260930 | [report](imodem-pair-nmi-20260930/summary.json) | retained in place |
 | imodem-pair-overlay-a000-20260930 | [report](imodem-pair-overlay-a000-20260930/summary.json) | retained in place |
@@ -256,104 +259,111 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | imodem-pair-port-trace-20260930 | [report](imodem-pair-port-trace-20260930/summary.json) | retained in place |
 | imodem-pair-python-20260930 | [report](imodem-pair-python-20260930/summary.json) | retained in place |
 | imodem-pair-stack-20260930 | [report](imodem-pair-stack-20260930/summary.json) | retained in place |
-| imodem-pair-x2-20261002 | [report](imodem-pair-x2-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-230400-dte-20261002 | [report](imodem-pair-x2-230400-dte-20261002/summary.json) | Archive verified |
-| imodem-pair-x2-230400-initialized-20261002 | [report](imodem-pair-x2-230400-initialized-20261002/summary.json) | Archive verified |
-| imodem-pair-x2-230400-modem-profile-20261002 | No compact report | Archive verified |
-| imodem-pair-x2-230400-net3-20261002 | [report](imodem-pair-x2-230400-net3-20261002/summary.json) | Archive verified |
-| imodem-pair-x2-230400-network-20261002 | [report](imodem-pair-x2-230400-network-20261002/summary.json) | Archive verified |
-| imodem-pair-x2-230400-primed-20261002 | No compact report | Archive verified |
-| imodem-pair-x2-auto-speed-20261002 | [report](imodem-pair-x2-auto-speed-20261002/verification.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-diagnostics-20261002 | [report](imodem-pair-x2-diagnostics-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-digital-recheck-20261003 | [report](imodem-pair-x2-digital-recheck-20261003/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-eligibility-20261002 | [report](imodem-pair-x2-eligibility-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-factory-auto-20261002 | [report](imodem-pair-x2-factory-auto-20261002/summary.json) | Archive verified |
-| imodem-pair-x2-fast-dte-20261002 | [report](imodem-pair-x2-fast-dte-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-full-rate-high-power-20261002 | [report](imodem-pair-x2-full-rate-high-power-20261002/verification.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-full-rate-ni1-20261002 | [report](imodem-pair-x2-full-rate-ni1-20261002/verification.json) | Archive verified |
-| imodem-pair-x2-full-rate-routed-20261002 | No compact report | Archive verified |
-| imodem-pair-x2-full-rate-v8-server-20261002 | [report](imodem-pair-x2-full-rate-v8-server-20261002/verification.json) | Archive verified |
-| imodem-pair-x2-internal-dte-20261002 | [report](imodem-pair-x2-internal-dte-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-symmetric-only-20261002 | [report](imodem-pair-x2-symmetric-only-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-pair-x2-v8-enabled-20261002 | [report](imodem-pair-x2-v8-enabled-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-3999-20261002 | [report](imodem-rasfinder-3999-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-3999-digital-codec-fixed-20261002 | [report](imodem-rasfinder-3999-digital-codec-fixed-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-buffered-media-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-c51-half-clock-20261002 | [report](imodem-rasfinder-c51-half-clock-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-clean-sample-timing-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-clocked-rtp-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-contiguous-history-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-decision-capture-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-erased-config-control-20261002 | [report](imodem-rasfinder-erased-config-control-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-factory-config-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-fixed-pp-slots-20261002 | [report](imodem-rasfinder-fixed-pp-slots-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-history-capture-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-j-detection-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-large-buffer-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-late-training-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-media-start-fix-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-overlay-audit-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-pcm-frame-fix-20261002 | [report](imodem-rasfinder-pcm-frame-fix-20261002/summary.json) | Archive verified; generated output pruned |
-| imodem-rasfinder-phase-timing-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-phase3-media-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-rebuffered-media-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-receive-audit-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-receive-fir-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-reference-audit-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-sample-writer-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-rasfinder-v34-control-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-continuous-rx-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-digital-codec-fix-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-direct-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-direct-v34-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-drr-writer-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-fixed-training-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-info-bits-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-info-receiver-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-info0-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-input-writer-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-mulaw-input-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-native-rx-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-quarter-scale-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v34-training-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-44000-lapm-soak-20261002 | [report](imodem-slmodemd-v90-44000-lapm-soak-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-data-soak-20261002 | [report](imodem-slmodemd-v90-data-soak-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-digital-codec-fix-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-dil-dispatch-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-distinct-number-audit-20261003 | [report](imodem-slmodemd-v90-distinct-number-audit-20261003/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-erased-header-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-factory-isdn-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-factory-profile-audit-20261003 | No compact report | Archive verified; raw preserved |
-| imodem-slmodemd-v90-fresh-7e1-ni1-audit-20261003 | [report](imodem-slmodemd-v90-fresh-7e1-ni1-audit-20261003/payload-analysis.json) | Archive verified; raw preserved |
-| imodem-slmodemd-v90-fresh-8n1-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-fresh-net3-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-fresh-ni1-audit-20261003 | [report](imodem-slmodemd-v90-fresh-ni1-audit-20261003/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-full-nyquist-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-interpolation128-20261002 | [report](imodem-slmodemd-v90-interpolation128-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-interpolation16-20261002 | [report](imodem-slmodemd-v90-interpolation16-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-interpolation32-20261002 | [report](imodem-slmodemd-v90-interpolation32-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-interpolation64-20261002 | [report](imodem-slmodemd-v90-interpolation64-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-inverted-polarity-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-ja-wait-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-jd-bits-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-jd-ring-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-lapm-data-soak-20261002 | [report](imodem-slmodemd-v90-lapm-data-soak-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-lapm-drained-soak-20261002 | [report](imodem-slmodemd-v90-lapm-drained-soak-20261002/payload-analysis.json) | Archive verified; raw preserved |
-| imodem-slmodemd-v90-live-profile-audit-20261003 | No compact report | Archive verified; raw preserved |
-| imodem-slmodemd-v90-profile-framing-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-reconstruction-fixed-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-routing-zero-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-s-wait-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-s67-zero-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-s68-zero-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-saved-7e1-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-saved-8n1-9600-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-saved-f0-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-saved-reset-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-tower-reconstruction-20261002 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-training-gain2-20261002 | [report](imodem-slmodemd-v90-training-gain2-20261002/payload-analysis.json) | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-v2-auto-audit-20261003 | No compact report | Archive verified; generated output pruned |
-| imodem-slmodemd-v90-variable-dte-audit-20261003 | No compact report | Archive verified; generated output pruned |
+| imodem-pair-x2-20261002 | [report](imodem-pair-x2-20261002/summary.json) | retained in place |
+| imodem-pair-x2-230400-dte-20261002 | [report](imodem-pair-x2-230400-dte-20261002/summary.json) | retained in place |
+| imodem-pair-x2-230400-initialized-20261002 | [report](imodem-pair-x2-230400-initialized-20261002/summary.json) | retained in place |
+| imodem-pair-x2-230400-modem-profile-20261002 | No compact report | retained in place |
+| imodem-pair-x2-230400-net3-20261002 | [report](imodem-pair-x2-230400-net3-20261002/summary.json) | retained in place |
+| imodem-pair-x2-230400-network-20261002 | [report](imodem-pair-x2-230400-network-20261002/summary.json) | retained in place |
+| imodem-pair-x2-230400-primed-20261002 | No compact report | retained in place |
+| imodem-pair-x2-auto-speed-20261002 | [report](imodem-pair-x2-auto-speed-20261002/verification.json) | retained in place |
+| imodem-pair-x2-diagnostics-20261002 | [report](imodem-pair-x2-diagnostics-20261002/summary.json) | retained in place |
+| imodem-pair-x2-digital-recheck-20261003 | [report](imodem-pair-x2-digital-recheck-20261003/summary.json) | retained in place |
+| imodem-pair-x2-eligibility-20261002 | [report](imodem-pair-x2-eligibility-20261002/summary.json) | retained in place |
+| imodem-pair-x2-factory-auto-20261002 | [report](imodem-pair-x2-factory-auto-20261002/summary.json) | retained in place |
+| imodem-pair-x2-fast-dte-20261002 | [report](imodem-pair-x2-fast-dte-20261002/summary.json) | retained in place |
+| imodem-pair-x2-full-rate-high-power-20261002 | [report](imodem-pair-x2-full-rate-high-power-20261002/verification.json) | retained in place |
+| imodem-pair-x2-full-rate-ni1-20261002 | [report](imodem-pair-x2-full-rate-ni1-20261002/verification.json) | retained in place |
+| imodem-pair-x2-full-rate-routed-20261002 | No compact report | retained in place |
+| imodem-pair-x2-full-rate-v8-server-20261002 | [report](imodem-pair-x2-full-rate-v8-server-20261002/verification.json) | retained in place |
+| imodem-pair-x2-handoff-control | [report](imodem-pair-x2-handoff-control/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-internal-dte-20261002 | [report](imodem-pair-x2-internal-dte-20261002/summary.json) | retained in place |
+| imodem-pair-x2-symmetric-only-20261002 | [report](imodem-pair-x2-symmetric-only-20261002/summary.json) | retained in place |
+| imodem-pair-x2-traffic-120s-20261013 | [report](imodem-pair-x2-traffic-120s-20261013/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-traffic-120s-fixed-20261013 | [report](imodem-pair-x2-traffic-120s-fixed-20261013/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-traffic-120s-k0-20261013 | [report](imodem-pair-x2-traffic-120s-k0-20261013/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-traffic-180s-20261013 | [report](imodem-pair-x2-traffic-180s-20261013/verification.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-traffic-20261013 | [report](imodem-pair-x2-traffic-20261013/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-traffic-k0-smoke-20261013 | [report](imodem-pair-x2-traffic-k0-smoke-20261013/summary.json) | Archive verified; generated output pruned |
+| imodem-pair-x2-v8-enabled-20261002 | [report](imodem-pair-x2-v8-enabled-20261002/summary.json) | retained in place |
+| imodem-rasfinder-3999-20261002 | [report](imodem-rasfinder-3999-20261002/summary.json) | retained in place |
+| imodem-rasfinder-3999-digital-codec-fixed-20261002 | [report](imodem-rasfinder-3999-digital-codec-fixed-20261002/summary.json) | retained in place |
+| imodem-rasfinder-buffered-media-20261002 | No compact report | retained in place |
+| imodem-rasfinder-c51-half-clock-20261002 | [report](imodem-rasfinder-c51-half-clock-20261002/summary.json) | retained in place |
+| imodem-rasfinder-clean-sample-timing-20261002 | No compact report | retained in place |
+| imodem-rasfinder-clocked-rtp-20261002 | No compact report | retained in place |
+| imodem-rasfinder-contiguous-history-20261002 | No compact report | retained in place |
+| imodem-rasfinder-decision-capture-20261002 | No compact report | retained in place |
+| imodem-rasfinder-erased-config-control-20261002 | [report](imodem-rasfinder-erased-config-control-20261002/summary.json) | retained in place |
+| imodem-rasfinder-factory-config-20261002 | No compact report | retained in place |
+| imodem-rasfinder-fixed-pp-slots-20261002 | [report](imodem-rasfinder-fixed-pp-slots-20261002/summary.json) | retained in place |
+| imodem-rasfinder-history-capture-20261002 | No compact report | retained in place |
+| imodem-rasfinder-j-detection-20261002 | No compact report | retained in place |
+| imodem-rasfinder-large-buffer-20261002 | No compact report | retained in place |
+| imodem-rasfinder-late-training-20261002 | No compact report | retained in place |
+| imodem-rasfinder-media-start-fix-20261002 | No compact report | retained in place |
+| imodem-rasfinder-overlay-audit-20261002 | No compact report | retained in place |
+| imodem-rasfinder-pcm-frame-fix-20261002 | [report](imodem-rasfinder-pcm-frame-fix-20261002/summary.json) | retained in place |
+| imodem-rasfinder-phase-timing-20261002 | No compact report | retained in place |
+| imodem-rasfinder-phase3-media-20261002 | No compact report | retained in place |
+| imodem-rasfinder-rebuffered-media-20261002 | No compact report | retained in place |
+| imodem-rasfinder-receive-audit-20261002 | No compact report | retained in place |
+| imodem-rasfinder-receive-fir-20261002 | No compact report | retained in place |
+| imodem-rasfinder-reference-audit-20261002 | No compact report | retained in place |
+| imodem-rasfinder-sample-writer-20261002 | No compact report | retained in place |
+| imodem-rasfinder-v34-control-20261002 | No compact report | retained in place |
+| imodem-slmodemd-continuous-rx-20261002 | No compact report | retained in place |
+| imodem-slmodemd-digital-codec-fix-20261002 | No compact report | retained in place |
+| imodem-slmodemd-direct-20261002 | No compact report | retained in place |
+| imodem-slmodemd-direct-v34-20261002 | No compact report | retained in place |
+| imodem-slmodemd-drr-writer-20261002 | No compact report | retained in place |
+| imodem-slmodemd-fixed-training-20261002 | No compact report | retained in place |
+| imodem-slmodemd-info-bits-20261002 | No compact report | retained in place |
+| imodem-slmodemd-info-receiver-20261002 | No compact report | retained in place |
+| imodem-slmodemd-info0-20261002 | No compact report | retained in place |
+| imodem-slmodemd-input-writer-20261002 | No compact report | retained in place |
+| imodem-slmodemd-mulaw-input-20261002 | No compact report | retained in place |
+| imodem-slmodemd-native-rx-20261002 | No compact report | retained in place |
+| imodem-slmodemd-quarter-scale-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v34-training-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-44000-lapm-soak-20261002 | [report](imodem-slmodemd-v90-44000-lapm-soak-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-data-soak-20261002 | [report](imodem-slmodemd-v90-data-soak-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-digital-codec-fix-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-dil-dispatch-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-distinct-number-audit-20261003 | [report](imodem-slmodemd-v90-distinct-number-audit-20261003/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-erased-header-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-factory-isdn-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-factory-profile-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-fresh-7e1-ni1-audit-20261003 | [report](imodem-slmodemd-v90-fresh-7e1-ni1-audit-20261003/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-fresh-8n1-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-fresh-net3-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-fresh-ni1-audit-20261003 | [report](imodem-slmodemd-v90-fresh-ni1-audit-20261003/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-full-nyquist-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-interpolation128-20261002 | [report](imodem-slmodemd-v90-interpolation128-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-interpolation16-20261002 | [report](imodem-slmodemd-v90-interpolation16-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-interpolation32-20261002 | [report](imodem-slmodemd-v90-interpolation32-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-interpolation64-20261002 | [report](imodem-slmodemd-v90-interpolation64-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-inverted-polarity-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-ja-wait-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-jd-bits-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-jd-ring-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-lapm-data-soak-20261002 | [report](imodem-slmodemd-v90-lapm-data-soak-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-lapm-drained-soak-20261002 | [report](imodem-slmodemd-v90-lapm-drained-soak-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-live-profile-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-profile-framing-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-reconstruction-fixed-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-routing-zero-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-s-wait-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-s67-zero-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-s68-zero-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-saved-7e1-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-saved-8n1-9600-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-saved-f0-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-saved-reset-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-tower-reconstruction-20261002 | No compact report | retained in place |
+| imodem-slmodemd-v90-training-gain2-20261002 | [report](imodem-slmodemd-v90-training-gain2-20261002/payload-analysis.json) | retained in place |
+| imodem-slmodemd-v90-v2-auto-audit-20261003 | No compact report | retained in place |
+| imodem-slmodemd-v90-variable-dte-audit-20261003 | No compact report | retained in place |
 | imodem-task-roles | No compact report | retained in place |
 | imodem-terminal-diagnosis | No compact report | retained in place |
 | imodem-vrtx-startup | No compact report | retained in place |
@@ -380,25 +390,84 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | quad-c50-20260910 | No compact report | retained in place |
 | quad-c50-live-20260910 | No compact report | retained in place |
 | quad-c50-resident-20260910 | No compact report | retained in place |
+| quad-chassis-answer-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-chassis-answer-command-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-chassis-arm-20261013 | No compact report | Archive verified |
+| quad-digital-answer-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-digital-provisioned-answer-20261013 | No compact report | Archive verified; generated output pruned |
 | quad-digital-tone-20260910 | No compact report | retained in place |
 | quad-identify-20260910 | No compact report | retained in place |
+| quad-imodem-v34-20261013 | [report](quad-imodem-v34-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-imodem-v34-shifter-20261013 | [report](quad-imodem-v34-shifter-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-imodem-v34-v8-20261013 | [report](quad-imodem-v34-v8-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-line-identity-20261013 | No compact report | Archive verified |
+| quad-line-probe-20261013 | No compact report | Archive verified |
+| quad-line-provisioned-20261013 | No compact report | Archive verified |
 | quad-pcm-codewords-20260910 | No compact report | retained in place |
 | quad-receive-20260910 | No compact report | retained in place |
 | quad-server-bringup-20260911 | No compact report | retained in place |
+| quad-server-current-20261013 | No compact report | Archive verified; generated output pruned |
 | quad-settings-20260910 | No compact report | retained in place |
+| quad-stock-chassis-arm-20261013 | No compact report | Archive verified |
 | quad-stock-dtmf-20260910 | No compact report | retained in place |
 | quad-stock-g711-20260910 | No compact report | retained in place |
+| quad-v34-9600-data-lanes-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v34-data-lanes-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v34-lapm-9600-data | [report](quad-v34-lapm-9600-data/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-b1-data | [report](quad-v34-lapm-b1-data/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-caller-control | [report](quad-v34-lapm-caller-control/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-data | [report](quad-v34-lapm-data/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-delayed-data | [report](quad-v34-lapm-delayed-data/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-disconnect-diagnostics | [report](quad-v34-lapm-disconnect-diagnostics/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-online-handoff | [report](quad-v34-lapm-online-handoff/verification.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-quad-control | [report](quad-v34-lapm-quad-control/summary.json) | Archive verified; generated output pruned |
+| quad-v34-lapm-quiet-control | [report](quad-v34-lapm-quiet-control/summary.json) | Archive verified; generated output pruned |
+| quad-v34-no-arq-20261013 | [report](quad-v34-no-arq-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-v34-profile-clock-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v42-cpu-bitstream-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v42-current | [report](quad-v42-current/summary.json) | Archive verified; generated output pruned |
+| quad-v42-factory-profile-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v42-forced-reliable-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v42-mode2 | [report](quad-v42-mode2/summary.json) | Archive verified; generated output pruned |
+| quad-v42-odp-trace-20261013 | [report](quad-v42-odp-trace-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-v8-mailbox-reset-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v8-mailbox-reset-trace-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v8-overlay-epoch-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v8-overlay-ready-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v8-trace-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-v8-trace-fixed-20261013 | [report](quad-v8-trace-fixed-20261013/summary.json) | Archive verified; generated output pruned |
+| quad-x2-auto-configured | [report](quad-x2-auto-configured/summary.json) | Archive verified; generated output pruned |
+| quad-x2-auto-current | [report](quad-x2-auto-current/summary.json) | Archive verified; generated output pruned |
+| quad-x2-client-configured | [report](quad-x2-client-configured/summary.json) | Archive verified; generated output pruned |
+| quad-x2-client-current | [report](quad-x2-client-current/summary.json) | Archive verified; generated output pruned |
+| quad-x2-client-provisioned | [report](quad-x2-client-provisioned/summary.json) | Archive verified; generated output pruned |
+| quad-x2-client-variable-dte | [report](quad-x2-client-variable-dte/summary.json) | Archive verified; generated output pruned |
+| quad-x2-data-lanes-20261013 | No compact report | Archive verified; generated output pruned |
+| quad-x2-feature-provision-control | No compact report | Archive verified; generated output pruned |
+| quad-x2-initialization-audit | No compact report | Archive verified; generated output pruned |
+| quad-x2-initialization-control | No compact report | Archive verified; generated output pruned |
+| quad-x2-modes | No compact report | Archive verified |
+| quad-x2-rate-gate-audit | No compact report | Archive verified; generated output pruned |
+| quad-x2-server-configured | [report](quad-x2-server-configured/summary.json) | Archive verified; generated output pruned |
+| quad-x2-server-current | [report](quad-x2-server-current/summary.json) | Archive verified; generated output pruned |
+| quad-x2-server-provisioned | [report](quad-x2-server-provisioned/summary.json) | Archive verified; generated output pruned |
+| quad-x2-server-variable-dte | [report](quad-x2-server-variable-dte/summary.json) | Archive verified; generated output pruned |
+| quad-x2-symmetric-configured | [report](quad-x2-symmetric-configured/summary.json) | Archive verified; generated output pruned |
+| quad-x2-symmetric-current | [report](quad-x2-symmetric-current/summary.json) | Archive verified; generated output pruned |
+| quad-x2-symmetric-provisioned | [report](quad-x2-symmetric-provisioned/verification.json) | Archive verified; generated output pruned |
+| quad-x2-symmetric-variable-dte | [report](quad-x2-symmetric-variable-dte/summary.json) | Archive verified; generated output pruned |
 | ram-counter-01 | No compact report | retained in place |
 | ram-sampler-01 | No compact report | retained in place |
 | ram-sampler-call-01 | No compact report | retained in place |
-| real-courier-call-clock-audit-20261003 | No compact report | Archive verified; raw preserved |
+| real-courier-call-clock-audit-20261003 | No compact report | retained in place |
 | real-courier-inbound | No compact report | retained in place |
-| real-courier-pcm-trace-20261003T010917Z | No compact report | Archive verified; raw preserved |
-| real-courier-pcm-trace-20261003T012911Z | No compact report | Archive verified; raw preserved |
-| real-courier-pcm-trace-20261003T020137Z | No compact report | Archive verified; raw preserved |
-| real-courier-pcm-trace-20261003T022029Z | No compact report | Archive verified; raw preserved |
-| real-courier-pcm-trace-20261003T030548Z | No compact report | Archive verified; raw preserved |
+| real-courier-pcm-trace-20261003T010917Z | No compact report | retained in place |
+| real-courier-pcm-trace-20261003T012911Z | No compact report | retained in place |
+| real-courier-pcm-trace-20261003T020137Z | No compact report | retained in place |
+| real-courier-pcm-trace-20261003T022029Z | No compact report | retained in place |
+| real-courier-pcm-trace-20261003T030548Z | No compact report | retained in place |
 | rom-at-smoke-20260906 | No compact report | retained in place |
+| rom-uart-status-20261013 | [report](rom-uart-status-20261013/verification.json) | recently modified; left untouched |
 | sdl-download-idsdl302-type4 | No compact report | retained in place |
 | sdl-image-extraction-01 | No compact report | retained in place |
 | state-trajectory-403 | No compact report | retained in place |
@@ -407,7 +476,31 @@ The JSON index records archive locations, checksums, and cleanup accounting.
 | undocumented-atn-analysis | No compact report | retained in place |
 | v8-dispatcher-403-01 | No compact report | retained in place |
 | v8-line-frames-403-01 | No compact report | retained in place |
+| x2-57333-profile-20261004 | [report](x2-57333-profile-20261004/verification.json) | retained in place |
+| x2-client-record-20261004 | No compact report | retained in place |
+| x2-closed-loop-20261005 | No compact report | retained in place |
+| x2-courier-mp-20261005 | [report](x2-courier-mp-20261005/verification.json) | retained in place |
+| x2-courier-phase3-20261004 | No compact report | retained in place |
+| x2-courier-rate-report-20261005 | [report](x2-courier-rate-report-20261005/verification.json) | retained in place |
+| x2-mapper-negotiation-20261004 | [report](x2-mapper-negotiation-20261004/verification.json) | retained in place |
+| x2-marker-receiver-20261004 | [report](x2-marker-receiver-20261004/verification.json) | retained in place |
+| x2-payload-mapper-20261004 | [report](x2-payload-mapper-20261004/verification.json) | retained in place |
+| x2-phase2-20261005 | No compact report | retained in place |
+| x2-pre-gate-20261004 | No compact report | retained in place |
+| x2-rate-handoff-20261004 | [report](x2-rate-handoff-20261004/verification.json) | retained in place |
+| x2-scrambler-call-20261004 | [report](x2-scrambler-call-20261004/summary.json) | retained in place |
+| x2-scrambler-call-reset-20261004 | [report](x2-scrambler-call-reset-20261004/verification.json) | retained in place |
 | x2-scrambler-hunt | [report](x2-scrambler-hunt/verification.json) | retained in place |
+| x2-server-decomp-20261004 | [report](x2-server-decomp-20261004/verification.json) | retained in place |
+| x2-server-post-e-20261004 | No compact report | retained in place |
+| x2-server-script-20261004 | No compact report | retained in place |
+| x2-server-training-20261004 | No compact report | retained in place |
+| x2-server-training-e-20261004 | No compact report | retained in place |
+| x2-source-impairment-20261004 | [report](x2-source-impairment-20261004/verification.json) | retained in place |
+| x2-spec-20261004 | No compact report | retained in place |
+| x2-upstream-b1-20261005 | No compact report | retained in place |
+| x2-upstream-e-20261005 | [report](x2-upstream-e-20261005/verification.json) | retained in place |
+| x2-xc-pair-20261004 | [report](x2-xc-pair-20261004/verification.json) | retained in place |
 | xmodem-program-id20-403 | No compact report | retained in place |
 | xmodem-program-id25-403 | No compact report | retained in place |
 | xmodem-test-id20-403 | No compact report | retained in place |

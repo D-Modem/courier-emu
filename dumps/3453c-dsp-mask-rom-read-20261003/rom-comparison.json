@@ -1,5 +1,5 @@
 {
-  "older_rom": "/Users/scottcryan/courier-emu/artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin",
+  "older_rom": "/Users/scottcryan/courier-emu/dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin",
   "old_words": 8192,
   "new_words": 4096,
   "same_address_matching_words_in_first_4096": 157,

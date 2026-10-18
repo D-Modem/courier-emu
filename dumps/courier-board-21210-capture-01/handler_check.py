@@ -9,7 +9,7 @@ import struct
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_16, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn import x86_const as r
 
-root = Path('artifacts/courier-board-21210-capture-01')
+root = Path('dumps/courier-board-21210-capture-01')
 blocks = sorted((root / 'blocks').glob('*.bin'))
 firmware = b''.join(p.read_bytes() for p in blocks)
 assert len(firmware) >= 0x27000

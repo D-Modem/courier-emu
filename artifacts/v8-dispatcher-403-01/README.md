@@ -1,7 +1,7 @@
 # V.8 dispatcher, 403 linked pair
 
 ```sh
-./courier link artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier link dumps/courier-board-21210-capture-403/courier-board.rom \
   --with-dsp --nvram-fixture idsdl403 --board-id 7 --dip-preset default --tick-ms 5 \
   --a-at ATX0 --a-at ATDT5551234 --b-at ATA \
   --instructions 85000000 --summary

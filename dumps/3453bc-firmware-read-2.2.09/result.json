@@ -1,0 +1,14 @@
+{
+  "device": "/dev/cu.usbserial-FT4TQOFT",
+  "baud": 19200,
+  "bytes": 753664,
+  "blocks": 736,
+  "retries": 0,
+  "sha256": "6c3271782955f837fe23db7712f090cc84854e49cc43c2f4396cd1cc211371fc",
+  "integrity": "Every accepted block passed CRC16 and sequence checks; EOT acknowledged.",
+  "supervisor_revision": "2.2.09",
+  "dsp_revision": "2.0.34",
+  "matches_existing_xmf": [],
+  "post_transfer_identity_ok": true,
+  "menu_exit": "ESC resets modem; ATI7 revision confirmed afterwards."
+}

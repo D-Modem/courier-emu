@@ -8,7 +8,7 @@ p=Path(__file__).resolve().parent
 first=(p/'mapped-window-0000-1fff-read1.bin').read_bytes()
 second=(p/'mapped-window-0000-1fff-read2.bin').read_bytes()
 assert len(first)==16384 and first==second
-previous=(ROOT/'artifacts/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin').read_bytes()
+previous=(ROOT/'dumps/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin').read_bytes()
 assert first[8192:]==previous[8192:16384]
 firmware=XmfImage.load(ROOT/'artifacts/3453c-dsp-rom-patch-20261003/2_3_33-dsp-monitor.candidate.xmf')
 resident=firmware.dsp_segments()[0]

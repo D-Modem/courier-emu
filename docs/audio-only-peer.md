@@ -9,7 +9,7 @@ advances on each codec's conversion-frame clock, including silent frames;
 CPU instruction counts do not determine the amount of audio exchanged.
 
 ```sh
-./courier link artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier link dumps/courier-board-21210-capture-403/courier-board.rom \
   --with-dsp --line-audio-only --socket /tmp/courier-audio.sock \
   --audio-dir artifacts/audio-only-peer-02/audio \
   --nvram-fixture idsdl403 --board-id 7 --dip-preset default --tick-ms 5 \

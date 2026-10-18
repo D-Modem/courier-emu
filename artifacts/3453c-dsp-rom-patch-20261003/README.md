@@ -36,4 +36,4 @@ The upper boundary is a probe bound, not a claim that this part has 8K words of 
 
 ## Hardware result
 
-All 5,888 flash blocks were acknowledged without retries; reset and ATGU succeeded. Live PMST was 18B8 before and after mapped reads. Two independently requested 0000..1FFF windows matched exactly, and the 4K-word internal ROM at 0000..0FFF was extracted successfully. The upper window matches downloaded RAM. ROM protection did not block this read route. See hardware-verification.json and ../3453c-dsp-mask-rom-read-20261003/README.md. The ROM-capable revision remains installed.
+All 5,888 flash blocks were acknowledged without retries; reset and ATGU succeeded. Live PMST was 18B8 before and after mapped reads. Two independently requested 0000..1FFF windows matched exactly, and the 4K-word internal ROM at 0000..0FFF was extracted successfully. The upper window matches downloaded RAM. ROM protection did not block this read route. See hardware-verification.json and ../../dumps/3453c-dsp-mask-rom-read-20261003/README.md. The ROM-capable revision remains installed.

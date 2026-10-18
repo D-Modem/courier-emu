@@ -72,6 +72,6 @@ Do not treat PDFs, INF files, installers, or extracted application files as
 directly executable modem firmware. They remain with their source package as
 context and may contain the actual payload in an embedded archive or updater.
 
-The two `artifacts/courier-board-21210-capture-*/courier-board.rom` files are
+The two `dumps/courier-board-21210-capture-*/courier-board.rom` files are
 hardware captures, not distributable source firmware. They remain with the
 experiments that produced them rather than being moved into this inventory.

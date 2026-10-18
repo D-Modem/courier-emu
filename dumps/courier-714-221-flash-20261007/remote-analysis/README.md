@@ -46,7 +46,7 @@ another independently verified entry mechanism is needed for hardware use.
 This identifies a mechanism consistent with USR remote activation; it
 does not establish which exact exchange the historical USR service used.
 
-Run: PYTHONPATH=. .venv/bin/python artifacts/courier-714-221-flash-20261007/remote-analysis/check_handler.py
+Run: PYTHONPATH=. .venv/bin/python dumps/courier-714-221-flash-20261007/remote-analysis/check_handler.py
 
 ## V.42 transmitter to firmware boundary test
 

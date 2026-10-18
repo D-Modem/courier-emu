@@ -67,13 +67,13 @@ Hardware handshakes remain modeled; a physical RAM-load and launch mechanism
 is still unverified. The same document describes the read-only `ATGLK2` serial
 collector for the user's 20.16 MHz, 512 KiB modem. That board now runs
 supervisor 7.4.16 / DSP 3.1.2 - the image under
-`artifacts/courier-board-21210-capture-403/` - having previously reported
+`dumps/courier-board-21210-capture-403/` - having previously reported
 7.3.14 / DSP 3.0.13, which is what the older notes below describe:
 
 ```sh
 .venv/bin/python -m courier_emu.flash_dump \
   --device /dev/cu.usbserial-21210 --baud 115200 \
-  --output artifacts/courier-board-capture
+  --output dumps/courier-board-capture
 ```
 
 It requires a new output directory, checks the modem identity and known reset
@@ -1235,7 +1235,7 @@ two processes yourself. The link implies `--with-dsp` and supersedes
 ### A dialled 403 pair that carries data
 
 ```sh
-./courier link artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier link dumps/courier-board-21210-capture-403/courier-board.rom \
   --with-dsp --nvram-fixture idsdl403 --board-id 7 --dip-preset default --tick-ms 5 \
   --a-at ATS27=1 --a-at ATX0 --a-at ATDT5551234 --b-at ATA \
   --a-send 'the quick brown fox' --b-send 'jumps over the lazy dog' \
