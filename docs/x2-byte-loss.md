@@ -175,8 +175,7 @@ Black-box measurements of one 0 dB call (Courier upstream at 24000 bit/s):
 - Only 7% of a click's energy is in 300-3600 Hz; most is at DC and above
   3.6 kHz. A 300-3500 Hz channel band-pass on the upstream does not help,
   because it also cuts the 3200-baud high carrier.
-- Not the cause: accumulator overflow (one ADD/SUB overflow in the whole
-  call, none near a click), the DSP's interrupts (the same XINT and TINT
+- Not the cause: accumulator overflow (none in data; see below), the DSP's interrupts (the same XINT and TINT
   pattern around clicks as elsewhere), AC01 phase-shift requests (6 in the
   whole call), DSP speed (0.9x to 1.25x gives the same error), and missed
   DAC samples (none).
@@ -246,6 +245,23 @@ They start with the data in both calls. So the Courier sends them whatever
 is at the other end: they are made in the emulated Courier, not by anything
 D-Modem does. The I-modem's own errors on the Courier's frames in the earlier
 pair runs fit this.
+
+### No overflow lines up with the clicks
+
+A call logged every ALU overflow (ADD/SUB and everything built on them,
+with and without OVM), every PREG shift by PM 1 or 4 that lost bits, and
+every SACH or SACL with a shift that lost bits, against the DAC sample
+count, with the DAC words recorded in the same call.
+
+- The ALU overflows (74,625) and PREG shift losses (60,638) all fall in the
+  first 20 s, in training. None happens in data, where the 1,586 clicks of
+  30 to 85 s are.
+- Shifted SACH stores lose bits 1.5 times per DAC sample all through the
+  data, at exactly the same rate around a click as anywhere else.
+
+So the click is not an overflow or saturation in the ALU, the product
+shifter or the store shifter. The near-full-scale sample is computed
+without overflowing, from inputs that are already wrong.
 
 ## What is still open
 
