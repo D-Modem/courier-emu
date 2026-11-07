@@ -97,7 +97,8 @@ SERVICE_INSTRUCTIONS = 64
 # resolution; widening it after off-hook changes the DTMF stream. Payload runs
 # retain the 64-instruction Python service interval because their synthetic
 # UART bit edge is finer again.
-NATIVE_ROM_SERVICE_INSTRUCTIONS = TIMER_POLL_INSTRUCTIONS
+_INT0_EXACT = os.environ.get('COURIER_INT0_EXACT', '0') != '0'  # local fix, opt-in
+NATIVE_ROM_SERVICE_INSTRUCTIONS = int(os.environ.get('COURIER_NATIVE_SERVICE', TIMER_POLL_INSTRUCTIONS))  # local test hack
 
 # The processor state carried across a turn-taking yield. Segment registers and
 # flags matter as much as the general set: the machine is resumed mid-routine.
@@ -2257,6 +2258,24 @@ class CourierMachine:
                 elif self._int0_pending is not None and interrupts_on:
                     service_after_tick(_uc, elapsed, interrupts_on)
                     service_tail_suffix(_uc, elapsed)
+            elif (
+                _INT0_EXACT
+                and self._int0_pending is None and not self._int0_in_service
+                and self.instructions - self._last_frame >= self.frame_instructions
+                and _uc.reg_read(UC_X86_REG_FLAGS) & 0x0200
+                and self._int0_vector_installed(_uc)
+            ):
+                # local fix: the DSP's frame edge when it is due, not at the
+                # next timer poll (1024 instructions apart, against a 1416
+                # instruction frame): edges taken late or merged left the
+                # supervisor too few lane services for x2's byte rate.
+                instructions = self.instructions
+                self._last_frame += self.frame_instructions
+                if instructions - self._last_frame >= self.frame_instructions:
+                    self._last_frame = instructions - self.frame_instructions
+                self._int0_in_service = True
+                dispatch_interrupt(INT0_VECTOR, software=False)
+                _uc.redirect_is_free = True
             elif (
                 (self._rom_tick or self._quad_modem_tick) and self.tick_ms
                 and self.instructions - self._last_tick >= self.tick_ms * INSTRUCTIONS_PER_MS

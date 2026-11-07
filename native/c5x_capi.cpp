@@ -1,3 +1,4 @@
+#include <cstdlib>
 // SPDX-License-Identifier: BSD-3-Clause
 #include "c5x_core.h"
 #include "bearer.hpp"
@@ -2629,7 +2630,10 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     uint32_t *r = cpu.regs;
     const uint32_t sp = r[REG_SP] & 0xFFFF, ss = r[REG_SS] & 0xFFFF;
     uint32_t slots[3];
-    if (timer_poll && s.int0_ok && !s.int0_in_service && (flags & WORKER_IF)
+    // local fix: COURIER_INT0_EXACT takes the frame edge when it is due,
+    // not only at a timer poll
+    static const bool int0_exact = getenv("COURIER_INT0_EXACT") && getenv("COURIER_INT0_EXACT")[0] != '0';
+    if ((timer_poll || int0_exact) && s.int0_ok && !s.int0_in_service && (flags & WORKER_IF)
         && total - s.last_frame >= int64_t(s.frame_instructions)) {
         if (!worker_readable(cpu, WORKER_INT0 * 4, 4)) { s.armed = 0; return 0; }
         const uint8_t *vector = cpu.memory + WORKER_INT0 * 4;
@@ -2802,8 +2806,9 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     // every access to one advances it first, and the harness made sure none
     // reaches a max count before elide_until.
     s.timer_poll_owed -= elapsed;
-    if (s.timer_poll_owed <= 0) {
+    if (s.timer_poll_owed <= 0)
         s.timer_poll_owed += int64_t(s.timer_poll_period);
+    {
         if (frame_edge) {
             s.last_frame += int64_t(s.frame_instructions);
             if (total - s.last_frame >= int64_t(s.frame_instructions))
