@@ -3,8 +3,8 @@
 In emulated x2 calls against D-Modem, the Courier loses whole bytes from
 frames it receives at the high x2 rates. At 32000 bit/s it loses none. This
 note gives the evidence that the cause is how the emulator times INT0 (the
-coprocessor frame edge), and describes a partial fix that is on this branch,
-switched off by default.
+coprocessor frame edge), and describes two partial fixes that are on this branch,
+both switched off by default.
 
 All of this is black-box work: captures of the emulator's own ports and of the
 line, with no change to the firmware.
@@ -83,14 +83,81 @@ With the fix, the service gaps cluster near one frame (1152 and 1408 bins)
 instead of on the 1024 grid. About a quarter are still 2 frames long (the 2688
 bin), and the bytes that are still lost follow those gaps.
 
+## The frame edge's source: the DSP's timer
+
+The CPU-side counter above is a stand-in. On the hardware, the edge has a
+source:
+
+- `docs/asic-pinout.md` traces DSP pin 122, `TOUT` (the C5x on-chip timer
+  output), back into the ASIC, the part that drives the CPU's interrupt lines.
+- The ISDN machine in this repository already raises its frame interrupt
+  (IRQ13) from `timer_expiries()`, one edge per TOUT pulse. The Quad routes its
+  C50's timer to its INT0 the same way.
+- Sampling the emulated C52's timer during an x2 call (`COURIER_TOUT_LOG`)
+  gives 3,526 pulses per 5,000,000 harness instructions all through the call.
+  At the 20.16 MHz board's 3,399,663 instructions a second that is 2,397 Hz.
+  8,400 CLKOUT cycles at 20.16 MHz is exactly 2,400 Hz. The live board's INT0
+  was counted at 2,401 Hz.
+
+So INT0 is very likely TOUT. `COURIER_INT0_TOUT=1` models it that way:
+
+- Each new TOUT pulse latches one request, as the 80186's edge-triggered
+  request bit does. It is latched whether or not IF is set or INT0 is in
+  service, and a second pulse before it is taken merges with the first.
+- The request is taken at the first service step where IF is set and INT0 is
+  not in service. This happens in the Python paths
+  (`Machine._int0_frame_due` / `_int0_frame_taken`) and in the native worker,
+  which gains `int0_tout`, `tout_seen` and `int0_request` fields.
+- Without the setting, the edge free-runs on the instruction count as before.
+
+The old model also lost edges in a way the hardware does not: it only latched
+an edge while IF was set, and the catch-up rule then threw the debt away.
+
+### Results with the DSP timer as the source
+
+| Call | Line loss | Service step | Lines through | End |
+|---|---|---|---|---|
+| Baseline | 0 dB | 1024 | 30 | Courier cleared down at 94 s |
+| `INT0_TOUT` | 0 dB | 1024 | 50 | held to hangup |
+| `INT0_TOUT` | 0 dB | 256 | **93** | held to hangup |
+| `INT0_TOUT` | 0 dB | 128 | 87 | held to hangup |
+| `INT0_TOUT` | 0 dB | 512 | — | carrier lost at 34 s |
+| `INT0_TOUT` | 6 dB | 256 | — | training failed (twice, two seeds) |
+| `INT0_TOUT` | 9 dB | 256 | — | carrier lost at 31 s |
+
+At 0 dB and a step of 256, 207 of 290 frames arrived whole. Fewer frames were
+sent than in the baseline because fewer had to be resent. A step of 128 now
+works, where with the counter it made the Courier clear down.
+
+### A second effect: the Courier's own transmitter
+
+The losses at 6 dB and 9 dB are not on the downstream side. D-Modem's
+receiver reports the Courier's upstream V.34 signal quality as its
+equalizer's MSE at the start of data:
+
+| Run | Upstream MSE |
+|---|---|
+| Baseline, 0 dB and 6 dB | 0.025 |
+| `INT0_TOUT`, step 512 | 0.025 |
+| `INT0_EXACT` or `INT0_TOUT`, steps 128–1024 | 0.11–0.14 |
+
+The MSE is already high during training, before any user data flows. So the
+more frame edges the CPU actually takes, the worse the Courier's transmitted
+signal is. The baseline takes about two thirds of them. That is most likely a
+second timing fault, between the DSP and its codec or the line resampler,
+which a full-rate INT0 exposes. It is probably also the cause of the error
+bursts seen upstream. With 6 dB of loss the worse signal no longer trains.
+
 ## What is still open
 
-- Why some edges are still missed with the fix. The likely causes are an
-  edge that falls due while the previous INT0 is still in service, or while
-  IF is clear, and is then only taken after the next service step. The real
-  CPU latches the edge and takes it straight after the IRET or STI.
-- Why a 128-instruction service step breaks the call, since a correct model
-  should not depend on it.
+- Why a full-rate INT0 degrades the Courier's upstream signal. Next to check:
+  whether the codec and line timing are clocked from CPU instructions rather
+  than DSP cycles (`DspBridge.clock_x86_fast`, `codec_instructions`), and
+  whether the DSP's cycle debt moves with each CPU access to its ports.
+
+- Delivery still waits for the next service step (256 instructions at best).
+  The real CPU takes a latched request at the next instruction boundary after
+  IRET, EOI or STI.
 - The error bursts on the Courier's sending side, which may have a similar
   cause on the transmit banks.
 
@@ -99,6 +166,8 @@ bin), and the bytes that are still lost follow those gaps.
 These are only for experiments and are all off by default:
 
 - `COURIER_TIMER_POLL`: the timer poll stride (default 1024).
+- `COURIER_TOUT_LOG=<file>`: appends the DSP timer's pulse count every
+  200,000 instructions.
 - `COURIER_CPI`: the 186 boards' cycles per instruction (default 5.93).
 - `COURIER_BEARER_ALAW`: an A-law line.
 - `COURIER_BEARER_DOWN_LOSS_DB`, `COURIER_BEARER_UP_LOSS_DB`,
