@@ -93,7 +93,7 @@ INT1_CALIBRATION_MS = 7
 # Timers are advanced on register access and on this stride, which has to be
 # short enough that a max count is never missed: the shortest period either
 # firmware programs is timer 1's 54,166 ticks, about 36,500 instructions.
-TIMER_POLL_INSTRUCTIONS = 1_024
+TIMER_POLL_INSTRUCTIONS = int(__import__("os").environ.get("COURIER_TIMER_POLL", "1024"))  # local test hack
 
 # The timers count CLKOUT/4, and the harness's instruction rate is that same
 # CLKOUT divided by the cycles an instruction takes. Only the ratio of the two

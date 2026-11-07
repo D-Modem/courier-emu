@@ -102,6 +102,7 @@ def analog(args):
             '--tick-ms','5','--at','ATX1S27=1S54=0S58=48&A3&B1Q0&U26&N39DT5551234',
             '--serial-input-after','5000000','--summary','--line-record',str(out/'analog'),
             '--dsp-trace-range','b1a1:b1c2','--dsp-write-watch','039f']
+        command += os.environ.get('COURIER_EXTRA_ARGS','').split()  # local test hack
         for a in ('039f','03a4','03a5','03c8','006f','0078','0340'):
             command += ['--dsp-peek',a]
         env=os.environ.copy();env['COURIER_LINE_DIGITAL']='1';env['COURIER_DSP_TRACE_LIMIT']='10000'
@@ -115,12 +116,12 @@ def analog(args):
                 if not answered and line.peer_call_state>=CALL_RINGING:
                     answered=True;peer.start()
                 through=answered and line.peer_call_state<CALL_CLEARED
-                samples=[codec._clip(ulaw_to_linear(v)*codec.into_courier) for v in tx] if through else [0]*160
+                samples=[codec._clip(ulaw_to_linear(v)*codec.into_courier*_bl._DOWN_G+(_bl._IMP_RNG.gauss(0,_bl._DOWN_N) if _bl._DOWN_N else 0)) for v in tx] if through else [0]*160
                 line.exchange(LineFrame(line.frames*160*2500,answered,False,samples,
                                         CALL_ANSWERED if through else line.peer_call_state))
                 incoming=line.receive_audio()
                 if through:
-                    rx=bytes(linear_to_ulaw(codec._clip(v*codec.from_line)) for v in incoming)
+                    rx=bytes(linear_to_ulaw(codec._clip((v*_bl._UP_G+(_bl._IMP_RNG.gauss(0,_bl._UP_N) if _bl._UP_N else 0))*codec.from_line)) for v in incoming)
                     tx=peer.exchange(rx)
                 if line.peer_call_state==CALL_CLEARED: break
         finally:
@@ -186,6 +187,8 @@ def imodem(args):
     (args.output/'call.json').write_text(json.dumps({'type':'imodem','engine':peer.status(),
         'nvram':str(args.nvram),'settings':options.settings,'instructions':args.instructions},indent=2)+'\n')
 
+
+import courier_emu.bearer_line as _bl  # local test hack: line loss
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
