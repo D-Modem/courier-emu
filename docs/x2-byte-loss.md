@@ -226,6 +226,27 @@ effect at once, which is what the core does. None of them is the click. The
 serial port's DXR and the AC01 path also read as the spec and datasheet
 describe.
 
+### The click is there against the emulated I-modem too
+
+The same check against USR's own server: the emulated Courier calling the
+emulated I-modem (`tools/probe_imodem_analog_pair.py`, the 53333 setup in
+`docs/imodem-analog-x2-20261003.md`; it connected at 48000/x2), with the
+Courier's DAC words recorded at its codec. The click carries most of its
+energy above 3.9 kHz, where the Courier's upstream has little, so a
+detector on the 4.1 kHz high-passed DAC stream (6-sample power over 10,000
+times its median) finds it: on the fitted D-Modem call it found 116 of the
+132 clicks the fit found, with 4 extra events.
+
+| Call | Clicks a second in data | Same shape (correlation over 0.8) | Signs |
+|---|---|---|---|
+| Courier to D-Modem | about 28 | 98% | 1169 + / 1172 - |
+| Courier to I-modem | about 32 | 98% | 1353 + / 1369 - |
+
+They start with the data in both calls. So the Courier sends them whatever
+is at the other end: they are made in the emulated Courier, not by anything
+D-Modem does. The I-modem's own errors on the Courier's frames in the earlier
+pair runs fit this.
+
 ## What is still open
 
 - The upstream clicks: which emulated instruction makes the saturated
