@@ -129,31 +129,31 @@ At 0 dB and a step of 256, 207 of 290 frames arrived whole. Fewer frames were
 sent than in the baseline because fewer had to be resent. A step of 128 now
 works, where with the counter it made the Courier clear down.
 
-### A second effect: the Courier's own transmitter
+### The 6 dB and 9 dB failures
 
-The losses at 6 dB and 9 dB are not on the downstream side. D-Modem's
-receiver reports the Courier's upstream V.34 signal quality as its
-equalizer's MSE at the start of data:
+An earlier version of this note blamed them on the Courier's upstream signal
+getting worse under a full-rate INT0. That came from a single MSE reading per
+call and does not hold up. Over whole calls, D-Modem's equalizer MSE on the
+Courier's upstream data is the same in every mode (medians 0.15–0.18 for the
+baseline, `INT0_EXACT` and `INT0_TOUT`, at 0 dB and 6 dB). The DSP also never
+misses a DAC sample in either mode (a counter on `codec_frame`: 19 missed in
+the first 80,000 frames, all before the call, and none after).
 
-| Run | Upstream MSE |
-|---|---|
-| Baseline, 0 dB and 6 dB | 0.025 |
-| `INT0_TOUT`, step 512 | 0.025 |
-| `INT0_EXACT` or `INT0_TOUT`, steps 128–1024 | 0.11–0.14 |
-
-The MSE is already high during training, before any user data flows. So the
-more frame edges the CPU actually takes, the worse the Courier's transmitted
-signal is. The baseline takes about two thirds of them. That is most likely a
-second timing fault, between the DSP and its codec or the line resampler,
-which a full-rate INT0 exposes. It is probably also the cause of the error
-bursts seen upstream. With 6 dB of loss the worse signal no longer trains.
+What all the x2 calls share is a poor upstream in data mode: the MSE is about
+0.0002 during V.34 training and 0.1–0.2 once data starts, and D-Modem sees
+hundreds of FCS errors and bit-misaligned HDLC frames. The calls that fail at
+6 dB and 9 dB fail in V.42 setup under those errors. Whether a call gets
+through setup depends on where the errors land, which any timing change moves.
+So these failures are the upstream error bursts, not a new effect of
+`INT0_TOUT`.
 
 ## What is still open
 
-- Why a full-rate INT0 degrades the Courier's upstream signal. Next to check:
-  whether the codec and line timing are clocked from CPU instructions rather
-  than DSP cycles (`DspBridge.clock_x86_fast`, `codec_instructions`), and
-  whether the DSP's cycle debt moves with each CPU access to its ports.
+- The upstream error bursts: why the Courier's V.34 upstream is clean in
+  training and poor in data mode. Training has no precoding and data mode
+  does, so the precoder that D-Modem asks for in its MP, and how each side
+  applies it, is the first thing to check. That would be on D-Modem's side,
+  not the emulator's.
 
 - Delivery still waits for the next service step (256 instructions at best).
   The real CPU takes a latched request at the next instruction boundary after
