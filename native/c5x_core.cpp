@@ -4,9 +4,11 @@
 #include "c5x_core.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -1430,8 +1432,62 @@ uint16_t C5xCore::cpuregs_r(uint16_t offset)
     }
 }
 
+static bool mmr_latency_on()
+{
+    static const bool on = [] {
+        const char *v = getenv("COURIER_C5X_MMR_LATENCY");
+        return v && *v && *v != '0';
+    }();
+    return on;
+}
+
+// SPRU056D Table 7-10: words after the writing instruction that still see
+// the old value (0: no latency).
+static int mmr_latency_words_all(uint16_t offset);
+// COURIER_C5X_MMR_LATENCY=1 models them all; a list of hex offsets
+// (for example 0d,0e) models only those.
+static int mmr_latency_words(uint16_t offset)
+{
+    static const auto chosen = [] {
+        std::array<bool, 0x60> set{};
+        const char *v = getenv("COURIER_C5X_MMR_LATENCY");
+        if (!v || !*v || (v[0] == '1' && !v[1])) { set.fill(true); return set; }
+        for (const char *q = v; *q;) {
+            char *end;
+            const unsigned long o = strtoul(q, &end, 16);
+            if (end == q) break;
+            if (o < set.size()) set[o] = true;
+            q = *end ? end + 1 : end;
+        }
+        return set;
+    }();
+    return offset < chosen.size() && chosen[offset] ? mmr_latency_words_all(offset) : 0;
+}
+
+static int mmr_latency_words_all(uint16_t offset)
+{
+    switch (offset) {
+    case 0x05: case 0x0d: case 0x0e: case 0x1f: case 0x28: case 0x29: case 0x2a:
+        return 1;   // GREG, TREG1, TREG2, BMAR, PDWSR, IOWSR, CWSR
+    case 0x07: case 0x10: case 0x11: case 0x12: case 0x13: case 0x14: case 0x15:
+    case 0x16: case 0x17: case 0x18: case 0x19: case 0x1a: case 0x1b: case 0x1c:
+    case 0x1d: case 0x1e:
+        return 2;   // PMST, AR0-7, INDX, ARCR, CBSR/CBER 1 and 2, CBCR
+    default:
+        return 0;
+    }
+}
+
 void C5xCore::cpuregs_w(uint16_t offset, uint16_t value)
 {
+    if (m_in_execute && mmr_latency_on()) {
+        if (const int words = mmr_latency_words(offset)) {
+            if (m_mmr_pending_n == int(std::size(m_mmr_pending))) mmr_land(0);
+            m_mmr_pending[m_mmr_pending_n++] = {offset, value, words, true};
+            ++m_mmr_deferred;
+            return;
+        }
+    }
     if (int(offset) == m_trace_register && m_register_trace.size() < m_trace_capacity)
         m_register_trace.push_back({m_cycles, uint16_t(m_pc - 1), value});
     switch (offset) {
@@ -1524,10 +1580,49 @@ void C5xCore::cpuregs_w(uint16_t offset, uint16_t value)
 void C5xCore::op_group_be() { s_opcode_table_be[m_op & 0xff](this); }
 void C5xCore::op_group_bf() { s_opcode_table_bf[m_op & 0xff](this); }
 
+void C5xCore::mmr_land(int index)
+{
+    const MmrPending p = m_mmr_pending[index];
+    for (int i = index + 1; i < m_mmr_pending_n; ++i) m_mmr_pending[i - 1] = m_mmr_pending[i];
+    --m_mmr_pending_n;
+    const bool was = m_in_execute;
+    m_in_execute = false;
+    cpuregs_w(p.offset, p.value);
+    m_in_execute = was;
+}
+
+void C5xCore::mmr_flush()
+{
+    while (m_mmr_pending_n) mmr_land(0);
+}
+
 void C5xCore::execute_opcode()
 {
     m_condition_start = condition_state();
+    if (!m_mmr_pending_n) {
+        if (!mmr_latency_on()) {
+            s_opcode_table[m_op >> 8].plain(this);
+            return;
+        }
+    } else {
+        for (int i = 0; i < m_mmr_pending_n;)
+            if (m_mmr_pending[i].words <= 0) mmr_land(i); else ++i;
+        if (m_mmr_pending_n) m_condition_start = condition_state();
+    }
+    const uint16_t pc = uint16_t(m_pc);
+    m_in_execute = true;
     s_opcode_table[m_op >> 8].plain(this);
+    m_in_execute = false;
+    const uint16_t delta = uint16_t(m_pc - pc);
+    // m_pc already points past the first word; a second word moved it once more.
+    const int words = delta == 1 ? 2 : 1;
+    // A branch, call or return flushes the pipeline, and the write lands
+    // in the cycles that takes.
+    if (delta > 1) { mmr_flush(); return; }
+    for (int i = 0; i < m_mmr_pending_n; ++i) {
+        if (m_mmr_pending[i].fresh) m_mmr_pending[i].fresh = false;
+        else m_mmr_pending[i].words -= words;
+    }
 }
 
 void C5xCore::delay_slot(uint16_t startpc)
@@ -1576,6 +1671,7 @@ bool C5xCore::check_interrupts()
     // has always refused for the same reason.
     if (m_in_delay_slot || m_repeat_active || m_st0.intm || !enabled) return false;
     for (unsigned irq = 0; irq < 16; ++irq) if (enabled & (1u << irq)) {
+        mmr_flush();
         m_st0.intm = 1; PUSH_STACK(m_pc);
         uint16_t vector = m_interrupt_vectors[irq];
         m_pc = vector != 0xffff
@@ -1952,7 +2048,8 @@ inline __attribute__((always_inline)) void C5xCore::step_inline()
         if (step_front_rare()) return;
     } else {
         step_begin();
-        s_opcode_table[m_op >> 8].plain(this);
+        if (__builtin_expect(mmr_latency_on(), 0)) execute_opcode();
+        else s_opcode_table[m_op >> 8].plain(this);
         step_repeat_edge();
     }
     step_retire();

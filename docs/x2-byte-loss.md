@@ -207,10 +207,24 @@ a switch that clears it either way, an x2 call was identical, and a counter
 found no BCND on OV/NOV at all in a call, so it is not the cause. The AC01
 saw 22 control frames in a whole call, so those are not either.
 
-So the click is not in the plain arithmetic. What is left in the core is
-timing: memory-mapped register writes that take effect later on the chip
-than in the core (SPRU056D chapter 7's pipeline conflicts), and the serial
-port.
+So the click is not in the plain arithmetic.
+
+### Register write latencies
+
+SPRU056D Table 7-10 lists 15 registers whose memory-mapped writes (SAMM,
+SPLK, LMMR and the like) land one or two instruction words late. The core
+applies all of them at once. `COURIER_C5X_MMR_LATENCY` (off by default)
+models them: `1` for all, or a list of hex offsets such as `0d,0e`. A write
+lands after that many words, at once on a branch, and before an interrupt
+is taken.
+
+With TREG1/TREG2, the ARs, ARCR, BMAR, the circular buffer registers, PMST,
+GREG and the wait-state registers, the x2 call is bit-for-bit the same as
+without, so the firmware never uses one of them inside its latency. With
+INDX the Courier never trains, so the firmware needs an INDX write to take
+effect at once, which is what the core does. None of them is the click. The
+serial port's DXR and the AC01 path also read as the spec and datasheet
+describe.
 
 ## What is still open
 
