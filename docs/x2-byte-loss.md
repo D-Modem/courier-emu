@@ -189,6 +189,29 @@ energies, so the emulator's divide step (`SUBC`), `NORM` and the shift and
 product modes are where to look. Checking them against SPRU056D with unit
 tests needs no firmware.
 
+### The arithmetic matches SPRU056D
+
+`tests/test_c5x_arith_fuzz.py` checks 50 of the core's ALU, shift, store and
+multiply instructions (ADD, SUB, SUBC, NORM, the shifts, SACH/SACL, MPY,
+MAC-style product accumulation and the PM shifts, among others) against a
+reference model written from SPRU056D's Execution and Status Bits sections:
+150 random cases each, with SXM, OVM, C and PM random and edge operands. All
+match, for ACC, ACCB, PREG, OV, C and TC. Read against the spec and found
+consistent: indirect and circular addressing, the 11 interrupt shadow
+registers, XC's one-cycle-early condition, RPT and RPTB, and the PLU and BIT
+instructions.
+
+One difference from the spec's wording: SPRU056D says a BCND or BCNDD on
+OV/NOV clears OV, and the core clears it only when the branch is taken. With
+a switch that clears it either way, an x2 call was identical, and a counter
+found no BCND on OV/NOV at all in a call, so it is not the cause. The AC01
+saw 22 control frames in a whole call, so those are not either.
+
+So the click is not in the plain arithmetic. What is left in the core is
+timing: memory-mapped register writes that take effect later on the chip
+than in the core (SPRU056D chapter 7's pipeline conflicts), and the serial
+port.
+
 ## What is still open
 
 - The upstream clicks: which emulated instruction makes the saturated
