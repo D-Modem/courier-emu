@@ -147,13 +147,45 @@ through setup depends on where the errors land, which any timing change moves.
 So these failures are the upstream error bursts, not a new effect of
 `INT0_TOUT`.
 
+## The upstream error bursts come from the DSP's own output
+
+Black-box measurements of one 0 dB call (Courier upstream at 24000 bit/s):
+
+- D-Modem's decisions, logged per symbol: about 25 bursts a second, median
+  17 symbols long, error equal in every direction. Outside them the error is
+  0.075 of the point spacing (clean). The bursts do not line up with the
+  line's 20 ms frames.
+- The Courier's raw DAC words, recorded at 9,600 Hz in `codec_frame`, match
+  what D-Modem receives to 31 dB after a fitted filter. So the line path
+  (resampler, gain, mu-law) adds almost nothing. The bursts are already in
+  the DAC stream.
+- Fitting the DAC stream from the decided symbols leaves, at every burst, the
+  same 5-sample click: about -6300, +5200, -10600, +5700, -7900 (DAC units,
+  after the AC01's -6 dB output gain), with either sign (50 one way, 43 the
+  other) and a correlation of 0.87 with the template. At its centre the DAC
+  word is near -16,384, i.e. the DSP's 16-bit word near full scale.
+- Only 7% of a click's energy is in 300-3600 Hz; most is at DC and above
+  3.6 kHz. A 300-3500 Hz channel band-pass on the upstream does not help,
+  because it also cuts the 3200-baud high carrier.
+- Not the cause: accumulator overflow (one ADD/SUB overflow in the whole
+  call, none near a click), the DSP's interrupts (the same XINT and TINT
+  pattern around clicks as elsewhere), AC01 phase-shift requests (6 in the
+  whole call), DSP speed (0.9x to 1.25x gives the same error), and missed
+  DAC samples (none).
+
+A fixed click of either sign, near full scale, is what one intermediate
+sample saturated to plus or minus full scale would give after the
+transmitter's last filter. Earlier analysis found the bursts mostly in the
+quieter frames. That fits a normalisation or division that blows up for small
+energies, so the emulator's divide step (`SUBC`), `NORM` and the shift and
+product modes are where to look. Checking them against SPRU056D with unit
+tests needs no firmware.
+
 ## What is still open
 
-- The upstream error bursts: why the Courier's V.34 upstream is clean in
-  training and poor in data mode. Training has no precoding and data mode
-  does, so the precoder that D-Modem asks for in its MP, and how each side
-  applies it, is the first thing to check. That would be on D-Modem's side,
-  not the emulator's.
+- The upstream clicks: which emulated instruction makes the saturated
+  sample (see above). D-Modem asks for no precoding in x2, and its non-linear
+  decoding and trellis settings are not the cause.
 
 - Delivery still waits for the next service step (256 instructions at best).
   The real CPU takes a latched request at the next instruction boundary after
