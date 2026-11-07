@@ -147,6 +147,14 @@ through setup depends on where the errors land, which any timing change moves.
 So these failures are the upstream error bursts, not a new effect of
 `INT0_TOUT`.
 
+Two of them were on D-Modem's side. From 8.5 to 10 dB a burst hit the
+Courier's E after its renegotiation MP', D-Modem missed E and dropped the
+call 5 s later. D-Modem now accepts E with up to 3 bits in error, and with
+`INT0_TOUT` and a step of 256 the calls at 8.5, 9, 9.5 and 10 dB hold to
+hangup (92 to 98 lines). At 6 dB V.42 is detected but no XID frame gets
+through the upstream errors in 18 s, and the Courier then gives up (its
+renegotiation MP asks for downstream index 0 and it hangs up).
+
 ## The upstream error bursts come from the DSP's own output
 
 Black-box measurements of one 0 dB call (Courier upstream at 24000 bit/s):
