@@ -1,3 +1,4 @@
+#include <cstdlib>
 // SPDX-License-Identifier: BSD-3-Clause
 #include "c5x_core.h"
 #include "bearer.hpp"
@@ -2428,6 +2429,9 @@ struct WorkerPollState {
     uint64_t tx_record_count, rx_record_count, rx_log_count;
     int16_t tx_record[4096], rx_record[4096], rx_log[4096];
     char error[512];
+    // COURIER_INT0_TOUT: the frame edge is the DSP timer's output, one
+    // latched request for each pulse (Machine._int0_frame_due).
+    uint64_t int0_tout, tout_seen, int0_request;
 };
 
 constexpr uint32_t WORKER_IF = 0x0200;
@@ -2629,8 +2633,20 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     uint32_t *r = cpu.regs;
     const uint32_t sp = r[REG_SP] & 0xFFFF, ss = r[REG_SS] & 0xFFFF;
     uint32_t slots[3];
-    if (timer_poll && s.int0_ok && !s.int0_in_service && (flags & WORKER_IF)
-        && total - s.last_frame >= int64_t(s.frame_instructions)) {
+    // local fix: COURIER_INT0_EXACT takes the frame edge when it is due,
+    // not only at a timer poll
+    static const bool int0_exact = getenv("COURIER_INT0_EXACT") && getenv("COURIER_INT0_EXACT")[0] != '0';
+    if (s.int0_tout) {
+        const uint64_t expiries = core->timer_expiries();
+        if (expiries != s.tout_seen) {
+            if (expiries > s.tout_seen) s.int0_request = 1;
+            s.tout_seen = expiries;
+        }
+    }
+    const bool frame_due = s.int0_tout ? s.int0_request != 0
+        : total - s.last_frame >= int64_t(s.frame_instructions);
+    if ((timer_poll || int0_exact || s.int0_tout) && s.int0_ok && !s.int0_in_service
+        && (flags & WORKER_IF) && frame_due) {
         if (!worker_readable(cpu, WORKER_INT0 * 4, 4)) { s.armed = 0; return 0; }
         const uint8_t *vector = cpu.memory + WORKER_INT0 * 4;
         if (vector[0] | vector[1] | vector[2] | vector[3]) {
@@ -2802,12 +2818,17 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     // every access to one advances it first, and the harness made sure none
     // reaches a max count before elide_until.
     s.timer_poll_owed -= elapsed;
-    if (s.timer_poll_owed <= 0) {
+    if (s.timer_poll_owed <= 0)
         s.timer_poll_owed += int64_t(s.timer_poll_period);
+    {
         if (frame_edge) {
-            s.last_frame += int64_t(s.frame_instructions);
-            if (total - s.last_frame >= int64_t(s.frame_instructions))
-                s.last_frame = total - int64_t(s.frame_instructions);
+            if (s.int0_tout) {
+                s.int0_request = 0;
+            } else {
+                s.last_frame += int64_t(s.frame_instructions);
+                if (total - s.last_frame >= int64_t(s.frame_instructions))
+                    s.last_frame = total - int64_t(s.frame_instructions);
+            }
             s.int0_in_service = 1;
             // dispatch_interrupt(INT0_VECTOR, software=False)
             const uint32_t flags16 = r[REG_FLAGS] & 0xFFFF;

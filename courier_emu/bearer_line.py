@@ -37,7 +37,18 @@ from .line import (
 )
 from .daa import RING_OFF_MS, RING_ON_MS
 from .pit import INSTRUCTIONS_PER_SECOND
-from .sip import linear_to_ulaw, ulaw_to_linear
+from .sip import linear_to_ulaw, ulaw_to_linear, linear_to_alaw, alaw_to_linear
+import os as _os
+if _os.environ.get('COURIER_BEARER_ALAW'):  # local test hack: an A-law line
+    linear_to_ulaw, ulaw_to_linear = linear_to_alaw, alaw_to_linear
+# local test hack: line loss (dB) and white noise (rms, codec units) on the
+# analogue side, each direction
+import random as _random
+_IMP_RNG = _random.Random(int(_os.environ.get('COURIER_BEARER_SEED', '1')))
+_DOWN_G = 10 ** (-float(_os.environ.get('COURIER_BEARER_DOWN_LOSS_DB', '0')) / 20)
+_UP_G = 10 ** (-float(_os.environ.get('COURIER_BEARER_UP_LOSS_DB', '0')) / 20)
+_DOWN_N = float(_os.environ.get('COURIER_BEARER_DOWN_NOISE', '0'))
+_UP_N = float(_os.environ.get('COURIER_BEARER_UP_NOISE', '0'))
 
 LINE_SAMPLE_RATE = 8_000
 CPU_INSTRUCTIONS_PER_SAMPLE = INSTRUCTIONS_PER_SECOND // LINE_SAMPLE_RATE
@@ -232,7 +243,8 @@ class BearerLineLink:
             * CPU_INSTRUCTIONS_PER_SAMPLE,
             off_hook=off_hook,
             ringing=ringing,
-            samples=([self._clip(ulaw_to_linear(value) * self.into_courier)
+            samples=([self._clip(ulaw_to_linear(value) * self.into_courier * _DOWN_G
+                                  + (_IMP_RNG.gauss(0, _DOWN_N) if _DOWN_N else 0))
                       for value in octets] if through
                      else [0] * len(octets)),
             call_state=state,
@@ -253,7 +265,7 @@ class BearerLineLink:
             self._primed = True
         if through and channel in (1, 2) and incoming:
             dsc.queue_bearer(channel, bytes(
-                linear_to_ulaw(self._clip(sample * self.from_line))
+                linear_to_ulaw(self._clip((sample * _UP_G + (_IMP_RNG.gauss(0, _UP_N) if _UP_N else 0)) * self.from_line))
                 for sample in incoming))
             self.octets_from_line += len(incoming)
 

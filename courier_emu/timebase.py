@@ -113,10 +113,13 @@ class Timebase:
 # C52 from it. Stated once because it is the one figure the two boards share.
 ASIC_DSP_CLOCK_HZ = 40_320_000  # inferred, not measured: see C5X_CLOCK_HZ
 
+import os as _os  # local test hack: COURIER_CPI overrides the 186 boards' cycles an instruction
+_CPI = float(_os.environ.get("COURIER_CPI", "5.93"))
+
 COURIER_20MHZ = Timebase(
     name="courier-20.16",
     cpu_clock_hz=20_160_000,
-    cycles_per_instruction=5.93,
+    cycles_per_instruction=_CPI,
     timer_divisor=4,
     dsp_clock_hz=ASIC_DSP_CLOCK_HZ,
     timer0_compare=0x6270,
@@ -125,7 +128,7 @@ COURIER_20MHZ = Timebase(
 COURIER_25MHZ = Timebase(
     name="courier-25.8048",
     cpu_clock_hz=25_804_800,
-    cycles_per_instruction=5.93,
+    cycles_per_instruction=_CPI,
     timer_divisor=4,
     dsp_clock_hz=ASIC_DSP_CLOCK_HZ,
     timer0_compare=0x7E00,

@@ -532,6 +532,16 @@ private:
             | uint64_t((m_st0.ov != 0) | (m_st1.c != 0) << 1 | (m_st1.tc != 0) << 2) << 32;
     }
     void execute_opcode();
+    // Experiment, off unless COURIER_C5X_MMR_LATENCY is set: SPRU056D
+    // Table 7-10's memory-mapped register write latencies. A write through
+    // a memory-mapped address lands that many instruction words later.
+    struct MmrPending { uint16_t offset, value; int words; bool fresh; };
+    MmrPending m_mmr_pending[8]{};
+    int m_mmr_pending_n = 0;
+    bool m_in_execute = false;
+    uint64_t m_mmr_deferred = 0;
+    void mmr_flush();
+    void mmr_land(int index);
     bool step_front_rare();
     void step_inline();
     bool step_is_rare() const;

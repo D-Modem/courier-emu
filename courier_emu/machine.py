@@ -97,7 +97,17 @@ SERVICE_INSTRUCTIONS = 64
 # resolution; widening it after off-hook changes the DTMF stream. Payload runs
 # retain the 64-instruction Python service interval because their synthetic
 # UART bit edge is finer again.
-NATIVE_ROM_SERVICE_INSTRUCTIONS = TIMER_POLL_INSTRUCTIONS
+_INT0_EXACT = os.environ.get('COURIER_INT0_EXACT', '0') != '0'  # local fix, opt-in
+_TOUT_LOG = os.environ.get('COURIER_TOUT_LOG')  # diagnostic: sample the DSP timer
+# COURIER_INT0_TOUT=1 takes the frame edge from its source, the DSP's on-chip
+# timer (TOUT, which the ASIC routes to the CPU): one latched request for each
+# TOUT pulse, as the 80186's edge-triggered request bit holds it, taken at the
+# first service step that IF and the in-service bit allow. In a call the C52
+# programs that timer to 2,400 Hz in its own clock, which is the 2,401 Hz the
+# live board's INT0 was counted at. Without it the edge free-runs on the CPU's
+# instruction count.
+_INT0_TOUT = os.environ.get('COURIER_INT0_TOUT', '0') != '0'
+NATIVE_ROM_SERVICE_INSTRUCTIONS = int(os.environ.get('COURIER_NATIVE_SERVICE', TIMER_POLL_INSTRUCTIONS))  # local test hack
 
 # The processor state carried across a turn-taking yield. Segment registers and
 # flags matter as much as the general set: the machine is resumed mid-routine.
@@ -704,6 +714,9 @@ class CourierMachine:
             # legacy DMA-equipped controller's bit 6. The 2.3.x tick uses it.
             self.timers.controller = EbInterruptController()
         self._int0_in_service = False
+        self._tout_log_next = 0
+        self._tout_seen = 0
+        self._int0_request = False
         self._interrupt_stack: list[int] = []
         self._timer_interrupt_pending: int | None = None
         self._external_interrupt_pending: int | None = None
@@ -849,6 +862,48 @@ class CourierMachine:
             self.instructions >= DTE_READY_INSTRUCTIONS
             and (bool(self.serial_rx) or self.uart is not None and self.uart.received > 0)
         )
+
+    def _int0_tout_core(self) -> Any:
+        """The DSP core whose timer output is the frame edge, if it is used."""
+        if not _INT0_TOUT or self.dsp_bridge is None:
+            return None
+        return getattr(self.dsp_bridge, "core", None)
+
+    def _int0_frame_due(self, instructions: int) -> bool:
+        """Whether a frame edge is waiting to be taken."""
+        core = self._int0_tout_core()
+        if core is None:
+            return instructions - self._last_frame >= self.frame_instructions
+        expiries = core.timer_expiries()
+        if expiries != self._tout_seen:
+            # A pulse since the last look latches the request; a count that
+            # went back is a fresh core after a reboot.
+            self._int0_request = self._int0_request or expiries > self._tout_seen
+            self._tout_seen = expiries
+        return self._int0_request
+
+    def _int0_frame_taken(self, instructions: int) -> None:
+        """Clear the edge just handed to the CPU."""
+        if self._int0_tout_core() is not None:
+            self._int0_request = False
+            return
+        # Advance the phase by exactly one period, and drop a debt of more
+        # than one: the controller latches one pending edge.
+        self._last_frame += self.frame_instructions
+        if instructions - self._last_frame >= self.frame_instructions:
+            self._last_frame = instructions - self.frame_instructions
+
+    def _tout_log_sample(self, instructions: int) -> None:
+        """Append the DSP timer's state and pulse count to COURIER_TOUT_LOG."""
+        self._tout_log_next = instructions + 200_000
+        core = getattr(self.dsp_bridge, "core", None) if self.dsp_bridge else None
+        if core is None:
+            return
+        line = "%d %d %d %04x %04x %04x %d\n" % (
+            instructions, core.timer_expiries(), 0,
+            core.data(0x24), core.data(0x25), core.data(0x26), getattr(core, "cycles", 0) or 0)
+        with open(_TOUT_LOG, "a") as handle:
+            handle.write(line)
 
     def _int0_vector_installed(self, uc: Any) -> bool:
         """Whether the firmware has put a handler behind the frame edge.
@@ -1911,7 +1966,7 @@ class CourierMachine:
                 and self._int0_pending is None
                 and not self._int0_in_service
                 and interrupts_on
-                and self.instructions - self._last_frame >= self.frame_instructions
+                and self._int0_frame_due(self.instructions)
                 and self._int0_vector_installed(_uc)
             ):
                 # Advance the phase by exactly one period, the way the
@@ -1930,9 +1985,7 @@ class CourierMachine:
                 # latches one pending edge, and `_int0_pending` is that one
                 # slot. Interrupts being off for a while loses edges on the
                 # board too; it does not bank them.
-                self._last_frame += self.frame_instructions
-                if self.instructions - self._last_frame >= self.frame_instructions:
-                    self._last_frame = self.instructions - self.frame_instructions
+                self._int0_frame_taken(self.instructions)
                 self._int0_pending = INT0_VECTOR
             if interrupts_on and (
                 self._int0_pending is not None
@@ -2221,6 +2274,8 @@ class CourierMachine:
             if self._timer_poll_owed <= 0:
                 self._timer_poll_owed += TIMER_POLL_INSTRUCTIONS
                 instructions = self.instructions
+                if _TOUT_LOG is not None and instructions >= self._tout_log_next:
+                    self._tout_log_sample(instructions)
                 self.timers.tick(instructions)
                 interrupts_on = bool(_uc.reg_read(UC_X86_REG_FLAGS) & 0x0200)
                 tick_due = (
@@ -2244,19 +2299,32 @@ class CourierMachine:
                 elif (
                     self._int0_pending is None and not self._int0_in_service
                     and interrupts_on
-                    and instructions - self._last_frame >= self.frame_instructions
+                    and self._int0_frame_due(instructions)
                     and self._int0_vector_installed(_uc)
                 ):
                     # The DSP's frame edge, and nothing else: take it now.
-                    self._last_frame += self.frame_instructions
-                    if instructions - self._last_frame >= self.frame_instructions:
-                        self._last_frame = instructions - self.frame_instructions
+                    self._int0_frame_taken(instructions)
                     self._int0_in_service = True
                     dispatch_interrupt(INT0_VECTOR, software=False)
                     _uc.redirect_is_free = True
                 elif self._int0_pending is not None and interrupts_on:
                     service_after_tick(_uc, elapsed, interrupts_on)
                     service_tail_suffix(_uc, elapsed)
+            elif (
+                (_INT0_EXACT or _INT0_TOUT)
+                and self._int0_pending is None and not self._int0_in_service
+                and _uc.reg_read(UC_X86_REG_FLAGS) & 0x0200
+                and self._int0_frame_due(self.instructions)
+                and self._int0_vector_installed(_uc)
+            ):
+                # local fix: the DSP's frame edge when it is due, not at the
+                # next timer poll (1024 instructions apart, against a 1416
+                # instruction frame): edges taken late or merged left the
+                # supervisor too few lane services for x2's byte rate.
+                self._int0_frame_taken(self.instructions)
+                self._int0_in_service = True
+                dispatch_interrupt(INT0_VECTOR, software=False)
+                _uc.redirect_is_free = True
             elif (
                 (self._rom_tick or self._quad_modem_tick) and self.tick_ms
                 and self.instructions - self._last_tick >= self.tick_ms * INSTRUCTIONS_PER_MS
@@ -3239,6 +3307,9 @@ class CourierMachine:
                 state.timer_poll_period = TIMER_POLL_INSTRUCTIONS
                 state.last_frame = self._last_frame
                 state.frame_instructions = self.frame_instructions
+                state.int0_tout = self._int0_tout_core() is not None
+                state.tout_seen = self._tout_seen
+                state.int0_request = self._int0_request
                 state.int0_ok = bool(self._rom_tick)
                 state.int0_in_service = bool(self._int0_in_service)
                 stack = self._interrupt_stack
@@ -3411,6 +3482,8 @@ class CourierMachine:
                 state.dirty = 0
                 self._int0_in_service = bool(state.int0_in_service)
                 self._interrupt_stack[:] = state.stack[:state.stack_depth]
+                self._tout_seen = state.tout_seen
+                self._int0_request = bool(state.int0_request)
                 if state.polls == seen[0]:
                     return
                 seen[0] = state.polls

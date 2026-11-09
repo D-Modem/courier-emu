@@ -72,6 +72,7 @@ class WorkerPollState(ctypes.Structure):
         ("rx_record", ctypes.c_int16 * RECORD_SLOTS),
         ("rx_log", ctypes.c_int16 * RECORD_SLOTS),
         ("error", ctypes.c_char * 512),
+        ("int0_tout", U64), ("tout_seen", U64), ("int0_request", U64),
     ]
 
 
