@@ -1,16 +1,16 @@
 # The ATY diagnostic commands and the missing line-measurement path
 
-`ATY<n>` is a numeric-argument command family that drives the firmware's own
-line diagnostics. The harness answers all of them, but every display whose
-data comes from the modem's measurement hardware renders empty, and this
-document records why: one input path is unmodelled, and it is the same path
+`ATY<n>` is a command family with a numeric argument. It starts the line diagnostics
+of the firmware. The harness answers all of them. But each display that gets its
+data from the measurement hardware of the modem shows no data. This
+document records why: one input path is not modelled, and it is the same path
 for all of them.
 
 ## What the commands do
 
-Measured offline against `IDSDL302.ROM` (supervisor 7.3.14), board id 7,
-`tick_ms=5`, the mostly-erased `idsl302` EEPROM fixture, no line and no
-external serial device. `artifacts/rom-at-smoke-20260906/probe.py` drives the
+We measured these offline against `IDSDL302.ROM` (supervisor 7.3.14), board id 7,
+`tick_ms=5`, the mostly erased `idsl302` EEPROM fixture, no line and no
+external serial device. `artifacts/rom-at-smoke-20260906/probe.py` operates the
 DTE.
 
 | Command | Response | Data source |
@@ -24,8 +24,8 @@ DTE.
 | `ATY13`, `ATY18`, `ATY19`, `ATY20` | `ERROR` | - |
 | `ATY0`-`ATY9`, bare `ATY` | `OK` | - |
 
-`ATY4` is a mode rather than a display. It stores 4 at `[0x0608]` and persists
-across commands; a later dial prints `\r\nCALL PROGRESS\r\n` and should then
+`ATY4` is a mode, not a display. It stores 4 at `[0x0608]`, and this value stays
+across commands. A later dial prints `\r\nCALL PROGRESS\r\n`, and then it must
 print level rows. Six sites test `cmp byte [0x608], 4`:
 
 | Site | On Y4 |
@@ -35,13 +35,13 @@ print level rows. Six sites test `cmp byte [0x608], 4`:
 | `0x2917` | print `LLOSS` when `[0x032c] & 0x80` |
 | `0x48e32`, `0x491a5`, `0x491b9` | echo a character / a value and a space, in the `ATG` monitor extension |
 
-Only `0xbf2d` is reached offline. `ATY4` is *not* limited to nine values:
-the `cmp al, 0x0a / jae reject` at `0x26248` is the tail of a dispatch chain
-that matches `0x0c`, `0x0e`, `0x0f`, `0x10` and `0x11` ahead of it.
+Offline, only `0xbf2d` is reached. `ATY4` is *not* limited to nine values.
+The `cmp al, 0x0a / jae reject` at `0x26248` is the tail of a dispatch chain
+that compares `0x0c`, `0x0e`, `0x0f`, `0x10` and `0x11` before it.
 
 ## How ATY12 fetches its data
 
-`ATY12` is a buffered fetch, not a live sample. Its handler at `0x6eb2`:
+`ATY12` is a buffered fetch. It is not a live sample. Its handler at `0x6eb2`:
 
 ```
 mov ah, 0x45                  ; operation
@@ -54,17 +54,17 @@ mov dx, 2
 call 0x6fbb                   ; print the reply buffer
 ```
 
-`0x8f43:0228` (file `0xf658`) is a ring-buffer enqueue: it stores AX into the
-queue at `[0x29e..0x2ce)` with head `[0x29c]` and tail `[0x29a]`.
+`0x8f43:0228` (file `0xf658`) is an enqueue into a ring buffer. It stores AX into the
+queue at `[0x29e..0x2ce)`, with the head `[0x29c]` and the tail `[0x29a]`.
 
 `[0x2d3]` is a state-machine vector. Each incoming 16-bit word runs the step
-it points at, and the step rewrites it to the next one. The collector for
-this reply, at `0x20fa`, sets the write pointer `[0x944] = 0x946` and index
-`[0x943] = 0`, discards two words, then stores each further word at `[0x944]`,
-incrementing by two, until `[0x943] == [0x942]`, at which point it jumps to
-`0x2000`: vector back to idle and `mov byte [0x2e3], 0` - the handshake's
-completion. Every word is read the same way, `in al, 0x62` for the high byte
-then `in al, 0x60` for the low.
+to which it points, and the step writes the next step into it. The collector for
+this reply, at `0x20fa`, sets the write pointer `[0x944] = 0x946` and the index
+`[0x943] = 0`. It discards two words. Then it stores each subsequent word at `[0x944]`,
+and increments by two, until `[0x943] == [0x942]`. At that point, it jumps to
+`0x2000`: the vector goes back to idle, and `mov byte [0x2e3], 0` completes the
+handshake. Each word is read in the same way: `in al, 0x62` for the high byte,
+then `in al, 0x60` for the low byte.
 
 The printer at `0x6fbb` then gives the buffer layout:
 
@@ -75,12 +75,12 @@ The printer at `0x6fbb` then gives the buffer layout:
 | `DS:0x0966` | **Xmit** column, reached as `[bx+si]` with `SI` = 0x20 |
 | `0x9d7e` | prints AX as four hex digits |
 
-So 32 words: sixteen Recv at `0x0946` and sixteen Xmit at `0x0966`.
+Thus, there are 32 words: sixteen Recv at `0x0946` and sixteen Xmit at `0x0966`.
 
 ## The interrupt that feeds everything, and its three channels
 
-One ISR, at file `0x12d3c`, drives every consumer discussed here. It reads a
-status word from ports `0x1E` (high) and `0x1C` (low) and acts on the low
+One ISR, at file `0x12d3c`, supplies each consumer in this document. It reads a
+status word from ports `0x1E` (high) and `0x1C` (low), and it acts on the low
 three bits:
 
 | Status bit | Channel | Data ports | Consumer |
@@ -89,7 +89,7 @@ three bits:
 | 1 | event word ready | `in 0x5a`/`0x58` | `call [0x298]`, the modem state machine |
 | 2 | **DSP word ready** | `in 0x62`/`0x60` | `lcall 0x8000:0674` -> `call [0x2d3]` |
 
-After the bit-1 dispatch it calls `[0x27d]`, then re-reads the status and
+After the bit-1 dispatch, it calls `[0x27d]`. Then it reads the status again and
 tests bit 2:
 
 ```
@@ -102,29 +102,29 @@ lcall 0x8000:0674          ; -> call word ptr [0x2d3]
 
 ### Channel 2 is the DSP's outbound window, not a diagnostic side-channel
 
-`dsp_mailbox.py` already settles the producer, against hardware: the DSP's
-sender - `84b7` in DSP 3.0.13, `849e` in 3.1.2 - is `out *, 0060` followed by
-`lacl #04 ; samm @57`, and that 4 is the status bit the CPU reads as `0x1c`
-bit 2. So the window's producer is **the DSP, one word per interrupt**; the
-ASIC only bridges CPU I/O ports to DSP data cells. Acknowledging bit 2 resumes
-the DSP and makes it emit the next word.
+`dsp_mailbox.py` already identifies the producer, against hardware. The
+sender of the DSP (`84b7` in DSP 3.0.13, `849e` in 3.1.2) is `out *, 0060` followed by
+`lacl #04 ; samm @57`, and that 4 is the status bit that the CPU reads as `0x1c`
+bit 2. Thus, the producer of the window is **the DSP, one word for each interrupt**. The
+ASIC only connects CPU I/O ports to DSP data cells. When the CPU acknowledges bit 2, the
+DSP continues and sends the next word.
 
-`ATY12` is a sibling of the stream that tool already drives. The documented
-trigger at `0x6d08` arms `[0x2d3] = 0x1fdb` and enqueues `AL=0x3f, AH=0x06` -
-tag `0x063f`, matching `STREAM_TAG`/`STREAM_DATA`. `ATY12` at `0x6eb2` arms
+`ATY12` is related to the stream that the tool already operates. The documented
+trigger at `0x6d08` arms `[0x2d3] = 0x1fdb` and enqueues `AL=0x3f, AH=0x06`,
+that is, tag `0x063f`, which agrees with `STREAM_TAG`/`STREAM_DATA`. `ATY12` at `0x6eb2` arms
 `[0x2d3] = 0x20fa`, sets the count to 32, and enqueues `AH=0x45` with the same
 `0x3f`: tag `0x453f`, a longer collector on the same window.
 
-**These addresses are supervisor 7.3.14's.** Under 7.4.16 the chain vector is
-`[0x01cd]`, not `[0x02d3]`. The 403 board image confirms the whole shape at its
+**These addresses are those of supervisor 7.3.14.** In 7.4.16, the chain vector is
+`[0x01cd]`, not `[0x02d3]`. The 403 board image confirms the full shape at its
 own addresses: the trampoline `call word ptr [0x01cd]` at `0x0067b`, the tag-06
-trigger at `0x06d52`, and `ATY12` at `0x06efe` arming `[0x01cd] = 0x212c` with
-the count cell at `[0x0836]` rather than `[0x0942]`.
+trigger at `0x06d52`, and `ATY12` at `0x06efe`, which arms `[0x01cd] = 0x212c`, with
+the count cell at `[0x0836]` and not at `[0x0942]`.
 
 ## Why the measurement displays are empty
 
-**Only channel 2 is dead.** Counting port traffic across an `ATY12` run
-separates it cleanly:
+**Only channel 2 is dead.** A count of the port traffic during an `ATY12` run
+shows this clearly:
 
 | Port | Traffic |
 |---|---|
@@ -133,16 +133,16 @@ separates it cleanly:
 | `0x5C`, `0x5E` | 3469 writes - live |
 | `0x60`, `0x62` | **0 reads** |
 
-So the modem event machine is running normally; it is specifically the
-diagnostic channel that never signals. Port `0x1C` bit 2 never asserts: the
-port returns `0x01` on all 2882 reads, which is the output-latch echo of the
-`out 0x1c, 1` the ISR itself performs.
+Thus, the modem event machine runs normally. Specifically, the
+diagnostic channel never gives a signal. Port `0x1C` bit 2 never asserts. The
+port returns `0x01` on all 2882 reads. This is the echo of the output latch from the
+`out 0x1c, 1` that the ISR itself does.
 
-The consequence is directly observable on the `[0x2d3]` side. Sampling that
-vector across a run shows three different producers arming a sequence -
-`0x1fdb`, `0x20fa`, `0x4420` - and the vector never advancing past the armed
-entry, because no step ever runs. Sampling the `ATY12` handshake shows the
-request issued and then timing out:
+You can see the result directly on the `[0x2d3]` side. A sample of that
+vector during a run shows three different producers that arm a sequence
+(`0x1fdb`, `0x20fa`, `0x4420`), and the vector never advances after the armed
+entry, because no step ever runs. A sample of the `ATY12` handshake shows that the
+request is issued, and then the timeout occurs:
 
 ```
 flag=00 retry=00 count=00   (idle)
@@ -152,13 +152,13 @@ flag=01 retry=05 count=20
 flag=01 retry=00 count=20   (retries exhausted, flag still set)
 ```
 
-The buffer at `0x0946` stays zero throughout. `0x6eb2` ignores the carry flag
-`0x6ede` returns, so it prints sixteen rows of `0000` regardless: the zeros
+The buffer at `0x0946` stays zero all the time. `0x6eb2` ignores the carry flag
+that `0x6ede` returns. Thus, it prints sixteen rows of `0000` in all cases. The zeros
 are a **timeout, not an empty reply**.
 
 ## What ATY4 actually arms
 
-The banner site at `0xbf28` is the whole call-progress entry, and tracing its
+The banner site at `0xbf28` is the full call-progress entry. A trace of its
 memory writes shows the sequence:
 
 ```
@@ -172,10 +172,10 @@ mov byte [0bd4], 5                ; blanking guard
 mov di, 0bd6 / mov cx, 10 / rep stosb   ; clear the cadence counters
 ```
 
-The module's code segment is **`0x8f43`**, not a round `0x9000`, so
+The code segment of the module is **`0x8f43`**, not a round `0x9000`. Thus,
 `[0x298] = 0x5782` resolves to physical `0x94bb2` (file `0x14bb2`). That
 handler is a table dispatch through the generic matcher at `0xf78a`
-(`repne scasb` then `jmp word ptr cs:[bx+di]`), over a **36-entry
+(`repne scasb`, then `jmp word ptr cs:[bx+di]`), over a **36-entry
 call-progress event table**: match bytes at file `0x14b40`, handler words at
 file `0x14b64`.
 
@@ -184,39 +184,39 @@ file `0x14b64`.
 45 46 48 30 34 35 36 37 6a 6c 6d 70 71 73 74 6b 6e 44
 ```
 
-These event codes are what `ATY4` reports. Offline the arming happens six
-times - `[0x0bd4] = 5` is written six times, once per dial retry - and the
-state at `0x94bb2` is entered only once, so the counters at `[0x0bd6..0x0bdf]`
-stay zero and no row is ever produced.
+`ATY4` reports these event codes. Offline, the arming occurs six
+times (`[0x0bd4] = 5` is written six times, one time for each dial retry), and the code
+goes into the state at `0x94bb2` only one time. Thus, the counters at `[0x0bd6..0x0bdf]`
+stay zero, and no row is ever made.
 
 ## What would have to be modelled
 
-For the `ATY11`/`ATY12`/`ATY17` displays, channel 2 alone:
+For the `ATY11`/`ATY12`/`ATY17` displays, only channel 2:
 
 1. Port `0x1C` bit 2 asserted when a reply word is available.
 2. Ports `0x62` (high byte) and `0x60` (low byte) returning that word.
 3. Whatever advances 1 and 2 once per word until `[0x942]` is satisfied.
 
-`ATY12` is the cheapest probe for it: it prints its sixteen rows at the
-command prompt with no dial and no timeout, so a populated source shows up
-immediately.
+`ATY12` is the easiest probe for it. It prints its sixteen rows at the
+command prompt without a dial and without a timeout. Thus, a source with data is
+visible immediately.
 
-`ATY4` needs something different - not channel 2, but a source of
-call-progress events on the already-working channel 1, drawn from the 36
-codes above, delivered as values below `0x76` rather than the `0xff` the port
-currently returns.
+`ATY4` needs something different. It does not need channel 2. It needs a source of
+call-progress events on channel 1, which already operates. The events must come from the 36
+codes above, and they must be values below `0x76`, not the `0xff` that the port
+now returns.
 
 ## What ATY4 prints, established by forging events
 
-**The events below are fabricated.** Forcing `AL` at `0xf492` writes a value the
-hardware never produced; it exercises the firmware's display path and says
+**The events below are fabricated.** When we force `AL` at `0xf492`, we write a value that the
+hardware never made. It exercises the display path of the firmware and says
 nothing about the line. Read this section as a test of the printer, not as a
-model of anything.
+model of a real condition.
 
 
-Channel 1 is live but carries nothing usable: the active `in al, 0x58` site is
-file `0xf490`, and across a whole `ATY4` dial it reads `0xff` on all 5596
-invocations. The very next instruction is the rejection:
+Channel 1 is live, but it carries no usable data. The active `in al, 0x58` site is
+file `0xf490`. During a full `ATY4` dial, it reads `0xff` on all 5596
+invocations. The next instruction is the rejection:
 
 ```
 in  al, 0x58
@@ -225,101 +225,101 @@ jb  dispatch
 jmp skip            ; 0xff is discarded here
 ```
 
-Event codes must be below `0x76`, so a floating `0xff` bus is rejected before
-`call [0x298]` ever runs. That, not a missing display, is why nothing prints.
+Event codes must be below `0x76`. Thus, the code rejects a floating `0xff` bus before
+`call [0x298]` ever runs. This is the reason why nothing prints. A missing display is not the reason.
 
-Forcing `AL` to a table event code at `0xf492` - and only while
-`[0x298] == 0x5782`, since the vector is otherwise the idle state `0x0150` -
-produces the row:
+If we force `AL` to a table event code at `0xf492` (and only while
+`[0x298] == 0x5782`, because at other times the vector is the idle state `0x0150`),
+we get this row:
 
 ```
 \r\nCALL PROGRESS\r\n00  
 ```
 
-and the execution hook shows `0x94f13` running, with `AL = 0x00`. **`0x14f13`
-is the `ATY4` row printer**, and it is reachable; an earlier revision of this
-document wrongly called it dead on the strength of a static scan that found no
-caller. Its body prints the event byte through `0x8000:0x9da6`, which lands on
-`aam 0x0a` at `0x9dbd` and emits **two decimal digits**, then two spaces.
+The execution hook shows that `0x94f13` runs, with `AL = 0x00`. **`0x14f13`
+is the `ATY4` row printer**, and it is reachable. An earlier revision of this
+document said incorrectly that it was dead, because a static scan found no
+caller. Its body prints the event byte through `0x8000:0x9da6`. This goes to
+`aam 0x0a` at `0x9dbd` and sends **two decimal digits**, then two spaces.
 
-So an `ATY4` row is a run of call-progress **event codes in decimal**, two
-digits each - the shape of a reported hardware line such as
-`00 00 02 08 07`, whose values are codes `0, 0, 2, 8, 7`, not signal levels.
+Thus, an `ATY4` row is a sequence of call-progress **event codes in decimal**, two
+digits each. This is the shape of a reported hardware line such as
+`00 00 02 08 07`, with the values as codes `0, 0, 2, 8, 7`, not as signal levels.
 
-Only one row appears per injection run because the first table event, `0x83`,
-dispatches to file `0x14bbe`, which sets `[0x298] = 0x150` and returns the
-machine to idle. Feeding a sequence that avoids `0x83` keeps the vector out of
-`0x5782` entirely and prints nothing, so a plausible ordered event sequence -
-not an arbitrary one - is what a model has to supply.
+Only one row occurs for each injection run, because the first table event, `0x83`,
+dispatches to file `0x14bbe`. This sets `[0x298] = 0x150` and returns the
+machine to idle. A sequence without `0x83` keeps the vector out of
+`0x5782` fully, and it prints nothing. Thus, a model must supply a plausible ordered event sequence,
+not a random one.
 
 ## The gates are unreached, not dead
 
-Hooking execution across `0x14dd0..0x14fc0` while events are injected records
-the whole path, and it settles why the static scans found nothing:
+We hooked the execution across `0x14dd0..0x14fc0` while we injected events. This records
+the full path, and it explains why the static scans found nothing:
 
 ```
 14dd8 -> 14dde (lcall c800:0008) -> 14de3 ... 14e08 -> 14e30 (cadence detector)
       -> 14e40 -> 14ef7 ... 14f0e -> 14f13 (gate taken) -> 14f1b -> prints
 ```
 
-`0x14f13` is reached by ordinary sequential flow inside the detector, not by a
-call from anywhere. The scans looked for a caller and there is none to find;
-the routine is simply downstream of an event. The stack at the gate confirms
-the frame belongs to the `call word ptr [0x298]` at `0xf4e2` - the event
-dispatch - with the near return address `0x8f4e6`.
+The code gets to `0x14f13` through ordinary sequential flow in the detector, not through a
+call. The scans looked for a caller, and there is no caller.
+The routine is only downstream of an event. The stack at the gate confirms that
+the frame is part of the `call word ptr [0x298]` at `0xf4e2` (the event
+dispatch), with the near return address `0x8f4e6`.
 
-So the answer to "is it dead because the line modelling is dead" is **yes for
-this gate, demonstrably**. Nothing about it is vestigial: it prints the first
-time a valid event reaches the detector.
+Thus, the answer to "is it dead because the line modelling is dead" is **yes for
+this gate, and we showed it**. No part of it is vestigial. It prints the first
+time that a valid event gets to the detector.
 
-The same run reaches extension entry 8 (`lcall 0xc800:0008` -> `0x48e3f`), which
-had never executed before either. Entry 8 is the second-word consumer for event
-`0x08`: the handler reads the accompanying data word from ports `0x5e`/`0x5c`
-before calling it.
+The same run gets to extension entry 8 (`lcall 0xc800:0008` -> `0x48e3f`). This
+entry had also never executed before. Entry 8 is the second-word consumer for event
+`0x08`. The handler reads the data word that comes with the event from ports `0x5e`/`0x5c`
+before it calls it.
 
-`0x48e32` and `0x491b9` still did not execute even with events flowing. Both
-are separate routines rather than fallthrough targets - `0x48e32` ends in a
-`ret` immediately before entry 8's body - so each needs an actual caller, and
-none is discoverable. The likeliest reading is the same one proved for
-`0x14f13`, since their neighbours in this family are all on line-driven paths:
+`0x48e32` and `0x491b9` still did not execute, also with events.
+They are separate routines, not fallthrough targets (`0x48e32` ends in a
+`ret` immediately before the body of entry 8). Thus, each needs an actual caller, and
+we could not find one. The most probable interpretation is the same one that we proved for
+`0x14f13`, because the routines near them in this family are all on paths that the line controls:
 `0x491a5` is called from `0x49202`, which waits on `[0x02cf]` for a received
-DTMF digit. But that is inference from position, not a demonstration.
+DTMF digit. But that is an inference from the position, not a proof.
 
 ## Running it against the real bridge instead
 
-The project does model the line: `CourierDspBridge` owns exactly the event
-ports (`DSP_RUNTIME_PORTS = (0x58, 0x5A, 0x5C, 0x5E)`, plus `0x1C`) and carries
-a `CourierDaa`, `LineLink`, `LineExchange` and the `NativeC5x` core. Every run
-in this document until now used none of it: the probe builds a CPU-only
-`CourierMachine`, which is what its own manifest calls an "offline CPU-only ROM
+The project does model the line. `CourierDspBridge` controls exactly the event
+ports (`DSP_RUNTIME_PORTS = (0x58, 0x5A, 0x5C, 0x5E)`, plus `0x1C`), and it contains
+a `CourierDaa`, `LineLink`, `LineExchange` and the `NativeC5x` core. Until now, each run
+in this document used none of it. The probe builds a CPU-only
+`CourierMachine`, which its own manifest calls an "offline CPU-only ROM
 AT-command smoke test".
 
-Re-running the `ATY4` dial with `with_dsp=True` and a `CourierDaa` changes the
-execution - the dial reaches 68.8M instructions rather than 43.7M - but the
-display stays empty. The event port is read **once**, and delivers `0xff`,
-which `cmp al, 0x76` rejects. So the bridge does not synthesize a
-supervisor-facing call-progress event stream, and enabling it is not a
-substitute for one.
+When we run the `ATY4` dial again with `with_dsp=True` and a `CourierDaa`, the
+execution changes: the dial gets to 68.8M instructions, not 43.7M. But the
+display stays empty. The event port is read **one time**, and it gives `0xff`,
+which `cmp al, 0x76` rejects. Thus, the bridge does not synthesize a
+call-progress event stream for the supervisor, and if we enable it, this does not replace
+such a stream.
 
-Two related gaps sit next to this. `asic_ports.IDLE` records hardware idle
-values for these ports - `0x58: 0x20`, `0x1C: 0xFD`, `0x60: 0x4B` - and
-`machine.py` does not import `asic_ports` at all, so a CPU-only run answers
-`0xff` and the `0x1C` latch echo instead. Seeding those would not manufacture
-events either; a constant idle level is not an event stream, and `0x20` is not
+There are two related gaps near this. `asic_ports.IDLE` records the hardware idle
+values for these ports (`0x58: 0x20`, `0x1C: 0xFD`, `0x60: 0x4B`), and
+`machine.py` does not import `asic_ports`. Thus, a CPU-only run answers
+`0xff` and the `0x1C` latch echo. If we seeded those values, this would also not make
+events. A constant idle level is not an event stream, and `0x20` is not
 one of the 36 codes.
 
 ## How the detector qualifies, and why the DAA model does not fit this image
 
-Two different things are called "qualified", and they do not measure the same
+Two different things have the name "qualified", and they do not measure the same
 quantity.
 
 `CourierDaa.detector_qualified` is a sample count: `qualified_samples >= 5 *
-DAA_FRAME_SAMPLES`, five 100 ms frames of audio accrued while `detector_present`
-holds, zeroed by `seize()` and `release()`. It never inspects a level.
+DAA_FRAME_SAMPLES`, that is, five 100 ms frames of audio that accrue while `detector_present`
+is true. `seize()` and `release()` set it to zero. It never examines a level.
 
-`main211.xmf` counts something else. The wait at `0x1dbee` is
-`cmp byte [0649], 5 / jb`, and the counter at `0x1e442` is driven by the reply
-value in `[0x0285]`:
+`main211.xmf` counts something different. The wait at `0x1dbee` is
+`cmp byte [0649], 5 / jb`. The reply
+value in `[0x0285]` controls the counter at `0x1e442`:
 
 | `[0x0285]` | Effect on `[0x0649]` |
 |---|---|
@@ -328,17 +328,17 @@ value in `[0x0285]`:
 | `1..0x60` | increment - one qualifying hit |
 | `> 0x60` | reset, and increment `[0x064a]` instead |
 
-then `mov word [0285], 0xff` consumes it. So five consecutive polled replies
-whose level lands inside `1..0x60`. The bridge's `DETECTOR_PRESENT_LEVEL = 0x30`
-is correctly in that window; what never happens is the poll, which is what
-`detector_replies: 0` reports.
+Then `mov word [0285], 0xff` consumes it. Thus, it needs five consecutive polled replies
+with a level in `1..0x60`. The `DETECTOR_PRESENT_LEVEL = 0x30` of the bridge
+is correctly in that window. But the poll never occurs, and
+`detector_replies: 0` reports this.
 
-**`IDSDL302.ROM` does not use that path at all.** It has no `[0x0649]` access
-and no `[0x0285]` level comparison; in this image `[0x0285]` is the ISR status
-word. Its detector counter is `[0x0cc0]`, its wait is at `0xb784`
-(`cmp byte [0cc0], 5 / jb 0xb76f`, with `mov byte [0cc0], 0` arming it at
-`0xb76a`), and the counter is updated by the four-instruction routine at
-`0x14fca`:
+**`IDSDL302.ROM` does not use that path.** It has no access to `[0x0649]`
+and no level comparison of `[0x0285]`. In this image, `[0x0285]` is the status
+word of the ISR. Its detector counter is `[0x0cc0]`, and its wait is at `0xb784`
+(`cmp byte [0cc0], 5 / jb 0xb76f`, with `mov byte [0cc0], 0` that arms it at
+`0xb76a`). The routine of four instructions at
+`0x14fca` updates the counter:
 
 ```
 14fca  test ah, 1
@@ -348,40 +348,40 @@ word. Its detector counter is `[0x0cc0]`, its wait is at `0xb784`
 14fd4  mov  byte [0cc0], 0   ; reset
 ```
 
-`AH` there is the high byte of the **data word that accompanies event `0x08`**,
-read at `0x14dd8` from ports `0x5e`/`0x5c` immediately before the call to
+There, `AH` is the high byte of the **data word that comes with event `0x08`**.
+It is read at `0x14dd8` from ports `0x5e`/`0x5c`, immediately before the call to
 extension entry 8. The two call sites, `0x14df1` and `0x14e05`, are gated on
 `[0x0ea7] & 1` and `[0x0ea6] & 1`.
 
-So this supervisor qualifies its detector from **bit 0 of the high byte of
-event `0x08`'s data word** - five consecutive sets - not from a polled level.
+Thus, this supervisor qualifies its detector from **bit 0 of the high byte of
+the data word of event `0x08`** (five consecutive sets), and not from a polled level.
 The 403 board image is the same design with different addresses: counter
 `[0x0b9e]`, the identical `test ah, 1` routine at `0x14fdc`, and the wait at
 `0x0b7c2`.
 
-That puts the requirement squarely back on the channel that currently carries
-nothing. For these images the bridge would have to emit event `0x08` with a
-data word whose high byte has bit 0 set, five times running, before the dial
-can proceed - and the DAA's sample-count model is not a stand-in for it,
-because it is modelling a different supervisor's mechanism.
+Thus, the requirement is again on the channel that now carries
+nothing. For these images, the bridge would have to send event `0x08` with a
+data word that has bit 0 set in its high byte, five consecutive times, before the dial
+can continue. The sample-count model of the DAA cannot replace this,
+because it models the mechanism of a different supervisor.
 
 ## What this does not establish
 
-The 36 event codes are read off the dispatch table; their meanings are not
-known, and no mapping from a line condition to a code has been demonstrated.
-The injection proves the display path works when fed. It does not show that any
-of those values is what hardware would send, in what order, or with what
-timing, and no run in this document has produced a single genuine
+We read the 36 event codes from the dispatch table. Their meanings are not
+known, and we did not show a mapping from a line condition to a code.
+The injection proves that the display path operates when it gets data. It does not show that any
+of those values is what hardware would send, in which order, or with which
+timing. No run in this document has made a single real
 call-progress event. Nothing here identifies the
 `AH=0x45` / `AL=0x3f` operation behind the `ATY12` queue, or the units of the
 values in its buffer.
 
-`0x491a5`, the third extension gate, is called from `0x49202`, a helper that
+`0x491a5`, the third extension gate, is called from `0x49202`. This is a helper that
 waits on `[0x02cf]` and translates a nibble through the DTMF table
-`"0123456789#*ABCD"` at `0x49209` - so under `ATY4` the extension echoes
-received DTMF digits as well.
+`"0123456789#*ABCD"` at `0x49209`. Thus, under `ATY4`, the extension also shows the
+received DTMF digits.
 
-The command table was measured on `IDSDL302.ROM`. The 403 board image holds the
-same six gates against `[0x0500]` rather than `[0x0608]` - `0x02984`, `0x0bf79`,
-`0x14f25`, `0x4960a`, `0x4a1c4`, `0x4a1d8` - with the mode byte stored at
-`0x262d1`, so the two builds are structurally alike but not address-compatible.
+We measured the command table on `IDSDL302.ROM`. The 403 board image has the
+same six gates against `[0x0500]` and not `[0x0608]` (`0x02984`, `0x0bf79`,
+`0x14f25`, `0x4960a`, `0x4a1c4`, `0x4a1d8`), with the mode byte stored at
+`0x262d1`. Thus, the two builds have a similar structure, but their addresses are not compatible.
