@@ -1193,12 +1193,12 @@ suffix (`5608A`/`3368A`). A run of `ATI` on real hardware will give the answer.
 
 ## A modeled line: the digital ATA
 
-`--exchange` puts a central office on the subscriber loop instead of a fixed
-`--daa-line` state. It is the network side of one line, entirely in the codec
-sample stream - no loop current, no hybrid, no two-wire pair, which is what
-makes it digital rather than an analog terminal adapter. It watches the hook,
-plays the tones the loop would carry, **decodes the dialed number out of the
-audio the modem transmits**, and routes the call:
+`--exchange` puts a central office on the subscriber loop, in place of a fixed
+`--daa-line` state. It is the network side of one line, and it is fully in the
+codec sample stream. It has no loop current, no hybrid and no two-wire pair.
+Thus, it is digital, not an analog terminal adapter. It monitors the hook. It
+plays the tones that the loop carries. It **decodes the dialed number from the
+audio that the modem transmits**, and it routes the call:
 
 ```sh
 ./courier run main211.xmf --exchange \
@@ -1213,20 +1213,20 @@ audio the modem transmits**, and routes the call:
 }
 ```
 
-Nothing hands it that number. The supervisor qualifies its line detector on the
-exchange's 350+440 Hz dial tone, the C51 puts DTMF on the line, and a Goertzel
-receiver in the exchange reads it back off the transmit stream. That is the
-difference from `--daa-line dial-tone`, which supplies a line state the harness
-chose and removes dial tone as soon as the model decides dialing has started -
-the gap recorded in `courier_firmware_analysis.md` under "What the dial
-sequencer is waiting on".
+Nothing gives the exchange that number. The supervisor qualifies its line
+detector on the 350+440 Hz dial tone of the exchange. The C51 puts DTMF on the
+line. A Goertzel receiver in the exchange reads the DTMF back from the transmit
+stream. This is the difference from `--daa-line dial-tone`. That option
+supplies a line state that the harness selected. It removes dial tone when the
+model decides that dialing started. `courier_firmware_analysis.md` records
+this gap under "What the dial sequencer is waiting on".
 
-Routing the same number to `busy` instead stops the call at the tone, with no
+If you route the same number to `busy`, the call stops at the tone, with no
 `CONNECT`: `state=busy outcome=busy connected=false`. The firmware does not
-print `BUSY` for it - call-progress tone detection is the DSP's, and no run has
-reached it - so what the exchange proves here is the line, not the report.
+print `BUSY` for it. Call-progress tone detection belongs to the DSP, and no run
+got to it. Thus, the exchange proves the line here, not the report.
 
-The states and what the loop carries in each:
+The states, and what the loop carries in each state:
 
 | state | line | leaves on |
 |---|---|---|
@@ -1242,17 +1242,17 @@ The states and what the loop carries in each:
 | `ringing` | ring cadence toward the modem | the modem going off hook |
 
 `--exchange-number NUMBER=OUTCOME` routes one number to `answer`, `busy`,
-`reorder` or `no-answer`; `--exchange-outcome` sets what an unrouted number
-gets, `--exchange-answer-after` the ringback cycles before pickup, and
-`--exchange-answer-tone` how long 2100 Hz runs before the call is handed on.
-`LineExchange.ring()` offers an incoming call, which drives the codec's ring
-detectors directly rather than through `--ring`.
+`reorder` or `no-answer`. `--exchange-outcome` sets the outcome for a number
+that has no route. `--exchange-answer-after` sets the ringback cycles before
+pickup. `--exchange-answer-tone` sets how long 2100 Hz continues before the
+exchange hands on the call. `LineExchange.ring()` offers an incoming call. It
+drives the ring detectors of the codec directly, not through `--ring`.
 
 ### The firmware places this call
 
-With `--exchange` there is no DTE-level dial stand-in left. `arm_dial_tones`
-returns without reading the command, and every step below is the supervisor's
-own, running against the modeled line:
+With `--exchange`, no DTE-level dial replacement remains. `arm_dial_tones`
+returns and does not read the command. The supervisor itself does each step
+below against the modeled line:
 
 | step | what the firmware does | where |
 |---|---|---|
@@ -1263,70 +1263,72 @@ own, running against the modeled line:
 | dial | sends `0x16:0000`, the digit on tag `0x13`, `0x16:0000` | `0x63553` |
 | time | holds each tone and gap on its own `[0x161]` countdown | `0x82342` |
 
-`--exchange` therefore implies `--tick-source dsp`: the dial-tone wait, the
-tone duration and the interdigit gap all count on the supervisor's countdown
-chain, and unpaced the harness has to stand in for every one of them, which is
-the arrangement the exchange exists to replace. The line detector is modeled
-here rather than executed because the native core does not yet run the
-recovered DSP detector path end to end. The fallback answers the `0x7c` poll
-with a low-band reading while the loop carries tone, and the supervisor counts
-its own five hits.
+Thus, `--exchange` implies `--tick-source dsp`. The dial-tone wait, the tone
+duration and the interdigit gap all count on the countdown chain of the
+supervisor. Without pacing, the harness must replace each of them, and the
+exchange exists to replace that arrangement. The harness models the line
+detector here and does not execute it. This is because the native core does
+not yet run the recovered DSP detector path from start to end. The fallback
+answers the `0x7c` poll with a low-band reading while the loop carries tone.
+The supervisor counts its own five hits.
 
-**Nothing renders the digits.** `dsp_bridge.exchange.dialed` - what the line
-actually heard - stays empty while `ATDT5551212` is dialed. This was recorded
-here as "the tone generator is the ASIC's", and that is wrong: the three
-constant lanes the dial path sends alongside each digit, `0x19`, `0x1a` and
-`0x1b`, are host-write tags whose handlers store into **DSP data memory** at
-`0x03ad`, `0x0392` and `0x03f1`. The tone parameters go to the C51, so the
-synthesiser is the datapump's, and what is missing is the harness reaching that
-code rather than an unmodelled generator elsewhere. See
-[what the ASIC does](docs/what-the-asic-does.md). What the run does report is the sequence
-of commands the supervisor issued:
+**Nothing renders the digits.** `dsp_bridge.exchange.dialed` is what the line
+really heard. It stays empty while the firmware dials `ATDT5551212`. These
+notes said before that "the tone generator is the ASIC's", and that is wrong.
+The dial path sends three constant lanes with each digit: `0x19`, `0x1a` and
+`0x1b`. These are host-write tags. Their handlers store into **DSP data
+memory** at `0x03ad`, `0x0392` and `0x03f1`. The tone parameters go to the C51.
+Thus, the synthesiser belongs to the datapump. The missing item is that the
+harness does not get to that code. It is not a generator somewhere else that
+the harness does not model. See [what the ASIC does](docs/what-the-asic-does.md).
+The run does report the sequence of commands that the supervisor sent:
 
 ```text
 0016:0000  0013:0005  0016:0000   ...   x7   ->  commanded 5551212
 ```
 
-each about 600 ms apart on the firmware's own timers. The exchange therefore
-hears silence, times out, and returns reorder. That is the honest state: the
-firmware places the call, and the board it is talking to cannot yet put a tone
-on the line.
+The commands are about 600 ms apart, on the timers of the firmware. Thus, the
+exchange hears silence, times out and returns reorder. This is the true state:
+the firmware places the call, but the board that it talks to cannot yet put a
+tone on the line.
 
-One bug had to be fixed for any of it to run. The receive handler at `0x6ad6e`
-takes a message tag from ports `0x58`/`0x5a` and then its word from
-`0x5e`/`0x5c`, and the bridge was serving the C51 status latch on those two
-ports even while a reply stood queued. The detector consumer at `0x5e4c4` read
-`0xffff` for a reading the bridge had already answered, counted it as
-out-of-band, and hung up. Queued replies now own the data lanes.
+We had to repair one bug before any of this could run. The receive handler at
+`0x6ad6e` takes a message tag from ports `0x58`/`0x5a`. Then it takes its word
+from `0x5e`/`0x5c`. The bridge served the C51 status latch on those two ports,
+also while a reply was in the queue. The detector consumer at `0x5e4c4` read
+`0xffff` for a reading that the bridge had already answered. It counted it as
+out-of-band, and hung up. Now, queued replies own the data lanes.
 
 ### What the C51 puts on the line
 
-The core has no tone generator of its own. It once carried hand-written
-`sin()` in C++ - a DTMF pair generator, a 1300 Hz calling indicator and a
-2100 Hz ANSam approximation - which substituted for the datapump's DAC output
-and *discarded* its accumulation to make room. That stand-in is gone, along
-with `set_dtmf_digits` and `set_synthetic_line`. The line now carries what the
-C51 computes through its AC01, and only that: on 3.0.13 that is the firmware's
-own DTMF, which the modeled exchange decodes as the dialed number
+The core has no tone generator of its own. Before, it had hand-written `sin()`
+in C++: a DTMF pair generator, a 1300 Hz calling indicator and a 2100 Hz ANSam
+approximation. These replaced the DAC output of the datapump. They *discarded*
+its accumulation to make space. We removed that replacement, and also
+`set_dtmf_digits` and `set_synthetic_line`. Now the line carries only what the
+C51 calculates through its AC01. On 3.0.13, this is the DTMF of the firmware
+itself. The modeled exchange decodes it as the dialed number
 (`artifacts/dtmf-emulator-302-01`).
 
-An answered call reaches the datapump: ring the loop, answer it, and the
-recovered call overlay is entered and executes. What it writes is not audio.
-The frame ISR at `0x0228` keeps a 32-bit phase accumulator in `@7c`/`@7d`
-(`0xfffc`/`0xfffd` at DP `0x1ff`), and reading `0xfffd` as the DAC - which the
-core did - yields a linear ramp with a constant step, which measures as
-broadband noise. The word the ISR computes from it goes out through `@7a` to
-`0xffff`, and that slot carries only two distinct values. Neither is a
-waveform. `set_line_dac_slot` makes the choice switchable so the question can
-be measured rather than assumed.
+An answered call gets to the datapump. Ring the loop and answer it. Then the
+recovered call overlay starts and executes. What it writes is not audio. The
+frame ISR at `0x0228` keeps a 32-bit phase accumulator in `@7c`/`@7d`
+(`0xfffc`/`0xfffd` at DP `0x1ff`). Before, the core read `0xfffd` as the DAC.
+This gives a linear ramp with a constant step, which measures as broadband
+noise.
 
-So the datapump runs, and where its PCM output goes is unresolved. The `tblr`
-at `0x022e` reading a table based at `0x824d` is the thread to pull. No run has
-produced V.21 at all; the harness only ever measured it.
+The ISR calculates a word from the accumulator and sends it through `@7a` to
+`0xffff`. That slot carries only two different values. Neither is a waveform.
+`set_line_dac_slot` makes the choice switchable. Thus, you can measure the
+answer and not assume it.
 
-Without `--exchange` nothing above applies: the `--daa-line`, `link` and SIP
-paths keep the stand-ins they had, including the parsed `ATD`, the faked line
-transition and the harness-generated digits.
+Thus, the datapump runs, but the destination of its PCM output is not known.
+The next item to examine is the `tblr` at `0x022e`, which reads a table based at
+`0x824d`. No run made V.21. The harness only measured it.
+
+Without `--exchange`, nothing above applies. The `--daa-line`, `link` and SIP
+paths keep their replacements. These include the parsed `ATD`, the faked line
+transition and the digits that the harness makes.
 
 ## Two instances on one line
 
