@@ -320,22 +320,23 @@ disassemble image 11 before we can say this with certainty.
 ## Where V.90 all-digital sits in the standards
 
 DDPCM was never standardised in this form.  V.90 itself defines only the
-analog client and digital server halves; the symmetric case went to a separate
-work item and came out as **V.91** (approved May 1999), scoped to "a 4-wire
-circuit switched connection and … leased point-to-point 4-wire digital
-circuits" - not the 2-wire dial-up case these modems were doing it on.  V.92
-then went the other way, adding upstream PCM at up to 48 kbit/s over the
-existing asymmetric arrangement rather than a symmetric 64k mode.  So USR's
-`x2 symmetric` and `V.90 all-digital` are pre-standard vendor modes filling a
-gap the ITU addressed only for 4-wire circuits, and they kept their own
-S-register bits and their own RADIUS modulation codes because there was no
-recommendation to name.
+analog client half and the digital server half.  The symmetric case went to a
+separate work item and became **V.91** (approved May 1999).  The scope of V.91
+is "a 4-wire circuit switched connection and … leased point-to-point 4-wire
+digital circuits".  It is not the 2-wire dial-up case that these modems used.
+V.92 then went in the other direction.  It added upstream PCM at up to
+48 kbit/s on the existing asymmetric arrangement, and did not add a symmetric
+64k mode.  Thus, `x2 symmetric` and `V.90 all-digital` of USR are pre-standard
+vendor modes.  They fill a gap that the ITU addressed only for 4-wire
+circuits.  They kept their own S-register bits and their own RADIUS
+modulation codes, because there was no recommendation to give them a name.
 
 ## What the other six images are
 
-Each one is named by where the supervisor requests it and by what it matches.
-The request variable is the byte at `e738`; every writer of it, and the
-loader's own pairing rule, gives the structure:
+We identify each image by the location where the supervisor requests it, and
+by the code that it agrees with.  The request variable is the byte at `e738`.
+All the writers of this byte, and the pairing rule of the loader, give the
+structure:
 
 ```
 ae2cb  mov [e738], 6     ; taken when the first predicate passes
@@ -345,8 +346,9 @@ b1655  mov [e730],1 ; mov [e738],0a ; call load ; mov [e738],0b ; call load
 c84d8 …cb1ed  mov [e738], 9   - seven sites, all inside the `+F…` code
 ```
 
-and coverage against the 2.1.1 payload's own four segments (byte-exact runs of
-≥12; the figure is coverage, the number after it the longest single run):
+The table gives the coverage against the four segments of the 2.1.1 payload
+(byte-exact runs of ≥12).  The first figure is the coverage.  The number after
+it is the longest single run.
 
 | image | words | @ | vs resident | vs ov6 V.34 | vs ov7 V.FC | vs ov8 PCM | what it is |
 |---:|---:|---|---:|---:|---:|---:|---|
@@ -358,38 +360,41 @@ and coverage against the 2.1.1 payload's own four segments (byte-exact runs of
 | 10 | 7,536 | `d100` | 27.7%/202 | 0.5%/64 | 0.4%/64 | 0.0%/0 | **PCM, part 1** |
 | 11 | 15,997 | `9260` | 47.6%/770 | 1.4%/64 | 2.6%/65 | 0.0%/13 | **PCM, part 2** |
 
-* **7 is V.FC beyond argument** - 68% of it is byte-identical to the analog
-  2.1.1 overlay 7, including one run of 1,039 bytes.  **6 is V.34** by its best
-  match, by size, and by the chooser at `ae2cb`/`ae2e5` being the same
-  two-predicate shape the analog uses to pick V.34 or V.FC.
-* **8 is V.FC's second half**, not an independent modulation: the loader pairs
-  it to 7 the way the analog pairs 8 to 6.
-* **9 is fax.**  It is requested from seven sites and every one of them sits in
-  the Class 2 code - `+FHT:`, `+FHR:`, `+FCI:`, `+FIS:`, `+FTI:`, `+FCS:`,
-  `+FPS:`, `+FET:` are all within a few hundred bytes of the requests.  Its 54%
+* **7 is V.FC without doubt.**  68% of it is byte-identical to the analog
+  2.1.1 overlay 7, with one run of 1,039 bytes.  **6 is V.34**, because of its
+  best match and its size.  Also, the chooser at `ae2cb`/`ae2e5` has the same
+  two-predicate shape that the analog build uses to select V.34 or V.FC.
+* **8 is the second half of V.FC**.  It is not an independent modulation.  The
+  loader pairs it to 7, as the analog build pairs 8 to 6.
+* **9 is fax.**  Seven sites request it, and all of them are in the Class 2
+  code.  `+FHT:`, `+FHR:`, `+FCI:`, `+FIS:`, `+FTI:`, `+FCS:`, `+FPS:` and
+  `+FET:` are all less than a few hundred bytes from the requests.  The 54%
   against the resident is shared helper bodies, not shared modulation.
-* **10 and 11 are one program in two loads**, requested back to back by the
-  routine at `b1655` with a flag at `e730` held across both.  They tile:
-  11 covers `9260`-`d0dd` and 10 covers `d100`-`ef91`, 23,533 words together.
+* **10 and 11 are one program in two loads.**  The routine at `b1655` requests
+  them one after the other.  A flag at `e730` keeps its value across the two
+  loads.  The two images are adjacent: 11 covers `9260`-`d0dd` and 10 covers
+  `d100`-`ef91`, 23,533 words together.
 
-That last point is the structural difference from the analog Courier.  There,
-PCM is overlay 8, 6,197 words, *chained onto* the V.34 core - the loader sees a
-request for 6 and adds 8, and the PCM layer rides on V.34's receiver.  Here the
-PCM image is 23,533 words in its own right, occupying the same program space
-V.34 would use (`a000`-`d6a9`), so it is an alternative to V.34 rather than an
-addition to it: a complete datapump, nearly four times the size of the client's
-PCM overlay, sharing nothing with it.
+That last point is the structural difference from the analog Courier.  In the
+analog Courier, PCM is overlay 8, with 6,197 words, *attached to* the V.34
+core.  The loader gets a request for 6 and adds 8, and the PCM layer uses the
+receiver of V.34.  Here, the PCM image has 23,533 words of its own.  It uses
+the same program space that V.34 uses (`a000`-`d6a9`).  Thus, it is an
+alternative to V.34, not an addition to it.  It is a complete datapump, almost
+four times the size of the PCM overlay of the client, and it shares nothing
+with that overlay.
 
 > **Correction from the release-series comparison.**  Images 10 and 11 are
-> not a second standalone datapump.  Together with the small I-modem resident
-> they reconstruct the analogue Courier's resident-class program; the pair
-> predates x2.  What x2 adds is new PCM transmit/state-machine code inside that
-> split resident program.  See [Nine I-modem builds](imodem-firmware-timeline.md).
+> not a second standalone datapump.  Together with the small I-modem
+> resident, they make the resident-class program of the analogue Courier
+> again.  The pair is older than x2.  The x2 addition is new PCM
+> transmit/state-machine code in that split resident program.  See
+> [Nine I-modem builds](imodem-firmware-timeline.md).
 
 ### Isolating the first x2 server and symmetric addition
 
-The last pre-x2 build (`IM020009`, October 1996) and first x2 build
-(`IM020104`/`IE020104`, March 1997) bound the new DSP code exactly:
+The last pre-x2 build (`IM020009`, October 1996) and the first x2 build
+(`IM020104`/`IE020104`, March 1997) give the exact limits of the new DSP code:
 
 | image | pre-x2 words | first-x2 words | growth with x2 |
 |---:|---:|---:|---:|
@@ -397,14 +402,15 @@ The last pre-x2 build (`IM020009`, October 1996) and first x2 build
 | 11 | 14,525 | 15,811 | **1,286** |
 | combined | 20,070 | 22,692 | **2,622** |
 
-The addition is split almost evenly across the load boundary.  The supervisor
-always loads images 10 and 11 back to back, so this is one program, not one
-image for server mode and another for symmetric mode.
+The addition is divided almost equally across the load boundary.  The
+supervisor always loads images 10 and 11 one after the other.  Thus, this is
+one program.  It is not one image for server mode and a different image for
+symmetric mode.
 
-S58 bit 2 (server) and bit 8 (symmetric) also arrive together in the first x2
-release.  Binary presence alone therefore cannot distinguish the two roles,
-and it does not yet prove that either control reaches the DSP.  The required
-discriminating trace is:
+S58 bit 2 (server) and bit 8 (symmetric) also come together in the first x2
+release.  Thus, binary presence alone cannot show the difference between the
+two roles.  It also does not yet prove that either control gets to the DSP.
+This is the trace that is necessary to show the difference:
 
 ```text
 S58 stored byte, bit 2 / bit 8
@@ -414,44 +420,44 @@ S58 stored byte, bit 2 / bit 8
     -> equal-rate selection, including the 64,000 terminal case
 ```
 
-Only the endpoints of that diagram are presently proved: the S58 labels and
-the x2-era growth in the paired DSP program.  The intervening arrows are the
-open reverse-engineering task.  In particular, a supervisor test of either
-mask is not enough unless its result can be followed into a mailbox write and
-then to a C5x data-cell consumer.
+Now, only the endpoints of that diagram are proved.  These are the S58 labels
+and the growth of the paired DSP program in the x2 era.  The arrows between
+them are the open reverse-engineering task.  Specially, a supervisor test of
+either mask is not sufficient.  We must also follow its result into a mailbox
+write and then to a consumer of a C5x data cell.
 
-This narrows the 64,000 path as well.  It is outside the analogue client's x2
-rate mask and cannot be produced by the tag-`69` line-quality map.  For x2
-symmetric it must come from the server-side role/rate path above.  Transparent
-ISDN `/DIGITAL` calls remain a separate path that does not require the modem
-DSP.
-
+This also makes the 64,000 path narrower.  This rate is not in the x2 rate
+mask of the analogue client, and the tag-`69` line-quality map cannot make
+it.  For x2 symmetric, it must come from the server-side role/rate path above.
+Transparent ISDN `/DIGITAL` calls are a separate path that does not need the
+modem DSP.
 ### False lead closed: `9074` is legacy HST, not x2
 
-An initial comparison appeared to find a new first-x2 bitmap at `ds:9074`.
+An initial comparison seemed to find a new first-x2 bitmap at `ds:9074`.
 Its consumers select levels 2 through 7 from masks `10h`, `08h`, `04h`, `20h`,
-`40h`, and `80h`, and a parser fills it from a literal `HST/c0` record.  That
-looked superficially like the remote-server transmit selector named by S58.
+`40h`, and `80h`.  A parser fills it from a literal `HST/c0` record.  At
+first, this looked like the remote-server transmit selector that S58 names.
 
-The release comparison disproves it.  In `IM020009`, six months before x2,
-the same `HST/c0` handler stores its two octets at `9086`/`9087` instead of
-`9073`/`9074`, and the consumers of `9087` contain the same mask tests and the
-same level-selection logic.  The whole block moved by 19 bytes as RAM layout
-changed.  It is the legacy USR **HST modulation** parser, not an x2 host/DSP
-message.
+The release comparison shows that this is not correct.  In `IM020009`, six
+months before x2, the same `HST/c0` handler stores its two octets at
+`9086`/`9087`, not at `9073`/`9074`.  The consumers of `9087` have the same
+mask tests and the same level-selection logic.  The full block moved by
+19 bytes because the RAM layout changed.  It is the parser for the legacy USR
+**HST modulation**.  It is not an x2 host/DSP message.
 
-This is a useful negative result: direct-address absence is not evidence that
-a state variable is new across firmware releases.  A proposed x2 addition now
-has to survive relocation-aware code matching against `IM020009`.  The real
-server/symmetric trace must connect S58 bits 2 and 8 to the new code in DSP
-images 10 and 11; the HST bitmap contributes nothing to that proof.
+This negative result is useful.  If a direct address is absent, that is not
+evidence that a state variable is new across firmware releases.  Now, a
+proposed x2 addition must also agree with code matching against `IM020009`
+that accepts relocation.  The real server/symmetric trace must connect S58
+bits 2 and 8 to the new code in DSP images 10 and 11.  The HST bitmap does
+not help that proof.
 
 ### First server-control spine in the DSP
 
-The first-x2 overlay table can now be read independently of the later 3.00.02
-addresses.  Its rows are byte counts and load addresses; its source-segment
-table begins 0x48 bytes after the row-table base.  The three pieces that form
-the resident-class C5x program are:
+Now we can read the first-x2 overlay table without the later 3.00.02
+addresses.  Its rows are byte counts and load addresses.  Its source-segment
+table starts 0x48 bytes after the base of the row table.  These are the three
+pieces that make the resident-class C5x program:
 
 | image | source | bytes | words | C5x load range |
 |---:|---:|---:|---:|---|
@@ -459,8 +465,8 @@ the resident-class C5x program are:
 | 11 | `d84c:0000` | `7b86h` | 15,811 | `9194..cf56` |
 | 10 | `d4ef:0000` | `35c2h` | 6,881 | `d000..eadf` |
 
-That makes it possible to follow pointers across the image boundaries instead
-of comparing the three blobs separately.  A dispatch table in image 5 names
+Thus, we can follow pointers across the image boundaries, and we do not have
+to compare the three blobs separately.  A dispatch table in image 5 points to
 two adjacent entries in image 10:
 
 ```text
@@ -480,15 +486,15 @@ e120: sacb                  ; preserve which entry was selected
       -> @60 and @6d        ; working mode words
 ```
 
-The resulting mode word is not passive.  `@60` bits 5, 4, 2, 1 and 0 choose
-different state paths, while bit 8 in the saved/combined word chooses between
-callback `e184` and the older callback `8b52`.  The initializer installs
-function pointers `e65f/e67b` or `e692/e6a1`, and state callbacks including
-`e2b1`, `e438`, `e4bc`, `e5e7`, `e60b`, `e61d` and `e62c`.  The large new
-block `e185..e4cc` is therefore a callback-driven protocol engine, not a table
-or unused payload.
+The mode word that results is not passive.  Bits 5, 4, 2, 1 and 0 of `@60`
+select different state paths.  Bit 8 in the saved/combined word selects
+callback `e184` or the older callback `8b52`.  The initializer installs
+function pointers `e65f/e67b` or `e692/e6a1`.  It also installs state
+callbacks, which include `e2b1`, `e438`, `e4bc`, `e5e7`, `e60b`, `e61d` and
+`e62c`.  Thus, the large new block `e185..e4cc` is a protocol engine that
+callbacks control.  It is not a table or a payload that is not used.
 
-This gives the middle of the required control path:
+This gives the middle of the necessary control path:
 
 ```text
 supervisor-selected DSP entry (e11a or e11e)
@@ -498,62 +504,64 @@ supervisor-selected DSP entry (e11a or e11e)
     -> staged engine e185..e4cc
 ```
 
-Two links are still deliberately unnamed.  The supervisor caller that chooses
-`e11a` versus `e11e` must be tied to S58 `02h`/`08h`, and the callbacks must be
-classified against observable V.8, INFO, Phase 3, Phase 4 and data events.
-Those are now bounded searches over this control spine rather than searches of
-all seven images.
+We do not yet name two links, and this is intentional.  We must connect the
+supervisor caller that selects `e11a` or `e11e` to S58 `02h`/`08h`.  Also, we
+must classify the callbacks against V.8, INFO, Phase 3, Phase 4 and data
+events that we can observe.  Now these are limited searches on this control
+spine.  They are not searches of all seven images.
 
 ### Tags `70` and `71` are consecutive setup fields, not the two roles
 
-> **Superseded in part.** The dispatch-table base and the bit-numbering
-> convention used below are both wrong; see *The dispatch base is `882b`*
-> at the end of this document for what survives and what does not.
+> **Superseded in part.** The base of the dispatch table and the
+> bit-numbering convention below are both incorrect.  See *The dispatch base
+> is `882b`* at the end of this document for the parts that are correct and
+> the parts that are not.
 
-The small resident's 128-word host-command dispatch table starts at `8817`.
-As on the analogue Courier, the received tag is the direct index into this
-table; the valid range is `00..7f`.  The two adjacent entries therefore resolve
-without guessing:
+The host-command dispatch table of the small resident has 128 words and
+starts at `8817`.  As on the analogue Courier, the received tag is the direct
+index into this table.  The valid range is `00..7f`.  Thus, we can find the
+two adjacent entries without a guess:
 
 | host tag | table cell | handler | bit contributed to `@60` / `@6d` |
 |---:|---:|---:|---:|
 | `70` | `8887` | `e11e` | `0100` |
 | `71` | `8888` | `e11a` | `0000` |
 
-There are only two other references to either handler in the joined program.
-They are the internal chooser at `e769..e779`, which tests `@6f` bit 0 and
-branches to the same pair (`e11a` when set, `e11e` when clear).
+In the joined program, there are only two other references to these
+handlers.  They are in the internal chooser at `e769..e779`.  This chooser
+tests bit 0 of `@6f` and branches to the same pair (`e11a` when the bit is
+set, `e11e` when it is clear).
 
-The extra `0100` is operational, not a status label.  Both handlers merge it
-with host word `@7a` and copy the result to both working mode words.  At
-`e166..e16b`, bit 8 then selects the callback installed in `@1a`:
+The extra `0100` has an operational function.  It is not a status label.  The
+two handlers merge it with host word `@7a` and copy the result to the two
+working mode words.  Then, at `e166..e16b`, bit 8 selects the callback that is
+installed in `@1a`:
 
 ```text
 mode bit 8 clear  -> e184   ; new callback-driven x2 engine
 mode bit 8 set    -> 8b52   ; older resident callback
 ```
 
-Following the supervisor producers corrects the tempting interpretation that
-these are the server and symmetric commands.  `addca..ade10` constructs a
-capability/configuration word in `BX`, sends it as tag `70`, and returns.
-`ade11..ade21` computes the intersection of two rate masks, saves it at
+It is easy to think that these are the server and symmetric commands.  But
+the supervisor producers show that this is not correct.  `addca..ade10` makes
+a capability/configuration word in `BX`, sends it as tag `70`, and returns.
+`ade11..ade21` calculates the intersection of two rate masks, saves it at
 `a7e3`, and sends that value as tag `71`.  The normal call-start paths at
-`a97c2..a97dd` and `a99c1..a99dc` send both, in that order.  They are two
-fields of one setup transaction, not mutually exclusive roles.  Bit `0100`
-still has the callback effect above, but it must not be named "symmetric" from
-that fact.
-
+`a97c2..a97dd` and `a99c1..a99dc` send the two tags, in that order.  They are
+two fields of one setup transaction.  They are not roles that exclude each
+other.  Bit `0100` still has the callback effect above.  But do not give it
+the name "symmetric" because of that fact.
 ### The actual symmetric selector: S58 bit 8 makes both descriptors mode 8
 
-The I-modem keeps S58 at supervisor byte `2800:9187`.  This is identified by
-the complete named bit set in executable code: the same byte is tested for
-`01h`, `02h`, `04h`, and `08h`, matching x2 enable, server mode, forced A-law,
-and symmetric mode.  The symmetric test occurs in two parallel call-record
-builders, at physical `5f649` and `6057c`.
+The I-modem keeps S58 at supervisor byte `2800:9187`.  The complete named bit
+set in executable code identifies it.  The code tests the same byte for
+`01h`, `02h`, `04h`, and `08h`.  These agree with x2 enable, server mode,
+forced A-law, and symmetric mode.  The symmetric test occurs in two parallel
+builders of call records, at physical `5f649` and `6057c`.
 
-The first path is representative.  Before the override, the builder has made
-an asymmetric x2 record: byte `+7` is mode `0ah` and byte `+9` is 1.  When S58
-bit 8 is set, it performs the following paired update:
+The first path is a typical example.  Before the override, the builder has
+made an asymmetric x2 record: byte `+7` is mode `0ah` and byte `+9` is 1.
+When S58 bit 8 is set, the builder does this paired update:
 
 ```text
 test byte es:[9187], 08h       ; S58 symmetric mode
@@ -566,37 +574,38 @@ mov  byte [mirror  + 3], 8
 ```
 
 The second builder at `6057c..605a4` makes the same four writes.  The two
-structures are a primary call descriptor and the mirrored descriptor passed
-to the other side of the negotiation code; the builder deliberately keeps the
-role and modulation bytes identical between them.  Thus the implementation of
-"both modems send and receive at the same x2 speed" begins by replacing the
-ordinary directional x2 role (`+9 = 1`) with **no privileged direction**
-(`+9 = 0`) and selecting the same proprietary modulation mode, internal value
-8, in both descriptors.
+structures are a primary call descriptor and the mirrored descriptor that
+goes to the other side of the negotiation code.  The builder intentionally
+keeps the role bytes and the modulation bytes the same in the two
+structures.  Thus, the implementation of "both modems send and receive at the
+same x2 speed" starts with two changes.  It replaces the usual directional x2
+role (`+9 = 1`) with **no privileged direction** (`+9 = 0`).  It also selects
+the same proprietary modulation mode, internal value 8, in the two
+descriptors.
 
-This is also release-bounded evidence.  The 45-byte block containing that
-S58-bit-8 override occurs once in `IM020104`, the first x2 build, and not at all
-in `IM020009`, the last pre-x2 build.  Mode 8 here is therefore the executable
-I-modem implementation of x2 symmetric, not the unrelated result-code value 8
-in the analogue Courier diagnostics.
+This evidence also has release limits.  The 45-byte block that contains that
+S58-bit-8 override occurs one time in `IM020104`, the first x2 build.  It does
+not occur in `IM020009`, the last pre-x2 build.  Thus, mode 8 here is the
+executable I-modem implementation of x2 symmetric.  It is not the unrelated
+result-code value 8 in the diagnostics of the analogue Courier.
 
-The rate agreement then has the two directional MP maximum-rate nibbles
-recovered below available to it.  The descriptor writes prove equal role/mode,
-but the final write that makes the two MP rate nibbles equal has not yet been
-isolated; using the mutually acceptable ordinal for both is the interpretation
-supported by the MIB's explicit equal-rate requirement.  Ordinal 15 is the
-terminal case, 64,000 bit/s (`K = 48`, eight payload bits per 8-kHz PCM sample).
-On an analogue path the measurement-derived ceiling prevents that ordinal;
-between two digital endpoints there is no analogue measurement clamp, so 15
-remains available.
+Then, the rate agreement can use the two directional MP maximum-rate nibbles
+that we recovered below.  The descriptor writes prove an equal role/mode.  But
+we did not yet isolate the final write that makes the two MP rate nibbles
+equal.  The MIB explicitly requires an equal rate.  Thus, our interpretation
+is that the code uses the mutually acceptable ordinal for the two directions.
+Ordinal 15 is the terminal case, 64,000 bit/s (`K = 48`, eight payload bits
+for each 8-kHz PCM sample).  On an analogue path, the ceiling that comes from
+the measurement prevents that ordinal.  Between two digital endpoints, there
+is no analogue measurement clamp, so 15 is still available.
 
 ### The Quad image exposes the digital-server DSP hand-off
 
-QF 6.0.3 is a better image for naming the server half because its overlay map
-is recovered and it contains the digital modem's V.90 INFO0d builder.  The
-important correction is that "digital mode" is not represented by one bit.
-At least two internal bits in DSP data word `039f` carry different parts of
-the decision:
+QF 6.0.3 is a better image to identify the server half.  We recovered its
+overlay map, and it has the V.90 INFO0d builder of the digital modem.  The
+important correction is that one bit does not represent "digital mode".  At
+least two internal bits in DSP data word `039f` hold different parts of the
+decision:
 
 | DSP state | tested at | effect |
 |---|---|---|
@@ -605,14 +614,15 @@ the decision:
 | `ffd9` bit 8 | `c801`, `c81c`, `c870` | distinguish the two passes/substates inside that overlay |
 | `ffd9` bit 9 | `c89e` | gate the transition out of its setup path |
 
-These are DSP RAM bits, not ITU bit positions.  The first is the advertised
-V.90 role; the second changes executable control flow and therefore proves
-that the role reaches the datapump rather than stopping in the supervisor.
+These are DSP RAM bits, not ITU bit positions.  The first bit is the
+advertised V.90 role.  The second bit changes the executable control flow.
+Thus, it proves that the role gets to the datapump and does not stop in the
+supervisor.
 
-The join after INFO is now concrete.  Shared code at `aaa4..aafe` receives a
-framed bit stream and updates a CRC with polynomial `8408`.  Once the received
-CRC agrees, the ordinary path continues at `ab00`, but `039f` bit 7 branches
-to `c86f`:
+Now we know the join after INFO.  Shared code at `aaa4..aafe` receives a
+framed bit stream and updates a CRC with polynomial `8408`.  When the
+received CRC agrees, the usual path continues at `ab00`.  But `039f` bit 7
+branches to `c86f`:
 
 ```text
 aab3  lar   ar1, #039f
@@ -628,11 +638,11 @@ aafd  bit   7, *
 aafe  bcnd  c86f, tc         ; valid server frame -> server overlay
 ```
 
-`c86f` copies the negotiated working words into `0340`/`0341`, expands the
-server tables, and finally installs `c922` in `03cd`.  `03cd` is the datapump's
-phase callback/descriptor cell throughout these images.  A later threshold
-test at `c8ce` changes the cell to `c90e` and reports a five-word status stream
-to the supervisor:
+`c86f` copies the negotiated working words into `0340`/`0341` and expands the
+server tables.  At the end, it installs `c922` in `03cd`.  In all these
+images, `03cd` is the phase callback/descriptor cell of the datapump.  Later,
+a threshold test at `c8ce` changes the cell to `c90e`.  It also reports a
+five-word status stream to the supervisor:
 
 ```text
 c8b7  lar   ar1, #03cd
@@ -649,17 +659,18 @@ c8d6  splk  *, #c90e         ; advance the server phase descriptor
 c8d8..c8e7 -> supervisor queue: 806c, 0000, 806d, 0600, 8074
 ```
 
-The queue routine is resident `86cd`; it writes each word to the ring at
-`0bd0`.  Thus the transition has both required consequences: a new DSP phase
-descriptor and an observable control-plane notification.  The high bit on
-`806c`, `806d` and `8074` marks control/status words in this mailbox stream;
-the exact supervisor names for tags `6c`, `6d` and `74` remain to be recovered.
+The queue routine is resident `86cd`.  It writes each word to the ring at
+`0bd0`.  Thus, the transition has the two necessary results: a new DSP phase
+descriptor and a control-plane notification that we can observe.  The high
+bit on `806c`, `806d` and `8074` identifies control/status words in this
+mailbox stream.  We must still recover the exact supervisor names for tags
+`6c`, `6d` and `74`.
 
 The resident dispatcher at `c03d..c048` explains what those values are.  It
-loads `03cd`, copies the next three program words into working cells
-`03c8..03ca`, advances the script address by three, and dispatches through the
-working callback.  Thus `03cd` is a three-word phase-script pointer, rather
-than merely an untyped callback cell:
+loads `03cd` and copies the next three program words into working cells
+`03c8..03ca`.  It increases the script address by three, and dispatches
+through the working callback.  Thus, `03cd` is a three-word phase-script
+pointer.  It is not only a callback cell without a type:
 
 ```text
 c03d  lacl  @4d              ; DP 7: data 03cd, current script pointer
@@ -674,20 +685,20 @@ c047  lacl  @48
 c048  bacc                    ; run this record's callback
 ```
 
-Following `c922` in three-word steps terminates exactly at `c93a`, whose first
-word is `c423`.  `c423` is executable resident code that reports status through
-`86cd`; `c8ce` watches working cell `03c8` for that same value and performs the
-`c922 -> c90e` switch.  This proves that `c922` is a finite server sub-script
-and that `c8ce` is its completion callback.
+If we follow `c922` in three-word steps, the steps stop exactly at `c93a`.
+The first word of `c93a` is `c423`.  `c423` is executable resident code that
+reports status through `86cd`.  `c8ce` monitors working cell `03c8` for that
+same value, and then does the `c922 -> c90e` change.  This proves that `c922`
+is a finite server sub-script and that `c8ce` is its completion callback.
 
-It does **not**, by itself, prove a Phase-4-to-data boundary.  A complete
-cross-reference finds an earlier installer at `a180..a18a`: bit 15 of `039f`
-chooses `c67f`, then bit 7 chooses `c7dd` or `c90e`.  The digital-server role
-therefore installs `c90e` before the `c922` detour, and `c8ce` restores that
-enclosing server script.  Calling `c90e` a newly entered data script would
-contradict that earlier use.
+But this alone does **not** prove a Phase-4-to-data boundary.  A complete
+cross-reference finds an earlier installer at `a180..a18a`.  Bit 15 of `039f`
+selects `c67f`, and then bit 7 selects `c7dd` or `c90e`.  Thus, the
+digital-server role installs `c90e` before the `c922` detour, and `c8ce` puts
+back that enclosing server script.  If we call `c90e` a newly entered data
+script, that is in contradiction with that earlier use.
 
-The complete selector at `a180` is:
+This is the complete selector at `a180`:
 
 | `039f` bit 15 | `039f` bit 7 | installed at `03cd` | present interpretation |
 |---:|---:|---|---|
@@ -695,19 +706,19 @@ The complete selector at `a180` is:
 | 1 | 0 | `c7dd` | PCM analogue/client-side path |
 | 1 | 1 | `c90e` | PCM digital-server path; its constants identify the V.90 sequence in this dual-protocol build |
 
-`c922` is not a fourth peer in that selector.  It is installed later by the
-digital-server receive path as a finite detour, after which `c90e` is restored.
-Therefore the immediate candidate to inspect for an alternative PCM sequence
-is `c7dd`; assigning it specifically to x2 still requires tracing the producer
-of `039f` bit 15 and comparing an x2-only server build.
+`c922` is not a fourth peer in that selector.  The digital-server receive path
+installs it later as a finite detour.  After the detour, `c90e` is put back.
+Thus, the first candidate to examine for an alternative PCM sequence is
+`c7dd`.  Before we can assign it specifically to x2, we must trace the
+producer of `039f` bit 15 and compare an x2-only server build.
 
-The nearby engine at `c93e` remains a strong six-interval PCM mapper candidate:
-it initializes six intervals, derives independent counts from negotiated
-buffers, repeatedly calls `c524`/`c99c`/`c9d2`, and returns to common setup at
-`c565`.  Its actual enable edge still has to be followed rather than inferred
-from adjacency to the script table.
+The nearby engine at `c93e` is still a strong candidate for a six-interval
+PCM mapper.  It initializes six intervals and gets independent counts from
+negotiated buffers.  It calls `c524`/`c99c`/`c9d2` many times, and returns to
+common setup at `c565`.  We must still follow its actual enable edge.  Do not
+infer it only because it is near the script table.
 
-The evidence-backed call spine is therefore:
+Thus, the call spine that the evidence supports is:
 
 ```text
 supervisor mode/config command
@@ -721,7 +732,6 @@ supervisor mode/config command
        + mailbox status 6c/6d/74 to the supervisor
     -> enclosing server script resumes
 ```
-
 ### Decompiling the `c90e` / `c922` script bodies
 
 Loading the Quad's `c800` mode image at its real DSP destination removes an
