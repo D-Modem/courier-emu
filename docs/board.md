@@ -141,7 +141,7 @@ a boundary heuristic. But it is not a proof of absence. A `DX` loaded from
 memory, as the downloader does at `0e515`, can get to those ports on a path
 that the analysis cannot bound.
 
-**Also, the streaming interpretation of that block is refuted.** Repeated reads
+**Also, the stream interpretation of that block is refuted.** Repeated reads
 do not pop, advance or change it. Thus those are sixteen stable registers. The
 `01fe0` machine polls one register. It does not empty a queue.
 
@@ -941,7 +941,7 @@ connected.** A UART channel with a transmit pin that is not connected is not a
 port. Thus serial channel 1 of the CPU is not used, and there is no second
 serial path to select.
 
-The remaining items are a coincidence, not a mechanism. There is a spare
+The other items are a coincidence, not a mechanism. There is a spare
 receiver channel (`U18` `3Y`), two spare driver gates (`U22` and `U23` gate 4)
 and a UART that is not used. All are real, and none connect to each other.
 Spare gates on a quad part are usual. The footprint has a different function.
@@ -1006,7 +1006,7 @@ same bit. We **recovered that model from the driver in the ROM**. We inferred it
 from the sequence of register writes, and we read the shared pin from the code,
 not from the board. Now the board shows the same result.
 
-**A floating `ORG` is a setting, not a gap.** On the Atmel part, an unconnected
+**An `ORG` that floats is a setting, not a gap.** On the Atmel part, an unconnected
 `ORG` has an internal pull-up and selects x16: 256 words of 16 bits, 512 bytes.
 `courier_emu/nvram.py` already models this. We selected it because the driver
 reads and writes words, and the boot block copies 512 bytes. We read the
