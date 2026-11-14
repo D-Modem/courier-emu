@@ -1044,56 +1044,67 @@ write-enable latch, the programmed words and a command trace.
 
 ### Why the EEPROM stays untouched at boot
 
-`reads` and `writes` both stay at zero through boot and plain command mode. That
-is the firmware's own behaviour, not a gap in the device model. Three separate
-findings account for it.
+`reads` and `writes` stay at zero through boot and plain command mode. This is
+the behavior of the firmware itself, not a gap in the device model. Three
+separate findings explain it.
 
 **There is no boot-time NVRAM profile load.** All eleven call sites for the two
-driver entries live in banked segment `0x81b8` (`0x8374x`, `0x8386x`, `0x838b9`,
-`0x84de8`), and they are command handlers: a word-by-word diagnostic dump that
-prints through the resident character-output helpers, a six-word store whose last
-word is a CRC-8 over the previous four, and a config write at `0x84dc7` that
-parses a literal `=PW` and programs word 0 to `0x4000` or `0x0000`. None of them
-is on the reset path. The working profile at `0x08de..0x095b` is instead filled
-at boot from a 77-byte flash default table copied at `0x63b72`, and the saved
-profile at `0x095c..0x09d9` is a plain RAM shadow (`81b8:35ee` saves, `81b8:3601`
-restores and re-applies).
+driver entries are in banked segment `0x81b8` (`0x8374x`, `0x8386x`, `0x838b9`,
+`0x84de8`). They are command handlers:
 
-**The diagnostic and store paths are gated on `[0x0a02] bit 3.`** That byte is the
-board capability code produced by the strap scan at `0x5bfc6`, which drives four
-lines (latch 1 bit `0x02`, latch 2 bits `0x40`, `0x10`, `0x20`) low one at a time
-and shifts input port `0x14` bit `0x08` into a four-bit index, then looks the
-index up in the table at `0x5c06b`. With that input floating high the index is
-`15`, the table entry is `0x00`, and `0x5c064` stores `[0x0a02] = 0`. Codes `2`,
-`9`, `12`, and `14` yield `0x29`, `0x28`, `0x28`, and `0x48`, all of which carry
-bit 3. The boot gate at `0x5bbb5` branches on the same bit.
+- A word-by-word diagnostic dump that prints through the resident
+  character-output helpers
+- A six-word store in which the last word is a CRC-8 over the four words before
+  it
+- A config write at `0x84dc7` that parses a literal `=PW` and programs word 0
+  to `0x4000` or `0x0000`
 
-**The persistent configuration lives in a separate parameter flash, not in the
-XMF image.** The routine at `0x7e07c` — reached by the harness's `startup-crc`
-milestone — scans four 4 KiB blocks from segment `0xf800` (physical
-`0xf8000..0xfbfff`), checksums bytes `0x000..0xffd` into `[0x06fc]`, compares
-against the word at `0xffe`, and keeps the block with the highest 32-bit version
-at `0xffa`. `main211.xmf` maps at `0x40000..0xb7fff`, so that region is empty
-here, `ES` comes back zero, and `0x7dffa` skips the whole unpack. Bytes 0..4 of a
-valid block become `[0x0a06..0x0a0a]`, and byte 4 becomes **`[0x0a03]`** — the
-capability byte that gates the profile restore at `0x6014f` and selects whether
-`0x63b6d` loads defaults into the stored profile at `0x095d` instead of the
+None of them is on the reset path. At boot, the firmware fills the working
+profile at `0x08de..0x095b` from a 77-byte flash default table, which it copies
+at `0x63b72`. The saved profile at `0x095c..0x09d9` is a plain RAM shadow
+(`81b8:35ee` saves, `81b8:3601` restores and applies again).
+
+**The diagnostic and store paths are gated on `[0x0a02] bit 3.`** That byte is
+the board capability code from the strap scan at `0x5bfc6`. The scan drives four
+lines low, one at a time (latch 1 bit `0x02`, latch 2 bits `0x40`, `0x10`,
+`0x20`). It shifts input port `0x14` bit `0x08` into a four-bit index. Then it
+finds the index in the table at `0x5c06b`. When that input floats high, the
+index is `15`, the table entry is `0x00` and `0x5c064` stores `[0x0a02] = 0`.
+Codes `2`, `9`, `12` and `14` give `0x29`, `0x28`, `0x28` and `0x48`. All of
+these have bit 3. The boot gate at `0x5bbb5` branches on the same bit.
+
+**The persistent configuration is in a separate parameter flash, not in the
+XMF image.** The harness gets to the routine at `0x7e07c` at its `startup-crc`
+milestone. The routine does these steps:
+
+1. It scans four 4 KiB blocks from segment `0xf800` (physical
+   `0xf8000..0xfbfff`).
+2. It calculates the checksum of bytes `0x000..0xffd` into `[0x06fc]`.
+3. It compares the checksum with the word at `0xffe`.
+4. It keeps the block with the highest 32-bit version at `0xffa`.
+
+`main211.xmf` maps at `0x40000..0xb7fff`. Thus, that region is empty here, `ES`
+comes back zero, and `0x7dffa` skips the full unpack. Bytes 0..4 of a valid
+block become `[0x0a06..0x0a0a]`. Byte 4 becomes **`[0x0a03]`**. This is the
+capability byte that gates the profile restore at `0x6014f`. It also selects
+whether `0x63b6d` loads defaults into the stored profile at `0x095d` or into the
 working copy at `0x08df`.
 
-Synthesising a block confirms the mechanism: writing a 4 KiB record at `0xf8000`
-with a matching checksum makes the search return `es = 0xf800` and load
-`[0x0a03]`. Reaching command mode from there needs more of the parameter block
-filled in than a stub provides, so the harness does not ship one; recovering a
-real parameter sector from hardware is what that path needs.
+A synthesized block confirms the mechanism. If you write a 4 KiB record at
+`0xf8000` with a matching checksum, the search returns `es = 0xf800` and loads
+`[0x0a03]`. To get to command mode from there, more of the parameter block must
+be filled than a stub gives. Thus, the harness does not supply a stub. That
+path needs a real parameter sector, recovered from hardware.
 
 ## Parameter sector
 
-The persistent configuration lives in a 16 KiB parameter flash searched at
-physical `0xf8000`, which the XMF update image does not carry. The search at
-`0x7e07c` walks four 4 KiB sectors, checksums bytes `0x000..0xffd`, compares
-against the word at `0xffe`, and keeps the sector with the highest 32-bit
-version at `0xffa`. The winner is copied to `0x0a06` one byte for one, so sector
-offset *i* lands at RAM `0x0a06 + i`:
+The persistent configuration is in a 16 KiB parameter flash. The firmware
+searches it at physical `0xf8000`, and the XMF update image does not carry it.
+The search at `0x7e07c` examines four 4 KiB sectors. It calculates the checksum
+of bytes `0x000..0xffd` and compares it with the word at `0xffe`. It keeps the
+sector with the highest 32-bit version at `0xffa`. The firmware copies the
+selected sector to `0x0a06`, one byte for one byte. Thus, sector offset *i*
+goes to RAM `0x0a06 + i`:
 
 | offset | RAM | role |
 |---|---|---|
@@ -1105,15 +1116,16 @@ offset *i* lands at RAM `0x0a06 + i`:
 | `0xffa` | | 32-bit version |
 | `0xffe` | | CRC-16/CCITT over `0x000..0xffd` |
 
-The packed config is expanded through the `(shift, mask)` table at `0x63f8d`
-into the 36 profile bytes `0x0932..0x0955`; the profile image is scattered to
-`0x08de` plus the 50 offsets listed at `0x63fd6`. The serial number is read as
-nine characters at `0x0a17` plus three at `0x0a20` (`0x835bb`), and `0x77bb9`
-treats four `0xffff` words as no serial fitted.
+The firmware expands the packed config through the `(shift, mask)` table at
+`0x63f8d` into the 36 profile bytes `0x0932..0x0955`. It scatters the profile
+image to `0x08de` plus the 50 offsets listed at `0x63fd6`. It reads the serial
+number as nine characters at `0x0a17` plus three at `0x0a20` (`0x835bb`).
+`0x77bb9` reads four `0xffff` words as "no serial fitted".
 
-Dumping the real part is not practical, so `parameters` synthesises a sector the
-firmware accepts. It carries the firmware's own power-on defaults for the packed
-config and profile image, so only the fields you set change:
+A dump of the real part is not practical. Thus, `parameters` synthesizes a
+sector that the firmware accepts. The sector has the power-on defaults of the
+firmware for the packed config and the profile image. Thus, only the fields
+that you set change:
 
 ```sh
 ./courier parameters params.bin --serial 12345678 \
@@ -1122,8 +1134,8 @@ config and profile image, so only the fields you set change:
   --parameter-sector params.bin --at ATY14
 ```
 
-That reproduces the configuration dump reported for a fully featured unit, and
-`ATI7` renders the full profile including the serial number:
+This gives the same configuration dump that a unit with all features reported.
+`ATI7` shows the full profile, with the serial number:
 
 ```text
 000,000,030,007,031,000
@@ -1135,12 +1147,13 @@ Clock Freq             25 Mhz
 Serial Number          12345678
 ```
 
-The sector's first byte gates each unpacked field, applying it when the bit is
-clear, and `--flags` sets it. Bit 3 decides whether type1 reaches `[0x0a03]`,
-and `0x8339f` tests bit `0x04` of that byte before the `ATY15` case is even
-reachable — so the default `0x08` is why that command answers `ERROR`. A sector
-with bit 3 clear and type1 carrying `0x04` makes it print the factory switch
-page instead, which reports all ten option switches as the firmware reads them:
+The first byte of the sector gates each unpacked field. The firmware applies a
+field when its bit is clear. `--flags` sets this byte. Bit 3 sets whether type1
+gets to `[0x0a03]`. `0x8339f` tests bit `0x04` of that byte before the firmware
+can get to the `ATY15` case. Thus, the default `0x08` is the cause of the
+`ERROR` answer to that command. With a sector that has bit 3 clear and type1
+with `0x04`, the command prints the factory switch page. This page reports all
+ten option switches as the firmware reads them:
 
 ```sh
 ./courier parameters params.bin --serial 12345678 --flags 0
@@ -1156,15 +1169,14 @@ DIPSWITCH #3   ON
 ...
 ```
 
-Feature bit 4 (value 16) is labelled x2 in archived notes for older Courier
-firmware, but on this 2002 build it gates V.90: `0x77d47` uses it to append
-`,V90` to the options list, and `0x82e7d` uses it to select the `5608` product
-code instead of `3368`. The options table does hold an `x2` string at
-`733c:49d6`, but nothing in the image ever loads it, so **this firmware cannot
-report x2 at all**.
+Archived notes for older Courier firmware call feature bit 4 (value 16) x2. But
+on this 2002 build, it gates V.90. `0x77d47` uses it to add `,V90` to the
+options list. `0x82e7d` uses it to select the `5608` product code, not `3368`.
+The options table has an `x2` string at `733c:49d6`, but nothing in the image
+loads it. Thus, **this firmware cannot report x2**.
 
-The board identification straps select the enclosure `ATI7` reports, which is a
-useful cross-check against a physical unit:
+The board identification straps select the enclosure that `ATI7` reports. This
+is a useful cross-check against a physical unit:
 
 | `--board-id` | capability | `ATI7` product type |
 |---:|---|---|
@@ -1172,12 +1184,12 @@ useful cross-check against a physical unit:
 | 5 | `0x14` | Rackmount |
 | 7, 13 | `0x22` | External |
 
-Note the tension with the default: codes 2/9/12 carry capability bit `0x08`, the
-settings-EEPROM bit, but report Internal, while the External codes do not carry
-it. Capability `0x22` is also the one value `0x667cb` special-cases as always
-returning `OK`. An external unit is therefore likely `--board-id 7`, which also
-changes the product code to the `A` suffixed form (`5608A`/`3368A`). Running
-`ATI` on real hardware settles it.
+This does not agree well with the default. Codes 2/9/12 have capability bit
+`0x08`, the settings-EEPROM bit, but they report Internal. The External codes
+do not have this bit. Also, `0x667cb` has a special case for capability `0x22`
+only: it always returns `OK`. Thus, an external unit is probably
+`--board-id 7`. This also changes the product code to the form with the `A`
+suffix (`5608A`/`3368A`). A run of `ATI` on real hardware will give the answer.
 
 ## A modeled line: the digital ATA
 
