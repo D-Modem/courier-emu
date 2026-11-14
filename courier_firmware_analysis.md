@@ -2685,46 +2685,45 @@ We found two defects in the C52 core when we followed the serial path:
 ## Possible next steps
 
 1. **Live RAM/state dump from the physical modem** (highest leverage): if the
-   Courier exposes any memory-peek / debug-monitor capability, dumping segment
-   `0x8000` (RAM) gives the resident code directly, and dumping DSP program RAM
-   during a V.90 handshake gives the *active* overlay — sidestepping the whole
-   static bank-mapping problem. Worth probing what debug AT commands this firmware
-   supports (there are undocumented USR ones).
+   Courier has a memory-peek / debug-monitor function, a dump of segment
+   `0x8000` (RAM) gives the resident code directly. A dump of DSP program RAM
+   during a V.90 handshake gives the *active* overlay. This avoids the full
+   static bank-mapping problem. Probe the debug AT commands that this firmware
+   supports (USR has some undocumented commands).
 2. **Interactive disassembler + human loop**: load the flash into IDA/Ghidra (IDA
-   has a TMS320C5x module) and resolve the boot/bank config manually, starting from
-   the verified banner anchor and the port `0x19/0x3E` I/O. This is patient,
-   multi-session RE — not automatable here because of the decode-anything problem.
-3. **Mine the DSP data tables** (tractable now): the datapump region is
-   data-dominated — extract the constellation/interleaver map (`flash 0x3B780`) and
-   coefficient tables, which describe the constellation machinery without needing
-   code RE.
-4. **Correlate live** (needs a connected call): `ATI6`/`ATI11` Timing/Carrier
-   Offset + echo vs. our DIL timing, to fork clock-recovery vs. constellation
+   has a TMS320C5x module) and resolve the boot/bank config manually. Start from
+   the verified banner anchor and the port `0x19/0x3E` I/O. This is slow RE
+   in many sessions. It is not possible to automate it here, because of the decode-anything problem.
+3. **Mine the DSP data tables** (possible now): most of the datapump region is
+   data. Extract the constellation/interleaver map (`flash 0x3B780`) and the
+   coefficient tables. They describe the constellation machinery, and you do not need
+   code RE for them.
+4. **Correlate live** (a connected call is necessary): compare `ATI6`/`ATI11` Timing/Carrier
+   Offset + echo with our DIL timing. This tells clock-recovery problems from constellation
    rejection.
-5. **Answer as the DAA at the ASIC boundary**: establish what the C52 reads
-   once per frame from external I/O `0x50` at program `0x8c1f` — the code that
-   consumes it, and which bits it tests — then drive it from the line model
-   instead of letting it float high. The datasheet fields above say what that
-   status should carry. The eight supervisor latches at `0x40`..`0x4e`, written
-   about 15,000 times each during a dial, are the other half of the same
-   boundary.
-6. **Trace the tick**: find how `[0x66c]` bit `0x80`, set by the DSP interrupt
-   every 25 entries, reaches the countdown chain at `0x5c0fa`. That would give
-   the supervisor a time base from the source the board actually has, and with
-   it every firmware timeout — including the `ATI10`/`ATI11` pages.
+5. **Answer as the DAA at the ASIC boundary**: find what the C52 reads
+   once for each frame from external I/O `0x50` at program `0x8c1f` (the code that
+   consumes it, and the bits that it tests). Then drive it from the line model.
+   Do not let it float high. The datasheet fields above give the contents of that
+   status. The eight supervisor latches at `0x40`..`0x4e` are the other half of the same
+   boundary. The firmware writes each of them about 15,000 times during a dial.
+6. **Trace the tick**: find how `[0x66c]` bit `0x80`, which the DSP interrupt sets
+   each 25 entries, gets to the countdown chain at `0x5c0fa`. That would give
+   the supervisor a time base from the source that the board has. With
+   it, each firmware timeout would operate, including the `ATI10`/`ATI11` pages.
 
 ## Complete flash ROM — `IDSDL302.ROM`
 
-A 1998 512 KiB ROM dump of a Courier V.Everything **external** (`$USR0100\\MODEM\\
-PNPC107\\Courier V.Everything EXT`, copyright through 1998). This is the whole
-part rather than an update payload, which settles several things `main211.xmf`
-could only leave as modelling choices. `courier-emu rom-info` recovers all of it
+This is a 1998 512 KiB ROM dump of a Courier V.Everything **external** (`$USR0100\\MODEM\\
+PNPC107\\Courier V.Everything EXT`, copyright through 1998). It is the full
+part, not an update payload. Thus it answers some questions that `main211.xmf`
+could leave only as modelling choices. `courier-emu rom-info` recovers all of it
 from the image.
 
 ### The image places itself
 
-The last sixteen bytes are the 80186 reset vector, and the stub there programs
-the chip select that decodes the ROM before it jumps:
+The last sixteen bytes are the 80186 reset vector. The stub there programs
+the chip select that decodes the ROM, and then it jumps:
 
 ```asm
 ffff0  cli
@@ -2734,9 +2733,9 @@ ffff7  out dx, ax
 ffff8  jmp far 0xfc00:0x1a21
 ```
 
-So the ROM occupies `0x80000..0xfffff`, and the boot block is entered at
-physical `0xfda21`. The boot stub then replays two setup tables — 36 word
-writes and 9 byte writes — which give the rest of the map:
+Thus the ROM occupies `0x80000..0xfffff`, and the boot block entry is at
+physical `0xfda21`. Then the boot stub replays two setup tables (36 word
+writes and 9 byte writes). These give the remaining map:
 
 | register | value | meaning |
 |---|---|---|
@@ -2744,55 +2743,55 @@ writes and 9 byte writes — which give the rest of the map:
 | `0xffa0`/`0xffa2` | `0x0000`/`0x200a` | RAM `0x00000..0x20000`, 128 KiB |
 | `0xffa8` | `0x10ff` | peripheral control block relocated into **memory** at `0x0ff00` |
 
-That last row is worth stating plainly: the harness already hooks memory
-`0xff00..0xffff` as the peripheral control block, and this is the firmware
-programming that relocation itself.
+That last row is important: the harness already hooks memory
+`0xff00..0xffff` as the peripheral control block, and here the firmware
+programs that relocation itself.
 
-The byte table seeds the board latches, and two of its values are exactly what
-the 2002 firmware's own boot writes: port `0x12` = `0x7f`, port `0x14` = `0xf5`.
+The byte table sets the initial values of the board latches. Two of its values are exactly the values that
+the boot of the 2002 firmware writes: port `0x12` = `0x7f`, port `0x14` = `0xf5`.
 
 ### The boot block the update image does not carry
 
-`main211.xmf` starts at the application; the ROM has ~6 KiB above it at
-`0xfbff0..0xfda69` that the update never replaces. It does, in order:
+`main211.xmf` starts at the application. The ROM has about 6 KiB above it, at
+`0xfbff0..0xfda69`, that the update never replaces. This code does these steps, in sequence:
 
 1. programs the peripheral control block from the two tables,
-2. copies its own 0x1975 bytes to physical zero — the first 0x400 bytes of that
-   block are an interrupt vector table, so the copy installs the vectors and the
-   code together — and enters through `int 0x13`,
-3. polls input port `0x10` bit `0x08` with a timeout, then bit-bangs the
+2. copies its own 0x1975 bytes to physical zero (the first 0x400 bytes of that
+   block are an interrupt vector table, thus the copy installs the vectors and the
+   code together), and enters through `int 0x13`,
+3. polls input port `0x10` bit `0x08` with a timeout, and then bit-bangs the
    Microwire settings EEPROM,
-4. CRC-16s the whole flash a segment at a time,
+4. calculates the CRC-16 of the full flash, one segment at a time,
 5. jumps into the application at `0x80000`.
 
 The CRC routine at relocated `0x03e0` is the same per-byte CCITT update
-recovered from `main211.xmf` at `0x72930` and implemented in
-`courier_emu/parameters.py`, confirmed across a four-year build gap.
+that we recovered from `main211.xmf` at `0x72930` and implemented in
+`courier_emu/parameters.py`. This is confirmed across builds that are four years apart.
 
-Step 3 qualifies a claim made from the update image alone. There is no
-boot-time NVRAM profile load in `main211.xmf` — but the code that reads the
-EEPROM at power-on is in the boot block, which an XMF update does not contain.
-Booting this ROM against the emulator's EEPROM model shows it reading word 0,
-finding `0xffff`, and programming it to `0x0000`: an unconfigured part being
-initialised.
+Step 3 changes a claim that we made from the update image alone. `main211.xmf` has no
+NVRAM profile load at boot. But the code that reads the
+EEPROM at power-on is in the boot block, and an XMF update does not contain the boot block.
+When we boot this ROM with the EEPROM model of the emulator, it reads word 0,
+finds `0xffff`, and programs it to `0x0000`. This is the initialisation of a part that
+is not configured.
 
-A second `SDL Xmodem file transfer` copy sits at `0xfc1db`, inside the boot
-block, which is where a recovery loader has to live.
+A second `SDL Xmodem file transfer` copy is at `0xfc1db`, in the boot
+block. A recovery loader must be at this location.
 
 ### The parameter sectors are the top of the same part
 
-The search at `0x7e07c` walks four 4 KiB sectors from `0xf8000`. In this image
-all of them read erased, so a dumped image cannot supply a parameter sector —
-it is written per-unit at manufacture. What the ROM does establish is that the
-region is not a separate part: it is the top of the same flash, immediately
+The search at `0x7e07c` reads four 4 KiB sectors from `0xf8000`. In this image,
+all of them are erased. Thus a dumped image cannot supply a parameter sector.
+The manufacturer writes it for each unit. The ROM does show that the
+region is not a separate part. It is the top of the same flash, immediately
 below the boot block.
 
 ### Cross-build confirmation of the board model
 
-The ROM has the same latch driver, called the same way (`mov ax, mask << 8 |
-index; call`), with the same index encoding — read entry at `0x827d1`,
-set/clear at `0x82771`/`0x8279b`, shadow read at `0x82750`. Every board input
-the 2002 firmware reads is read here too:
+The ROM has the same latch driver, and the code calls it in the same way (`mov ax, mask << 8 |
+index; call`), with the same index encoding: read entry at `0x827d1`,
+set/clear at `0x82771`/`0x8279b`, shadow read at `0x82750`. This ROM also reads each board input
+that the 2002 firmware reads:
 
 | signal | `main211.xmf` | `IDSDL302.ROM` |
 |---|---|---|
@@ -2801,14 +2800,14 @@ the 2002 firmware reads is read here too:
 | DTR, port `0x12` bit `0x40` | 3 sites | 3 sites |
 | carrier-detect switch, port `0x14` bit `0x04` | `0x5e3cf` | `0x82876` |
 
-The carrier-detect handler is structurally identical: same mask, same shadow
-bit `0x20`, same `[0x652]`-equivalent flag bit, same setting byte cleared to
+The carrier-detect handler has an identical structure: the same mask, the same shadow
+bit `0x20`, the same flag bit (equivalent to `[0x652]`), and the same setting byte cleared to
 zero for `&C0`.
 
-The option switches themselves move. This build reads seven of them from one
-port (index 3, masks `0x01`, `0x02`, `0x04`, `0x08`, `0x10`, `0x20`, `0x80`)
-where the 2002 firmware spreads the same functions across ports `0x10`, `0x12`,
-and `0x14`. Matching them by what each one writes:
+The option switches are at different locations. This build reads seven of them from one
+port (index 3, masks `0x01`, `0x02`, `0x04`, `0x08`, `0x10`, `0x20`, `0x80`).
+The 2002 firmware puts the same functions on ports `0x10`, `0x12`,
+and `0x14`. We matched them by the value that each one writes:
 
 | function | ROM port/mask | `main211.xmf` port/mask |
 |---|---|---|
@@ -2821,21 +2820,20 @@ and `0x14`. Matching them by what each one writes:
 | quiet, capability-gated | `0x12` `0x80` | `0x12` `0x80` |
 | carrier detect forced on | `0x14` `0x04` | `0x14` `0x04` |
 
-Two land on the same pin in both builds and one function per row is identical,
-so this is independent confirmation of what each switch *does*. It is not a
-switch numbering: the ROM's bit order does not follow the published switch
-numbers either, so which position on the case drives which pin still needs a
-physical unit.
+Two are on the same pin in both builds, and each row has one identical function.
+Thus this is independent confirmation of the function of each switch. It is not a
+switch numbering. The bit order of the ROM also does not follow the published switch
+numbers. Thus a physical unit is still necessary to find which position on the case drives which pin.
 
 ### Booting it
 
-`courier-emu run IDSDL302.ROM` boots the ROM from its reset vector. The image
-type is detected from the file, the ROM maps where its own chip select says,
-and the harness dispatches real-mode software interrupts so the boot block can
-enter through the vector table it installs at physical zero.
+`courier-emu run IDSDL302.ROM` boots the ROM from its reset vector. The harness detects the image
+type from the file. The ROM maps at the location that its own chip select gives.
+The harness dispatches real-mode software interrupts. Thus the boot block can
+enter through the vector table that it installs at physical zero.
 
-The peripheral timers are modelled from the instruction clock, which is what
-gets the ROM past its self-test:
+The peripheral timers are modelled from the instruction clock. This lets
+the ROM pass its self-test:
 
 ```asm
 80432  mov word ptr [0xff46], 0xc000   ; T2CON: enable
@@ -2845,17 +2843,17 @@ gets the ROM past its self-test:
 8044a  je 0x444
 ```
 
-The model covers the enable gate (a new ENABLE is only taken when INHIBIT is
-set in the same write), the zero-compare-is-full-range rule this self-test
-depends on, single-shot versus continuous, and the sticky max-count bit. It
-also covers the mask side of the interrupt controller, which turns out to
-matter: the boot table writes `IMASK = 0x0079`, masking the timers, and
-delivering a timer interrupt through that mask lands in a handler that is only
-consistent later in the sequence.
+The model includes the enable gate (the timer accepts a new ENABLE only when INHIBIT is
+set in the same write), the rule that a zero compare is the full range (this self-test
+uses it), single-shot versus continuous, and the sticky max-count bit. It
+also includes the mask side of the interrupt controller, which is
+important. The boot table writes `IMASK = 0x0079`, which masks the timers. If
+a timer interrupt goes through that mask, it goes to a handler that is
+consistent only later in the sequence.
 
 ### The system tick is calibrated from an external interrupt
 
-With the timers modelled the ROM runs on to a different wait, at `0x80a52`:
+With the timers modelled, the ROM continues to a different wait, at `0x80a52`:
 
 ```asm
 80a52  push ax
@@ -2865,10 +2863,10 @@ With the timers modelled the ROM runs on to a different wait, at `0x80a52`:
 80a5d  jne 0xa59
 ```
 
-Nothing advances that byte, and the reason is that this firmware does not run
-its tick from a fixed timer period at all. `0x9eb73` starts timer 1 as a
-stopwatch with a 54,166-tick timeout and unmasks INT1. The INT1 handler at
-`9ea4:0722` then does the calibration:
+Nothing advances that byte. The reason is that this firmware does not run
+its tick from a fixed timer period. `0x9eb73` starts timer 1 as a
+stopwatch with a 54,166-tick timeout and unmasks INT1. Then the INT1 handler at
+`9ea4:0722` does the calibration:
 
 ```asm
 9f162  mov word ptr [0xff46], 0xe001   ; T2CON: enable, interrupt, continuous
@@ -2882,40 +2880,40 @@ stopwatch with a 54,166-tick timeout and unmasks INT1. The INT1 handler at
 9f189  mov word ptr [0xff1a], 8        ; mask INT1 again
 ```
 
-So timer 2 is the tick, and its period is one and a half times however long the
-first INT1 edge takes to arrive. What drives INT1 physically is not established
-here. `--int1-after MS` supplies one edge as a harness stimulus, the same way
-`--ring` supplies ring cadence, and with it the sequence runs: timer 1 stops
+Thus timer 2 is the tick. Its period is one and a half times the time until the
+first INT1 edge comes. We do not know what drives INT1 physically.
+`--int1-after MS` supplies one edge as a harness stimulus, in the same way that
+`--ring` supplies the ring cadence. With it, the sequence runs: timer 1 stops
 with a count, timer 2 is programmed, the timer interrupt is unmasked, and a
-timer 2 tick is delivered through vector 19.
+timer 2 tick comes through vector 19.
 
-Two things then stop it short of a running tick, both visible in a trace:
+Then two items stop it before the tick runs. A trace shows both:
 
-- The measured interval comes out around 45,000 ticks, and one and a half times
-  that overflows sixteen bits, so the tick period lands at 2,112 ticks instead
-  of the intended value. The interval is set by how long the firmware keeps
-  interrupts disabled after starting the stopwatch, which is about 10,000
-  instructions here; whether that is faithful depends on an instruction-to-time
-  ratio calibrated against the 2002 build, not this one.
-- Code at `0x8e3e6` and `0x8e487` reuses timer 2 as a scratch delay - enable,
-  zero compare, poll max count - which clears the interrupt bit the tick needs.
-  On hardware something must sequence those against the tick; what, is not
-  recovered.
+- The measured interval is about 45,000 ticks. One and a half times
+  that value is more than sixteen bits. Thus the tick period becomes 2,112 ticks, not
+  the intended value. The interval depends on the time that the firmware keeps
+  interrupts disabled after it starts the stopwatch. Here, that is about 10,000
+  instructions. The accuracy of this value depends on an instruction-to-time
+  ratio that we calibrated with the 2002 build, not with this build.
+- Code at `0x8e3e6` and `0x8e487` uses timer 2 again as a scratch delay (enable,
+  zero compare, poll max count). This clears the interrupt bit that the tick needs.
+  On hardware, some device must put those in sequence with the tick. We did not
+  recover which device.
 
-The XMF path is deliberately left alone. An update image is entered at the
-application, past the boot block that programs the control block, and its
-delays are already served by the harness's calibrated helpers; answering its
-timer reads from the model instead puts its own timer interrupt service routine
-on a path it does not return from. Its writes are still tracked, so a run now
+We intentionally did not change the XMF path. An update image enters at the
+application, after the boot block that programs the control block. The calibrated helpers of the harness
+already supply its delays. If the model answers its
+timer reads instead, its own timer interrupt service routine goes
+on a path from which it does not return. The harness still records its writes. Thus a run now
 reports what it programs: compares of 32,256, 40,624, and 65,535 on the three
 timers.
 
 ## The application CRC the loader verifies
 
-Recovered from `IDSDL302.ROM` and verified numerically. This is the value behind
-the loader's `Calculating CRC...`, the modem-side quantity the DOS downloader
-reports through `ERROR(%02d) Modem reports bad CRC`, and the check that decides
-whether a downloaded image is accepted.
+We recovered this from `IDSDL302.ROM` and verified it numerically. This is the value of
+the `Calculating CRC...` step of the loader. It is the modem-side value that the DOS downloader
+reports through `ERROR(%02d) Modem reports bad CRC`. It is also the check that decides
+if the modem accepts a downloaded image.
 
 | Property | Value |
 |---|---|
@@ -2925,24 +2923,24 @@ whether a downloaded image is accepted.
 | Stored as | little-endian 16-bit word at flash `0x77FFE` |
 | Verification | `IDSDL302.ROM` computes `0x53bc`; the word stored at `0x77FFE` is `0x53bc` |
 
-Code anchors, all bank offsets in the recovery loader at flash `0x7C000` (add
-`0x80000` for the physical address the harness reports, since the ROM's reset
-stub maps it at `0x80000..0xFFFFF`):
+Code anchors. All are bank offsets in the recovery loader at flash `0x7C000`. (Add
+`0x80000` to get the physical address that the harness reports, because the reset
+stub of the ROM maps it at `0x80000..0xFFFFF`.)
 
 | Bank offset | Role |
 |---|---|
 | `0x03e0` | byte-wise CRC update; state in `cs:[0x104]` |
 | `0x0a75` | loads and prints the `Calculating CRC` string at `0x0231` |
 | `0x0a83` | `call 0x14ce` |
-| `0x0ab0` | `mov cs:[0x104], 0xffff` — seeds the accumulator |
+| `0x0ab0` | `mov cs:[0x104], 0xffff`: sets the initial value of the accumulator |
 | `0x0fdb` | phase 1: segments `0x8000..0xB000`, full 64 KiB each |
-| `0x1052` | `mov cs:[0x104], 0xffff` — resets the accumulator before phase 2 |
+| `0x1052` | `mov cs:[0x104], 0xffff`: resets the accumulator before phase 2 |
 | `0x1059` | phase 2: segments `0xC000..0xF000` |
-| `0x1060` | `mov cx, 0x7ffe` — the `F000` segment is walked two bytes short so the stored word excludes itself |
-| `0x1090` | `cmp ax, es:[si]` with `ES=0xF000`, `SI=0x7FFE` — computed against stored |
+| `0x1060` | `mov cx, 0x7ffe`: the walk of the `F000` segment stops two bytes early. Thus the stored word is not in the CRC |
+| `0x1090` | `cmp ax, es:[si]` with `ES=0xF000`, `SI=0x7FFE`: compares the calculated value with the stored value |
 
-The update step at `0x03e0` is a byte-swapped formulation of the reflected CCITT
-update rather than a table lookup:
+The update step at `0x03e0` is a byte-swapped form of the reflected CCITT
+update. It is not a table lookup:
 
 ```
 mov di, ax              ; preserve caller AX; AL is the input byte
@@ -2963,62 +2961,62 @@ xor dl, ah
 mov cs:[0x104], dx
 ```
 
-Two corrections to earlier notes fall out of this:
+This gives two corrections to earlier notes:
 
 - **`0x14ce` is not a mailbox dispatch.** It sets `ES=0x8000` and writes `0x00f0`
-  to `es:[0]`. Under this ROM's own mapping, segment `0x8000` is physical
-  `0x80000`, which is the base of the flash array, and `0xF0` is the AMD/Fujitsu
-  `Am29F0x0` reset command that returns the device to read-array mode. It puts
+  to `es:[0]`. With the mapping of this ROM, segment `0x8000` is physical
+  `0x80000`, which is the base of the flash array. `0xF0` is the AMD/Fujitsu
+  `Am29F0x0` reset command, which puts the device back into read-array mode. Thus the code puts
   the flash back into a readable state immediately before the CRC walk reads it.
-- **Segment `0x8000` is not RAM in this image.** Dumping physical
-  `0x80000..0x8FFFF` after a 40M-instruction harness run yields bytes identical to
+- **Segment `0x8000` is not RAM in this image.** We dumped physical
+  `0x80000..0x8FFFF` after a harness run of 40M instructions. The bytes are identical to
   `IDSDL302.ROM[0:0x10000]`, with zero differences. The "segment `0x8000` = the
-  64 KiB RAM" model belongs to the XMF analysis, where the update payload maps at
-  `0x40000`; it does not carry over to a complete flash part that maps itself at
-  `0x80000`. The code observed executing at `pc=0x804db` is ROM at file offset
-  `0x4db`, statically visible throughout.
+  64 KiB RAM" model is part of the XMF analysis, where the update payload maps at
+  `0x40000`. It does not apply to a complete flash part that maps itself at
+  `0x80000`. The code that we saw execute at `pc=0x804db` is ROM at file offset
+  `0x4db`. It is visible in static analysis at all times.
 
-Caveats. The CRC is verified against exactly one image, and no other image here
-can corroborate it. The region also assumes the phase-2 path through `0x1052` is
-the one taken, though a numerical match over a `0x37FFE`-byte region is not
-plausibly coincidental.
+Caveats. We verified the CRC on exactly one image, and no other image here
+can confirm it. The region also assumes that the code takes the phase-2 path through `0x1052`.
+But a numerical match over a `0x37FFE`-byte region is probably not
+a coincidence.
 
-**No update image carries this field**, which is itself the most useful evidence
-about it. Twelve were checked: the ten `.XMD` payloads all hold `0x0000` at flash
-`0x77FFE`, and the two sparse flash images reconstructed by `tools/unpack_sdl.py`
-from `SDL_CS2.EXE` and `SDL_7666.EXE` hold `0xFFFF` (erased) there, with the CRC
-region itself 98% empty because those C51-era packages load to flash
-`0x00000..0x3C000`, below the region entirely. A scan of every trailer position in
-all ten `.XMD` payloads, for both a `0x40000` and a `0` start, found no
-self-consistent CRC anywhere; the hits it did return sit at or below the ~8
-coincidences expected by chance from 524,288 positions at 1-in-65,536, and the
-one repeated pair (`SDL0430` and `SV_49` at `0x7d24e`) is a single coincidence
-counted twice, since those two images differ only below `0x40000`. The same scan
-reproduces `('0x40000', '0x77ffe', '0x53bc')` on `IDSDL302.ROM`, so it does find
+**No update image contains this field**. This fact is the most useful evidence
+about it. We checked twelve images. The ten `.XMD` payloads all hold `0x0000` at flash
+`0x77FFE`. The two sparse flash images that `tools/unpack_sdl.py` reconstructs
+from `SDL_CS2.EXE` and `SDL_7666.EXE` hold `0xFFFF` (erased) there. In them, the CRC
+region is 98% empty, because those C51-era packages load to flash
+`0x00000..0x3C000`, fully below the region. We scanned each trailer position in
+all ten `.XMD` payloads, for both a `0x40000` and a `0` start. We found no
+self-consistent CRC. The number of hits is at or below the approximately 8
+coincidences that chance gives from 524,288 positions at 1-in-65,536. The
+one repeated pair (`SDL0430` and `SV_49` at `0x7d24e`) is one coincidence
+that we counted two times, because those two images are different only below `0x40000`. The same scan
+gives `('0x40000', '0x77ffe', '0x53bc')` on `IDSDL302.ROM`. Thus it does find
 the field when the field is present.
 
-This supports, without proving, that **the modem computes this CRC after
-programming and writes it to `0x77FFE` itself**, so it exists only in a flash part
-that has been programmed and read back, never in a download payload. That is
-consistent with `IDSDL302.ROM` being a dumped part, and with the address snooper
-at `0x0e90` latching values destined for `F000:7FFE`. The write path that would
-prove it has not been traced. If it holds, only another dumped ROM can ever
-corroborate the CRC — no update image will.
+This supports, but does not prove, this theory: **the modem calculates this CRC after
+it programs the flash, and it writes the CRC to `0x77FFE` itself**. Thus the CRC is only in a flash part
+that was programmed and read back, never in a download payload. This
+agrees with the fact that `IDSDL302.ROM` is a dumped part. It also agrees with the address snooper
+at `0x0e90`, which latches values for `F000:7FFE`. We did not trace the write path that would
+prove it. If the theory is correct, only another dumped ROM can
+confirm the CRC. No update image can.
 
-Reproducing it needs no emulator; the routine above transcribed literally,
-seeded with `0xFFFF` and run over `rom[0x40000:0x77FFE]`, reproduces the stored
+You do not need an emulator to calculate it. Use the routine above exactly as written,
+start with `0xFFFF`, and run it over `rom[0x40000:0x77FFE]`. The result is the stored
 word.
 
 ## `ATI1` and the ATI dispatch table
 
-`ATI1` is documented as "the ROM checksum". It is **not** the download CRC above,
-and the two must not be confused: on the 20.16 MHz unit `ATI1` reports `1A11`
-while that image's download CRC is `53BC`. They do, however, cover the *same*
-region, which is useful mutual corroboration of that boundary.
+The documentation says that `ATI1` is "the ROM checksum". It is **not** the download CRC above.
+Do not mix the two. On the 20.16 MHz unit, `ATI1` reports `1A11`,
+and the download CRC of that image is `53BC`. But they cover the *same*
+region. Thus each one confirms that boundary for the other.
 
 ### Reference hardware
 
-Two Couriers were probed over serial to obtain these values. Both report
+We probed two Couriers over serial to get these values. Both report
 `ATI0` = `5607` and supervisor `7.3.14` / DSP `3.0.13`, dated 03/13/98:
 
 | Unit | `ATI7` Clock Freq | `ATI1` | Matching image family |
