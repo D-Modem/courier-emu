@@ -1,21 +1,21 @@
 # HST: two channels, one each way
 
-HST is datapump slot 3 (see [datapump-slots.md](datapump-slots.md)). It lives
-entirely in the 403's resident DSP bank and in the C52 mask ROM. This note is
-what the code and a run of it establish, written as the spec a reimplementation
-needs. Addresses are the 20.16 MHz resident (`courier-board-21210-capture-403`)
-and the mask ROM dump `boot_rom.MASK_ROM`.
+HST is datapump slot 3 (refer to [datapump-slots.md](datapump-slots.md)). All of it
+is in the resident DSP bank of the 403 and in the C52 mask ROM. This note gives
+what the code and a run of it establish. It is written as the specification that a reimplementation
+needs. The addresses are those of the 20.16 MHz resident (`courier-board-21210-capture-403`)
+and of the mask ROM dump `boot_rom.MASK_ROM`.
 
-HST is the only slot whose two sides send *different signals*. V.23 is also
-asymmetric, but both of its channels are FSK. Here each side installs its own
-transmitter, and the two share nothing but the symbol-script engine.
+HST is the only slot in which the two sides send *different signals*. V.23 is also
+asymmetric, but its two channels are FSK. Here, each side installs its own
+transmitter, and the two share only the symbol-script engine.
 
 ## Call roles and the loopback entries
 
 The slot-3 entries in the `10`/`11` tables, `c533` (`9b48`) and `c7fd`
-(`9b51`), are **analogue-loopback self-test** configurations, like the FSK
+(`9b51`), are configurations for an **analogue-loopback self-test**, the same as the FSK
 own-band entries in [fsk-modulation.md](fsk-modulation.md). Each one pairs a
-transmitter with a receiver for the *same* channel. A call uses HST's own tags
+transmitter with a receiver for the *same* channel. A call uses the tags of HST itself
 instead:
 
 | role | entry | transmits | receives |
@@ -25,13 +25,13 @@ instead:
 | loopback | `c533` | back channel | back channel |
 | loopback | `c7fd` | forward | forward |
 
-This was established by running two cores in lockstep, each one's `DXR`
-feeding the other's codec input. Results:
+We established this when we ran two cores in lockstep, with the `DXR` of each core
+fed into the codec input of the other core. Results:
 
-* **`c533` x `c7fd`:** neither receiver ever passes its first script step,
-  because each hears the other channel.
-* **`c533` x `c533` and `c7fd` x `c7fd`:** both receivers detect carrier.
-* **`c51f` x `c7ed`:** a full start-up on both sides, with host messages
+* **`c533` x `c7fd`:** no receiver ever passes its first script step,
+  because each one receives the other channel.
+* **`c533` x `c533` and `c7fd` x `c7fd`:** the two receivers detect carrier.
+* **`c51f` x `c7ed`:** a full start-up on the two sides, with host messages
   logged at `83b1`:
 
 | frame (7200 Hz) | tag `33` side | tag `32` side |
@@ -45,60 +45,59 @@ feeding the other's codec input. Results:
 | 2089 | `04` | |
 | 2437 | `02` | |
 
-What `04` and `02` mean is not read. The order on both sides, carrier, `04`,
-`02`, suggests receiver training stages.
+We did not read what `04` and `02` mean. The sequence on the two sides (carrier, `04`,
+`02`) suggests receiver training stages.
 
 ### Data across the pair
 
-**Both channels are bit-exact.** Each transmitter was fed a counting byte
-sequence, and its partner's output was compared after HDLC destuffing:
+**The two channels are bit-exact.** We fed each transmitter a counting byte
+sequence, and compared the output of its partner after HDLC destuffing:
 
 | direction | measured at | result over 30000 frames |
 |---|---|---|
 | forward, 4800 | words delivered to the host window (`832f`) | **2380 of 2380** bytes exact (10 more still in flight) |
 | back, 300 | the receiver's decoded value per data symbol (`@20` at `c5d6`) | **142 of 142** bytes exact |
 
-* **Framing.** The datapump's framer (`@56` = `8264`) is synchronous and
-  **HDLC bit-stuffed**: a 0 after every five 1s, with the flag `0x7e` at
-  `8278`. There are no start/stop bits. The forward sender takes a byte every
+* **Framing.** The framer of the datapump (`@56` = `8264`) is synchronous and
+  **HDLC bit-stuffed**: a 0 after each five 1s, with the flag `0x7e` at
+  `8278`. There are no start/stop bits. The forward sender takes a byte each
   12 frames (4800 bps). The receive side delivers the raw stuffed bits, LSB
-  first, n per symbol (`@26` = `8320`).
-* **Back channel: 3 bits on every other symbol.** In data mode the per-symbol
-  handler alternates between `cab5` (fetch, scramble, 8-DPSK step) and
+  first, n for each symbol (`@26` = `8320`).
+* **Back channel: 3 bits on every second symbol.** In data mode, the handler for each symbol
+  alternates between `cab5` (fetch, scramble, 8-DPSK step) and
   `cae0`/`cae2`, which sends **I = Q = 0**. That is 100 data symbols/s x 3 =
   **300 bps** (150 x 3 = **450** with `0x6f` bit 12). It is the half-baud line
-  the squared signal showed, and the sender's byte fetches alternate 144 and
+  that the squared signal showed, and the byte fetches of the sender alternate 144 and
   216 frames apart.
-* **Back-channel receiver** (`c57a` per sample, `c5c4` per symbol). Equaliser
-  (`8968`, `89cf`), then derotation by `@04`/`@05`. The octant decision
-  (`c6eb`-`c6fc`) uses signs and |I| against |Q|, with the reference point from
+* **Back-channel receiver** (`c57a` for each sample, `c5c4` for each symbol). It has an equalizer
+  (`8968`, `89cf`), then a derotation by `@04`/`@05`. The octant decision
+  (`c6eb`-`c6fc`) uses the signs and |I| against |Q|, with the reference point from
   `cbb1`. Differential decode (`c703`-`c710`): `d = k - k_prev`, data = nibble
-  `d` of `0x51376204`, which is the exact inverse of the transmitter's
-  `0x43705261` (all eight entries checked). Descrambling (`c740`) is
-  1 + x^-14 + x^-17, shift `@22` = 3, mirroring `cba2`. Delivery is through
-  `8304`. The decoded values match the transmitter's pre-scrambler values on
-  96% of symbols at a fixed lag; the misses are the receiver's pre-lock
-  symbols.
+  `d` of `0x51376204`. This is the exact inverse of the
+  `0x43705261` of the transmitter (we checked all eight entries). The descrambling (`c740`) is
+  1 + x^-14 + x^-17, shift `@22` = 3, the mirror of `cba2`. The delivery is through
+  `8304`. The decoded values agree with the values of the transmitter before the scrambler on
+  96% of symbols at a fixed lag. The misses are the symbols of the receiver before it locks.
 * **Harness trap.** The window slots are C5x I/O ports in data `0x50`-`0x5f`.
   The DSP reads them with `lamm *` in `80e8` (transmit) and writes them in
-  `8320` (receive). On the board those are separate CPU-side registers. A
-  harness that keeps one value per port lets each side's received data
-  overwrite its own transmit bytes. That produced 49 zeroed forward bytes, and
-  back-channel bytes reduced to bits 0 and 7, until the byte was supplied at
-  the moment of the `80e8` read. The `832f` store also fires only when the
-  window has room, so a harness that never drains the receive side sees it
+  `8320` (receive). On the board, those are separate CPU-side registers. A
+  harness that keeps one value for each port lets the received data of each side
+  overwrite its own transmit bytes. That caused 49 zeroed forward bytes, and
+  back-channel bytes with only bits 0 and 7, until the byte was supplied at
+  the time of the `80e8` read. Also, the `832f` store operates only when the
+  window has space. Thus, a harness that never drains the receive side sees it
   skip symbols.
 
 The `10`/`11` dispatchers have a call-mode twin (`9da6`, `a00d`, `9dc1`,
 `a054`), but it branches only for V.22/V.22bis, Bell 103, V.21 and V.23.
-HST's flag (`@26` bit 5) is not tested there. HST reaches its call roles only
+The flag of HST (`@26` bit 5) is not tested there. HST gets to its call roles only
 through tags `32` and `33`.
 
 ## Measured
 
-Running the loopback entries the way `fsk_loopback` does, with `@26` left at
-`8320` (see below), and recording `DXR` at the resident's 7200 Hz codec rate.
-The transmitters are the ones the call roles install:
+We ran the loopback entries in the same way as `fsk_loopback`, with `@26` kept at
+`8320` (refer to the text below), and recorded `DXR` at the codec rate of the resident, 7200 Hz.
+The transmitters are the ones that the call roles install:
 
 | entry | transmitter | carrier | baud | -20 dB span | rate |
 |---|---|---|---|---|---|
@@ -106,34 +105,34 @@ The transmitters are the ones the call roles install:
 | same, `0x6f` bit 12 set | | **375 Hz** | **300** | 258-480 Hz | 450 bps back channel |
 | `c7fd` | `c992` -> `c9a5` | **1800 Hz** | **2400** | 556-3078 Hz | forward channel |
 
-Baud is counted, not inferred: the symbol boundary `ca1b` runs 83 times in 3000
+The baud is counted, not inferred: the symbol boundary `ca1b` runs 83 times in 3000
 frames at 300 bps, 124 times at 450, and 999 times on the forward channel, with
-one modulator call per frame. No host data was fed and the codec input was
-silent, so the transmitters sent their start-up pattern. The squared back
+one modulator call for each frame. No host data was fed and the codec input was
+silent. Thus, the transmitters sent their start-up pattern. The squared back
 channel shows its strongest line at *half* the baud (100 / 150 Hz). That is the
-pattern repeating every two symbols, not the symbol rate, and it misled the
-first reading.
+pattern that repeats each two symbols, not the symbol rate, and it caused an error in
+the first interpretation.
 
 ## The symbol-script engine
 
-Both transmitters take their symbols from a script. At each symbol boundary,
-`ca1b` checks `@4a`. When it reaches zero, the engine copies the next three
+The two transmitters take their symbols from a script. At each symbol boundary,
+`ca1b` checks `@4a`. When it gets to zero, the engine copies the next three
 words from the script at `@4d` into `@48` (the handler), `@49` (an argument)
-and `@4a` (a duration in symbols), and then jumps to `@48`. A zero handler ends
-the script. A training schedule is therefore data and can be read straight out.
+and `@4a` (a duration in symbols). Then it jumps to `@48`. A zero handler ends
+the script. Thus, a training schedule is data, and you can read it directly.
 
 ## Forward channel
 
-**Modulator.** `c9a5` is a 20-tap pulse shaper running at three samples per
+**Modulator.** `c9a5` is a 20-tap pulse shaper that runs at three samples for each
 symbol (`@4c` steps `0x14` up to `0x3c`). There is no carrier multiply, because
-1800 Hz is fs/4: `@45` is decremented every sample, bit 0 picks the I or Q half
+1800 Hz is fs/4. `@45` is decremented each sample, bit 0 selects the I or Q half
 of the pulse table (`+0x14`), and bit 1 negates. That cycles I, Q, -I, -Q. The
 codec stays at index 0, 7200 Hz.
 
 **Mapping** (`cb4e`). The symbol index `@50` is looked up in mask ROM at
 program `0x0240 + @50`: high byte I, low byte Q, both signed. The tables there
-are the **V.17/V.32bis constellations, point for point, at scale x8**. Every
-entry was checked against SpanDSP's `v17_v32bis_tx_constellation_maps.h`:
+are the **V.17/V.32bis constellations, point for point, at scale x8**. We checked each
+entry against `v17_v32bis_tx_constellation_maps.h` of SpanDSP:
 
 | ROM | points | SpanDSP table | rate (2400 baud) |
 |---|---|---|---|
@@ -145,16 +144,16 @@ entry was checked against SpanDSP's `v17_v32bis_tx_constellation_maps.h`:
 | `0x0340` | 256 | none (odd multiples of 4) | 16800 |
 | `0x0244` | 4 | not SpanDSP's ABCD order | training |
 
-**Read this as shared tables, not as HST derived from V.32bis.** HST shipped
-before V.32 products, and long before V.32bis. What the ROM shows is that this
+**Interpret this as shared tables, not as an HST that is derived from V.32bis.** HST shipped
+before V.32 products, and long before V.32bis. The ROM shows that this
 1990s firmware runs HST on one table set that the V.32 family and V.17 fax also
 use. Other users of the same tables: the resident V.32 path (`bc8a`, `bcd2`,
-`bff0`) and the fax datapumps (`e689`, `e6a3`). Whether 1986 HST coded its
-symbols this way cannot be told from one firmware. **HST's 16800 table is its own, not V.32terbo's.** The resident has two
+`bff0`) and the fax datapumps (`e689`, `e6a3`). One firmware cannot tell if the HST of 1986 coded its
+symbols in this way. **The 16800 table of HST is its own. It is not the table of V.32terbo.** The resident has two
 large-constellation schemes, and only HST uses `0x340`.
 
 *Receive selector.* A jump table at `bee6`, indexed by `@2a`, loads the slicer
-base `@28` per rate:
+base `@28` for each rate:
 
 | index | n | `@28` | rate |
 |---|---|---|---|
@@ -168,73 +167,73 @@ base `@28` per rate:
 | 7-13 | 3-9 | none (slicer `c009`) | 7200-21600 |
 
 *V.32 transmit* (`bbbd`, rate code `@49`). Codes 1-4 go through `bbf1`, the
-same `index + (2 << n)` path HST uses, for n = 3-6 only. Codes 5 and up go
+same `index + (2 << n)` path that HST uses, for n = 3-6 only. Codes 5 and higher go
 through `bc00`, with n = code - 3, up to 9. That path takes the trellis subset
 (3 bits) to `c22a` for flags (bit 0: column, bit 1: negate Q, bit 2: negate I,
 bit 3: swap). The uncoded bits index a 256-entry one-quadrant table at
-**`c280` in the resident**, sorted by rising energy, in one-even-one-odd integer
-coordinates. The point is then scaled by `@67` and **warped** by a polynomial
+**`c280` in the resident**. The table is sorted by increasing energy, in integer coordinates with one even and one odd value.
+Then the point is scaled by `@67` and **warped** by a polynomial
 in r² (`bc2c`-`bc48`: `1566e000`, `1928`, `019f`, `000c`). `c009` is the
-receiver's inverse: unwarp (`dcb3`, `15f9`, `1355`, `03c2`), rotate by
+inverse of the receiver: unwarp (`dcb3`, `15f9`, `1355`, `03c2`), rotate by
 `@48`/`@49`, and fold into one quadrant. 256 entries x 4 rotations is 1024
-points, i.e. 21600's 9 + 1 bits. Half the table is 19200's 512. Nothing here
-needs a 512-point table, and the V.32 re-encoder's `0x7e0` mask is one bit
-wider than HST's `0x3e0`.
+points, that is, the 9 + 1 bits of 21600. Half the table is the 512 of 19200. Nothing here
+needs a 512-point table, and the `0x7e0` mask of the V.32 re-encoder is one bit
+wider than the `0x3e0` of HST.
 
-No V.32 transmit path reaches `0x340`: V.32 16800 is code 10 through `c280`.
-The two 256-point sets lie on the same lattice (45 degrees apart, inner
-energies 2, 10, ... identical) but have different boundaries. `0x340` is
-squarer and reaches energy 450, while `c280`'s inner 256 are a circle reaching
-314. HST 16800 is a constellation of HST's own.
+No V.32 transmit path gets to `0x340`. V.32 16800 is code 10 through `c280`.
+The two 256-point sets are on the same lattice (45 degrees apart, the inner
+energies 2, 10, ... are identical), but they have different boundaries. `0x340` is
+more square and gets to energy 450. The inner 256 points of `c280` are a circle that gets to
+314. HST 16800 is a constellation of HST itself.
 
-**The `bee6` selector is shared by V.32 and HST.** It is entered from the
+**V.32 and HST share the `bee6` selector.** The code enters it from the
 receive-script step `bec4`. That step waits for `@20 == @21` on eight
-consecutive symbols (`@29` counts down from 8), clears state, sends host
-message `22` through `83b1`, and dispatches on `@2a`. `bec4` appears in V.32's
-receive script (`b35a`) and in HST's forward-channel receive script `c7a4`, at
+consecutive symbols (`@29` counts down from 8), clears the state, sends host
+message `22` through `83b1`, and dispatches on `@2a`. `bec4` is in the receive script of V.32
+(`b35a`) and in the forward-channel receive script `c7a4` of HST, at
 `c7c2`. `c7c2` is the script tail that tag `37` starts, and tag `38` is `bebe`,
-which cancels the wait. So HST's forward channel is received on the same QAM
-receiver V.32 uses, and index 6 / `0x340` is reached from there.
+which cancels the wait. Thus, the forward channel of HST is received on the same QAM
+receiver that V.32 uses, and index 6 / `0x340` is reached from there.
 
-Every image here caps HST at 16800: the `CONNECT` strings run
+Each image here has a limit of 16800 for HST: the `CONNECT` strings are
 4800/7200/9600/12000/14400/16800`/HST`. 21600 exists only as `/V32` and
 `/VFC`, and 24000 only as `/VFC` and `/V34`. The `CONNECT` text says
-`12000/HST`, so the menu's `12200` is a label typo. "HST" is also a link
-protocol name next to `SYNC`, `NONE`, `MNP` and `LAPM` (`0x1b056`,
+`12000/HST`. Thus, the `12200` of the menu is a spelling error in a label. "HST" is also a link
+protocol name together with `SYNC`, `NONE`, `MNP` and `LAPM` (`0x1b056`,
 `0x1be6e`).
 
-The offset is computed rather than tabulated. For n bits per symbol, `cb3f`
-adds `2 << n` to the encoder output, which lands on `0x250`, `0x260`, `0x280`,
+The offset is calculated, not tabulated. For n bits for each symbol, `cb3f`
+adds `2 << n` to the encoder output. This gives `0x250`, `0x260`, `0x280`,
 `0x2c0` and `0x340` for n = 3 to 7. n = 2 goes through `cb34` and adds 8
-instead. The 256-point table is the only one with no V.32bis counterpart.
+instead. The 256-point table is the only one with no V.32bis equivalent.
 16800 at 2400 baud is 7 data bits plus 1 trellis bit, which needs 256 points.
 
 **Coding.**
 
 * n = 2 is differentially encoded through mask-ROM `0x0450`
-  (`(@50 << 2 | @5a) & 0xf`). It is entry for entry SpanDSP's
-  `v32bis_4800_differential_encoder`, transposed: `T[q << 2 | prev]` equals
+  (`(@50 << 2 | @5a) & 0xf`). It is identical, entry for entry, to the
+  `v32bis_4800_differential_encoder` of SpanDSP, transposed: `T[q << 2 | prev]` equals
   `enc[prev][q]`.
 * n >= 3 goes through a 32-entry table at `0x0460`, indexed by
   `(@50 << 3) + @5a` mod 32. The 5-bit state packs the two differential bits
-  (bits 3-4, so adding the data mod 4 is the differential encoder) and the
-  convolutional state, whose top bit is the redundant bit. The output index is
+  (bits 3-4, thus the addition of the data mod 4 is the differential encoder) and the
+  convolutional state. The top bit of that state is the redundant bit. The output index is
   `((@50 << 3) & 0x3e0 | state) >> 2`.
-* **This is V.32's encoder exactly.** Driving the ROM path and SpanDSP's
-  `diff_and_convolutional_encode` with the same 3000 random symbols gives
-  identical index streams at every n from 3 to 7. All 32 ROM states map one to
-  one onto SpanDSP's (diff, convolution) pairs. For n = 7, SpanDSP's uncoded
-  mask `(q << 1) & 0x78` has to widen to `0xf8`, because 16800 has one more
+* **This is exactly the encoder of V.32.** When we drive the ROM path and
+  `diff_and_convolutional_encode` of SpanDSP with the same 3000 random symbols, they give
+  identical index streams at each n from 3 to 7. All 32 ROM states map one to
+  one onto the (diff, convolution) pairs of SpanDSP. For n = 7, the uncoded
+  mask `(q << 1) & 0x78` of SpanDSP must increase to `0xf8`, because 16800 has one more
   uncoded bit than 14400. Nothing else changes.
 
 **Scrambler** (`cb92`). `@58:@59` is a 32-bit register. The n scrambled bits
-are `(R >> 5) ^ R ^ data`, masked to n bits. They are inserted at bit 23 and
-the register is shifted right by n (`SATL`, which is a right shift - see
-`op_satl`). Output bit j therefore sees delays 23 and 18, so the polynomial is
-**1 + x^-18 + x^-23**, V.32's GPC. HST uses it in whichever direction carries
+are `(R >> 5) ^ R ^ data`, masked to n bits. They are inserted at bit 23, and
+the register is shifted right by n (`SATL`, which is a right shift; refer to
+`op_satl`). Thus, output bit j sees delays 23 and 18, and the polynomial is
+**1 + x^-18 + x^-23**, the GPC of V.32. HST uses it in the direction that carries
 the forward channel. Seeds: `0x001f7310` at the start of training (`cb09`).
 
-**Training** (rate scripts `ca34`, `ca41`, ... `ca75`, chosen by `0x32a`):
+**Training** (rate scripts `ca34`, `ca41`, ... `ca75`, selected by `0x32a`):
 
 | step | handler | argument | symbols | what it sends |
 |---|---|---|---|---|
@@ -244,47 +243,47 @@ the forward channel. Seeds: `0x001f7310` at the start of training (`cb09`).
 | 4 | `cb1b` | n = 2..7 | 16, or 24 at rates 3-5 | data-rate symbols |
 | - | `cb6e` | `@5c` | 37 at a time | data mode; `825f` refills every 37 symbols |
 
-The second table (`c52d`: `ca37`, `ca44`, ...) starts each script one entry in,
-skipping the silence. Tag `33`, the forward-channel sender's call role,
+The second table (`c52d`: `ca37`, `ca44`, ...) starts each script one entry later,
+and skips the silence. Tag `33`, the call role of the forward-channel sender,
 uses it. The 3096-symbol step 3 (1.29 s) at rate indices 3-5
-fits a longer equaliser training for 12000 and up. Why the tag `36` value is
-stored as index + 8 in `@5c` is not resolved.
+agrees with a longer equalizer training for 12000 and higher. We did not find why the tag `36` value is
+stored as index + 8 in `@5c`.
 
 ## Back channel
 
-**Modulator.** `c9d2` and `ca05` alternate per sample, each writing the other
-into `@1a`. Pulse shaping comes from a 36-entry table (`cbc1` at 300 bps,
-`cbe5` at 450). A 32-bit phase in `@40`/`@41` advances by `@6c << 14` every
+**Modulator.** `c9d2` and `ca05` alternate for each sample, and each one writes the other
+into `@1a`. The pulse shaping comes from a 36-entry table (`cbc1` at 300 bps,
+`cbe5` at 450). A 32-bit phase in `@40`/`@41` increases by `@6c << 14` each
 second sample: `0x638e` gives 349.97 Hz and `0x6aaa` gives 375.0 Hz. `0x6f`
-bit 12 picks the pair, together with `@70` = 3 or 5. `ca05` adds `@70 + 1` to
-`@4c` and ends the symbol at 72, so a symbol is 18 or 12 `ca05` calls, i.e. 36
+bit 12 selects the pair, together with `@70` = 3 or 5. `ca05` adds `@70 + 1` to
+`@4c` and ends the symbol at 72. Thus, a symbol is 18 or 12 `ca05` calls, that is, 36
 or 24 samples: **200 or 300 baud**, as counted above. The entry also sets
 `@04` to `0x038e` / `0x0555`, which is 100.0 / 150.0 Hz at 7200, half the
-baud. What `@04` clocks has not been read.
+baud. We did not read what `@04` clocks.
 
 **Mapping** (`caba`-`cace`). This is **differential 8-PSK**. The script
-gives it 3 bits per symbol, which at 200 / 300 baud is 600 / 900 bit/s on the
-line: twice the menu's 300 / 450. Data mode halves it with a zero symbol
-between data symbols (see *Data across the pair*). The 3 scrambled bits select a nibble of the packed constant
+gives it 3 bits for each symbol. At 200 / 300 baud, this is 600 / 900 bit/s on the
+line, two times the 300 / 450 of the menu. Data mode halves it with a zero symbol
+between data symbols (refer to *Data across the pair*). The 3 scrambled bits select a nibble of the packed constant
 `0x43705261`:
 
 | bits | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 |---|---|---|---|---|---|---|---|---|
 | phase step (x45 degrees) | 1 | 6 | 2 | 5 | 0 | 7 | 3 | 4 |
 
-`@71 = (@71 + step) & 7` and `cbb1 + 2 x @71` gives (cos, sin). The eight
+`@71 = (@71 + step) & 7`, and `cbb1 + 2 x @71` gives (cos, sin). The eight
 points are at 22.5 + 45k degrees, amplitude 12945 (`2eb8`/`135a` = 11960/4954).
 
-**Scrambler** (`cba2`). The same register layout, but new bits are inserted at
-bit 17 and the shift is a fixed 3. The taps are at R and R >> 3, so the delays
-are 17 and 14: **1 + x^-14 + x^-17**, the V.22bis polynomial. Seed
+**Scrambler** (`cba2`). It uses the same register layout, but new bits are inserted at
+bit 17 and the shift is a fixed 3. The taps are at R and R >> 3, thus the delays
+are 17 and 14: **1 + x^-14 + x^-17**, the polynomial of V.22bis. Seed
 `0x0001fd28` (`caa1`).
 
 **Script** `ca82`: `caa1` with argument 3 for 17 symbols (the scrambler seed,
-then 8-DPSK), then `caaf` with argument 0 for 1 symbol. `caaf` raises
+then 8-DPSK), then `caaf` with argument 0 for 1 symbol. `caaf` sets
 `0x6f` bit 2 (the transmit-data enable) and sends the host message `03`
-through `83b1`. After that, `cab5` runs per symbol on host data fetched by
-`825f`. At 300 bps (bit 12 clear), `cad5` first sets `@4a` = 10.
+through `83b1`. After that, `cab5` runs for each symbol on host data that
+`825f` fetches. At 300 bps (bit 12 clear), `cad5` first sets `@4a` = 10.
 
 ## Mailbox tags
 
@@ -299,57 +298,57 @@ HST has a block of tags that no other modulation has:
 | `36` | `c7df` | `@5c` = index + 8 |
 | `35`, `3a`, `3b` | `c963`, `c95f`, `c7e9` | park a script in `@4d`, or clear `@6f` bit 3 and rejoin `c805` |
 
-Tags `32` and `33` are the call roles (above). Since the high-speed direction
-follows the data, a channel reversal is presumably the supervisor re-issuing
-the other tag. That, and what makes it send either, is not read.
+Tags `32` and `33` are the call roles (above). Because the high-speed direction
+follows the data, a channel reversal is probably the supervisor that sends
+the other tag again. We did not read that, or what makes the supervisor send either tag.
 
 ## Receivers
 
-**Back channel, script `c4f7`** (tag `33` side). It steps once per back-channel
-symbol: 200 a second at 300 bps.
+**Back channel, script `c4f7`** (tag `33` side). It steps one time for each back-channel
+symbol: 200 each second at 300 bps.
 
-* `c5e8` x1 and `c5f0` x4 are carrier detect. Energy `@00:@02` must exceed `@0b`
-  (`0x41e8`), then four times it; any miss restarts at `c4f7`. On success it
+* `c5e8` x1 and `c5f0` x4 are the carrier detect. The energy `@00:@02` must be more than `@0b`
+  (`0x41e8`), then four times it. Any miss restarts at `c4f7`. On success, it
   sends `2f` and the rate index from `0x32a`.
-* `c611` x16 initialises: `@06` = `0x90`, `@04` = `0xe4`, loop steps
+* `c611` x16 initializes: `@06` = `0x90`, `@04` = `0xe4`, loop steps
   `@28`/`@29`/`@2c` = `0x800`/`0x200`/`0x40`, 16 words cleared at `0x240` and
-  `0x400`, through the resident receiver routines the V.32 path also uses
+  `0x400`. It uses the resident receiver routines that the V.32 path also uses
   (`87fd`, `88b3`, `bd3d`, `bd43`).
-* `c637` x5, `c640` x13, `c646` x37 and `c649` x400 settle the loops. Gains
+* `c637` x5, `c640` x13, `c646` x37 and `c649` x400 settle the loops. The gains
   `@10`/`@11`/`@12` start at `1800`/`3000`/`1000`, then `@2c` = `0x78`, then
-  `@10` drops to `0x800` for 400 symbols.
+  `@10` decreases to `0x800` for 400 symbols.
 
-**Forward channel, script `c7a4`** (tag `32` side). Its per-sample handler
-`c821` counts `@2b` down from 3, so the script steps 2400 times a second.
+**Forward channel, script `c7a4`** (tag `32` side). Its handler for each sample,
+`c821`, counts `@2b` down from 3. Thus, the script steps 2400 times each second.
 
-* `c83e` x16 (twice) and `c84c` x16 are energy tests: `@00 + @02` against
+* `c83e` x16 (two times) and `c84c` x16 are energy tests: `@00 + @02` against
   `0x2a54`, with a sign test on `@34`.
-* `c866` arms the per-symbol path `c88d` (demodulator `8a8c` with table
+* `c866` arms the path for each symbol, `c88d` (demodulator `8a8c` with table
   `c950`).
 * `c8d7` x19 sets the loop gains and `@0b` = `0x3aaf`, and sends `2f` plus the
   rate.
 * `c8f8` x192: rate index 0 goes to `bef3` (4800). Indices 1-2 go through the
-  shared `bee6` selector. Above that, it switches to script `c7b9`.
-* The `bec4` tail at `c7c2` is the decision-directed lock described above.
+  shared `bee6` selector. For higher indices, it changes to script `c7b9`.
+* The `bec4` tail at `c7c2` is the decision-directed lock that is described above.
 
 ## Running it
 
-* `@26` (data `0x326`) must stay at the cold start's `8320`. `fsk_loopback`
-  clears it for FSK. Doing that here sends 8304's `bacc` to zero, and the slot
-  runs a sixth as long and delivers nothing.
-* All of HST's code, `c4f7` to about `ccdf`, lies inside both overlay 6
-  (`9d00`-`ce31`) and overlay 7 (`b000`-`cd49`). HST therefore runs only from a
-  freshly downloaded resident.
-* The constellation, encoder and Gray tables are in the **mask ROM**, not the
+* `@26` (data `0x326`) must stay at the `8320` of the cold start. `fsk_loopback`
+  clears it for FSK. If you do that here, the `bacc` of 8304 goes to zero, and the slot
+  runs for one sixth of the time and delivers nothing.
+* All the code of HST, `c4f7` to about `ccdf`, is in overlay 6
+  (`9d00`-`ce31`) and in overlay 7 (`b000`-`cd49`). Thus, HST runs only from a
+  newly downloaded resident.
+* The constellation, encoder and Gray tables are in the **mask ROM**, not in the
   download. A harness without `boot_rom.install` transmits garbage points.
 
 ## Open
 
-Needed before an interoperable reimplementation:
+These items are necessary before an interoperable reimplementation:
 
 * host messages `04` and `02`;
-* how a call selects HST, i.e. the answer and detection sequence, and the
-  supervisor's use of tags `32`-`3b`;
-* the link layer inside the HDLC frames: the datapump only stuffs bits and
-  sends flags. Frame format, addressing, and how the supervisor's "HST" link
-  protocol (next to `MNP` and `LAPM` at `0x1b056`) uses the two channels.
+* how a call selects HST, that is, the answer and detection sequence, and how the
+  supervisor uses tags `32`-`3b`;
+* the link layer in the HDLC frames: the datapump only stuffs bits and
+  sends flags. The frame format, the addressing, and how the "HST" link
+  protocol of the supervisor (next to `MNP` and `LAPM` at `0x1b056`) uses the two channels.
