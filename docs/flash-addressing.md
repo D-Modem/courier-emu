@@ -1,12 +1,12 @@
 # There is no flash banking
 
-The captures address the board as `A000:9200`, and the image's own pointers are
-segmented, which made the flash look banked. It is not. The mapping is flat and
+The captures address the board as `A000:9200`, and the pointers in the image are
+segmented. Thus, the flash looked banked, but it is not. The mapping is flat, and
 the notation is ordinary 80186 real mode.
 
-`physical_start` in every flash capture manifest is **`0x80000`**, and the length
-is `0x80000`. So the 512 KiB flash occupies CPU physical `0x80000..0xfffff`
-contiguously, and
+`physical_start` in each flash capture manifest is **`0x80000`**, and the length
+is `0x80000`. Thus, the 512 KiB flash fills CPU physical `0x80000..0xfffff`
+contiguously, and:
 
 ```text
 physical    = (segment << 4) + offset
@@ -14,50 +14,50 @@ file offset = physical - 0x80000
 ```
 
 `ATGLK2=A000:9200` reads physical `0xa9200`, which is file `0x29200`. Segment
-`8000` is the base of the window, so within it an offset *is* a file offset -
-which is why `9a ed 1e 00 80`, a far call to `8000:1eed`, targets file `0x1eed`.
+`8000` is the base of the window. Thus, in this segment, an offset *is* a file offset.
+This is why `9a ed 1e 00 80`, a far call to `8000:1eed`, goes to file `0x1eed`.
 
-`courier_emu.flash_dump.physical` and `.file_offset` implement this, and refuse
-an address outside the window, which is what a pointer into RAM or the relocated
-peripheral block at `ff00` looks like.
+`courier_emu.flash_dump.physical` and `.file_offset` implement this. They refuse
+an address outside the window. Such an address is a pointer into RAM or into the relocated
+peripheral block at `ff00`.
 
 ## What it was blocking
 
-Near calls need no mapping - source and target share a segment, so a `E8`
-displacement is the same in file offsets as in segment offsets, and scanning for
-them works. Far calls do, and scanning for the *offset* field alone finds
-nothing, because the same physical address has many encodings: the mailbox
+Near calls do not need a mapping. The source and the target are in the same segment, thus an `E8`
+displacement is the same in file offsets and in segment offsets, and a scan for
+them works. Far calls need the mapping. A scan for only the *offset* field finds
+nothing, because the same physical address has many encodings. For example, the mailbox
 thunk at file `0xf644` is reached as `8f46:01e4`, not as `8000:f644`.
 
-Resolving them properly turns 23 visible mailbox send sites into 137. See
-[codec-rate-312.md](codec-rate-312.md), where that is what located the tag `2c`
+When we resolve them correctly, the 23 visible mailbox send sites become 137. Refer to
+[codec-rate-312.md](codec-rate-312.md). There, this method found the tag `2c`
 sends.
 
 ## What this does not establish
 
-The capture manifests record the assumption behind the window - "CPU addresses
-`80000..fffff` expose the 512 KiB flash at runtime" - and note that identical
-repeated reads establish capture consistency, **not the absence of bank
-aliases**. Nothing here changes that. What is established is that the image's
-own far pointers resolve consistently under the flat mapping, across 1,400 of
-them, and that the two mailbox routines' call graphs close under it. A bank
-register that selects between whole 512 KiB images would be invisible to both
-that capture and this analysis.
+The capture manifests record the assumption for the window: "CPU addresses
+`80000..fffff` expose the 512 KiB flash at runtime". They also tell that identical
+repeated reads show the consistency of the capture, **not the absence of bank
+aliases**. Nothing here changes that. This is established: the far pointers of the image
+resolve consistently under the flat mapping (1,400 of
+them), and the call graphs of the two mailbox routines close under it. A bank
+register that selects between full 512 KiB images is not visible to
+that capture or to this analysis.
 
-DSP program addresses are a separate mapping again. This image's payload places
+DSP program addresses use a different mapping. The payload of this image puts
 program `0x8000` at file `0x29140`, so `program = 0x8000 + (file - 0x29140) / 2`.
 Note that [board-parts.md](board-parts.md) numbers the same code from a payload
-origin `0x8000` lower.
+origin that is `0x8000` lower.
 
 ## What the 512 KiB holds
 
-Scored in 8 KiB blocks by instruction fingerprints - C5x forms against x86 ones -
-and cross-checked against the download site the supervisor actually uses:
+We scored the image in 8 KiB blocks with instruction fingerprints (C5x forms against x86 forms).
+Then we compared the result with the download site that the supervisor actually uses:
 
 | range | contents |
 |---|---|
 | `00000..17fff` | supervisor code and data |
-| `18000..19fff` | a C5x-looking block inside the supervisor region |
+| `18000..19fff` | a block that looks like C5x, in the supervisor region |
 | `1a000..27fff` | supervisor code and data |
 | `29140..36e8e` | **the DSP payload that is downloaded**, 28,327 words at program `8000` |
 | `36e90..44634` | three DSP overlay images, loaded at program `9d00`, `b000` and `dc00` - see [dsp-overlays.md](dsp-overlays.md) |
@@ -66,5 +66,5 @@ and cross-checked against the download site the supervisor actually uses:
 | `7c000..7dfff` | x86 code or data |
 | `7e000..7ffff` | blank |
 
-The DSP payload's own origin follows from the download: program `0x8000` sits at
+The origin of the DSP payload comes from the download: program `0x8000` is at
 file `0x29140`, so `program = 0x8000 + (file - 0x29140) / 2`.
