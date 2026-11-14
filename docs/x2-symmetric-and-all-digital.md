@@ -1801,42 +1801,43 @@ ladder**.  This firmware first made that level available to the user, and
 then clamped it for each country.
 ### The country table
 
-The record the clamp reads is a 26-entry country profile at `cs:c482` with
-`cs = a400` (fixed by the far calls into that segment at `a400:e971` and
-`a400:e9ab`), `72h` bytes per record, the country name in ASCII at `+0` closed
-by `!`, and the V.90 level byte at `+71h` - the record's last byte.  In
-`IE020405`:
+The clamp reads a record in a 26-entry country profile at `cs:c482`, with
+`cs = a400`.  The far calls into that segment at `a400:e971` and
+`a400:e9ab` fix this value.  Each record has `72h` bytes.  The country name is
+in ASCII at `+0` and ends with `!`.  The V.90 level byte is at `+71h`, which
+is the last byte of the record.  In `IE020405`:
 
 | value at `+71h` | countries |
 |---:|---|
 | **6** | **UK, France** |
 | 12 | US/Canada, Japan, Finland, Sweden, Norway, Switzerland, Netherlands, South Africa, Italy, New Zealand, Czech Republic, Belgium, Denmark, Australia, Germany, International, Austria, Ireland, Spain, Portugual, South Korea, Taiwan, Signapore, Hong Kong |
 
-Twenty-four countries share one value and exactly two differ.  That is the
-whole of the geographic variation in this register.
+Twenty-four countries have the same value, and exactly two are different.
+That is all of the geographic variation in this register.
 
-**What the numbers mean in dB is not settled by these images.**  What is
-settled is the arithmetic above: the country byte is the value the index is
-clamped *up* to, and 16 is the maximum.  A lower bound on the index is a
-regulatory clamp only if a larger index means a quieter transmitter - "you
-may always attenuate more, and your country says how much you must attenuate
-at least" - and on that reading UK and France are the two countries allowed to
-transmit louder than the other twenty-four, by whatever six index steps are
-worth.
+**These images do not show what the numbers mean in dB.**  The arithmetic
+above is certain.  The country byte is the value to which the index is
+clamped *up*, and 16 is the maximum.  A lower limit on the index is a
+regulatory clamp only if a larger index gives a quieter transmitter.  That
+is: "you can always attenuate more, and your country gives the minimum
+attenuation".  With that interpretation, UK and France are the two countries
+that can transmit louder than the other twenty-four, by the value of six
+index steps.
 
-If a step is the half decibel that Table 15/V.90 uses, six steps is 3 dB, and
-the two values land on `-6.0` and `-3.0` dBm0.  Which is worth flagging rather
-than concluding: `-6` is also the number in the x2 register's own
-"-6dbm constellation", so either the x2 option names the level that later
-became V.90's ordinary one, or the coincidence is a coincidence.  Settling it
-needs the DSP side of tag `72`, which means recovering the overlay map for a
-V.90-era build - the same work already done for `IM020104` in
-[imodem_x2_map.py](../tools/imodem_x2_map.py), against a different image.
+If a step is the half decibel that Table 15/V.90 uses, six steps is 3 dB.
+Then the two values are `-6.0` and `-3.0` dBm0.  This is a point to note, not
+a conclusion.  `-6` is also the number in the "-6dbm constellation" of the x2
+register.  Thus, either the x2 option names the level that later became the
+usual level of V.90, or this is only chance.  To find the answer, we need the
+DSP side of tag `72`.  For this, we must recover the overlay map for a
+V.90-era build.  This is the same work that
+[imodem_x2_map.py](../tools/imodem_x2_map.py) already did for `IM020104`, but
+on a different image.
 
 ## What builds up the x2 transmitter
 
-The engine's callbacks can now be followed end to end, because the resident
-names the cells they are installed into.
+Now we can follow the callbacks of the engine from end to end, because the
+resident gives names to the cells into which they are installed.
 
 ### The per-sample dispatcher
 
@@ -1852,16 +1853,17 @@ names the cells they are installed into.
 80f1  lacl @1b / cala        ; call the second with ar1 = 0889
 ```
 
-`8108..8119` is the same again for a second context, `088e/088f` with
-`088a/088b`.  The two BLDD encodings are opposite directions and that is what
-distinguishes a fetch from an install: `a8` loads the register from the named
-cell, `a9` stores it there.  So `e64b..e65d`, which use the `a9` form, are the
-installers, and `80e5` is the consumer.
+`8108..8119` is the same for a second context, `088e/088f` with `088a/088b`.
+The two BLDD encodings have opposite directions, and that is the difference
+between a fetch and an install.  `a8` loads the register from the named cell,
+and `a9` stores it there.  Thus, `e64b..e65d`, which use the `a9` form, are
+the installers, and `80e5` is the consumer.
 
-Since the first callback is entered with `ar1 = 0888` and ends `sacl *`, and
-the second with `ar1 = 0889` and begins `lacl *`, the direction of each is
-fixed by the code rather than assumed: **`0888` is the transmit sample cell
-and `0889` the receive one.**
+The code enters the first callback with `ar1 = 0888`, and this callback ends
+with `sacl *`.  The code enters the second callback with `ar1 = 0889`, and
+this callback starts with `lacl *`.  Thus, the code fixes the direction of
+each callback, and we do not assume it: **`0888` is the transmit sample cell
+and `0889` is the receive sample cell.**
 
 ### The transmit chain
 
@@ -1878,50 +1880,53 @@ e673  @02 -> ff0c                  ; width alongside it
 e679  lacl @00 / sacl *            ; and into the transmit sample cell 0888
 ```
 
-Each stage is identifiable:
+We can identify each stage:
 
-* **`83c4` is the source.** It gates on `[006f]` bit 2, then dispatches
-  through `@06`, which `e5e7` initializes to `83c9`.  `83c9`, `8439` and
-  `8457` are one small state machine that accumulates bits into `@00`,
-  counting `@04` against **`@02`, the width** - the same cell the 7/8-bit
-  selection writes.  So the width is not decorative: it is the loop bound that
-  decides how many payload bits become one PCM codeword.
+* **`83c4` is the source.**  It tests `[006f]` bit 2, then dispatches through
+  `@06`, which `e5e7` initializes to `83c9`.  `83c9`, `8439` and `8457` are one
+  small state machine.  It collects bits into `@00`, and compares the count
+  `@04` with **`@02`, the width**.  This is the same cell that the 7/8-bit
+  selection writes.  Thus, the width has a real function.  It is the loop
+  limit that sets how many payload bits become one PCM codeword.
 * **`8faa` is the transmit scrambler.**  Its state is `@58/@59`, which at DP 6
-  is `[0358]:[0359]` - exactly the transmitter state
+  is `[0358]:[0359]`.  This is exactly the transmitter state that
   [x2-scramblers.md](x2-scramblers.md) recovered and executed against the
-  4.03 ROM.  The receive path's `8fe1` uses `@1e/@1f` = `[031e]:[031f]`, that
-  document's receiver state.  The two documents meet here.
-* **`e7e7` is an octet bit-reversal**: `lacl #07` into the repeat counter, then
-  `rol`/`rorb` shifting ACC and ACCB in opposite directions, `and #00ff`.  It
-  is gated by bit 15 of `ffd9` - the bit the tag-`70` handler `91a1` sets when
-  the capability word lands.  So the wire bit order is chosen by the same
-  command that carries the capability word.
-* **`ff01`/`ff0c`** are on data page `1fe`, the `ff00` peripheral window this
-  DSP also reaches through `ar1` for `ffd9`/`ffdb`.  The codeword and its width
-  go out together.
+  4.03 ROM.  The `8fe1` of the receive path uses `@1e/@1f` =
+  `[031e]:[031f]`, which is the receiver state in that document.  The two
+  documents join here.
+* **`e7e7` is an octet bit-reversal.**  It puts `lacl #07` into the repeat
+  counter.  Then `rol`/`rorb` shift ACC and ACCB in opposite directions,
+  followed by `and #00ff`.  Bit 15 of `ffd9` controls it.  The tag-`70`
+  handler `91a1` sets this bit when the capability word arrives.  Thus, the
+  same command that carries the capability word selects the bit order on the
+  wire.
+* **`ff01`/`ff0c`** are on data page `1fe`.  This is the `ff00` peripheral
+  window that this DSP also accesses through `ar1` for `ffd9`/`ffdb`.  The
+  codeword and its width go out together.
 
-The receive callback `e67b` mirrors it: read `*` from `0889`, mask with `@21`,
-`8fe1`, then `847e`, which shifts each `@22`-bit codeword into `@24` and emits
-whole octets into the buffer at `@27` - the inverse of the assembly `83c9`
-does.
+The receive callback `e67b` is the mirror of this chain.  It reads `*` from
+`0889`, masks with `@21`, and calls `8fe1`.  Then it calls `847e`, which
+shifts each `@22`-bit codeword into `@24` and writes full octets into the
+buffer at `@27`.  This is the inverse of the assembly that `83c9` does.
 
 ### The training source is a different callback in the same slot
 
-`e60b` - `e172`'s first arm - overwrites `@1a`/`@1b` with `e4ca`/`e4f0`.
-`e4ca` runs the same width arithmetic (`@04` against `@02`) but takes its bits
-from nowhere: it builds them from the constant `7eh`, shifted by `@04` and
-OR-ed with `@05`.  So the slot that normally carries user data carries a fixed
-pattern instead, and the arm selection at `e172` is the choice between a data
-transmitter and a pattern transmitter - which is what a training phase needs
-and what its `@63/@64 = 07d0h` timers are counting.
+`e60b`, the first arm of `e172`, writes `e4ca`/`e4f0` into `@1a`/`@1b`.
+`e4ca` does the same width arithmetic (`@04` against `@02`).  But it does not
+get its bits from a source.  It makes them from the constant `7eh`, shifted
+by `@04` and OR-ed with `@05`.  Thus, the slot that usually carries user data
+carries a fixed pattern.  The arm selection at `e172` is the choice between a
+data transmitter and a pattern transmitter.  A training phase needs this, and
+the `@63/@64 = 07d0h` timers count it.
 
 ## Is V.90's transmitter different?  Almost not at all
 
-Testable without recovering a second overlay map, by counting instruction
-signatures that carry no absolute addresses and so survive relocation.  Whole
-routines do not survive it - lifting `e65f` or `8faa` byte-for-byte out of
-`IM020104` finds them in no other image, including the x2-only `IE020202` -
-so the comparison has to be made on address-free fragments.
+We can test this without recovering a second overlay map.  We count
+instruction signatures that contain no absolute addresses, because these
+signatures are not changed by relocation.  Full routines are changed by
+relocation.  If we copy `e65f` or `8faa` byte-for-byte from `IM020104`, we do
+not find them in other images, also not in the x2-only `IE020202`.  Thus, we
+must compare address-free fragments.
 
 | signature | IM0104 | IE0104 | IE0202 | IE0706 | IE0405 | IM0406 | Ie0002 |
 |---|--:|--:|--:|--:|--:|--:|--:|
@@ -1934,16 +1939,15 @@ so the comparison has to be made on address-free fragments.
 | **`ffd9` references** | 24 | 24 | 25 | **37** | 37 | 37 | 35 |
 
 The datapath is the same datapath.  The scrambler recurrences, the octet
-reversal, the callback-slot protocol and the receive-side width pair are
-present in identical numbers in every build from the first x2 release to the
-V.90 one.  Whatever V.90 changed, it did not replace the thing this document
-just traced.
+reversal, the callback-slot protocol and the receive-side width pair occur in
+the same numbers in all builds, from the first x2 release to the V.90
+release.  V.90 did not replace the item that this document traced.
 
 ### What V.90 does add: four bits of state in `ffd9`
 
-The one count that moves at the V.90 boundary is `ffd9`, and the bits tested
-through it say what the extra references are for.  Taking the instruction that
-follows each `lar ar1, #ffd9`:
+The one count that changes at the V.90 boundary is `ffd9`.  The bits that the
+code tests through it show the function of the extra references.  This table
+uses the instruction after each `lar ar1, #ffd9`:
 
 | bit tested | IM020104 | IE020202 | IE020706 | Ie030002 |
 |---:|--:|--:|--:|--:|
@@ -1953,23 +1957,22 @@ follows each `lar ar1, #ffd9`:
 | **6** | 0 | 0 | **1** | 1 |
 | **7** | 0 | 0 | **1** | 1 |
 
-Bits 4 through 7 of `ffd9` are tested in no x2-only build and in every V.90
-one.  So V.90 arrives in this DSP as a nibble of new state in the control cell
-that already carried the x2 role bits - bit 15 of it is what gates the octet
-reversal in the transmit chain above - plus the one new host command, tag `72`.
-That is the same shape as the AT surface: one more bit in the register that
-already held x2.
+No x2-only build tests bits 4 through 7 of `ffd9`, and all V.90 builds test
+them.  Thus, V.90 comes into this DSP as a nibble of new state in the control
+cell that already had the x2 role bits.  Bit 15 of this cell controls the
+octet reversal in the transmit chain above.  V.90 also adds the one new host
+command, tag `72`.  That is the same shape as the AT surface: one more bit in
+the register that already had x2.
 
 ### The one real change to the sample write is older than V.90
 
-Between `IE020104` (March 1997) and `IE020202` (December 1997) the codeword's
-direct write to the peripheral window disappears: `ldp #1fe / sacl @01` and
-`ldp #1fe / sacl @0c` both go from 2 to 0, and `ldp #1fe` as a whole collapses
-from 22 occurrences to 2.  The `ff00` page did not stop being used - `ffd9`
-and `ffdb` are still reached through `ar1` - so this is a change of addressing
-style across a nine-month rework, not a change of function, and it lands
-squarely inside the x2 era rather than at the V.90 boundary.
-
+Between `IE020104` (March 1997) and `IE020202` (December 1997), the direct
+write of the codeword to the peripheral window is removed.
+`ldp #1fe / sacl @01` and `ldp #1fe / sacl @0c` both go from 2 to 0.  The
+total of `ldp #1fe` decreases from 22 occurrences to 2.  The code still uses
+the `ff00` page, because it still accesses `ffd9` and `ffdb` through `ar1`.
+Thus, this is a change of addressing style in a nine-month rework, not a
+change of function.  It occurs in the x2 era, not at the V.90 boundary.
 ## The four V.90 bits in `ffd9`
 
 Read from `Ie030002` with its own overlay map (`V90_IMAGES` in
