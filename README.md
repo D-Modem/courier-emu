@@ -533,32 +533,34 @@ completion callback of the ASIC.
 
 ### The silicon DAA as a register file
 
-The line-interface chipset itself is modeled as registers rather than behavior,
-and it is **on by default** — the board has a DAA, and `ATI7` reports a failure
-without one (below). `--no-daa-codec` turns it off; it also drops out on its own
-for a flash ROM, which carries no separable C51 payload for the DSP bridge the
-codec rides on. Modelling it costs about 20% of a run's wall time, since it
-brings the native C51 bridge up on runs that would not otherwise need it.
+The harness models the line-interface chipset itself as registers, not as
+behavior. This model is **on by default**, because the board has a DAA, and
+without one `ATI7` reports a failure (below). `--no-daa-codec` disables it. The
+model also disables itself for a flash ROM, because a flash ROM has no
+separable C51 payload for the DSP bridge that the codec uses. The model adds
+about 20% to the wall time of a run. This is because it starts the native C51
+bridge on runs that otherwise do not need it.
 
-The board carries an Si3021 and an Si3014; `docs/SI3038.PDF` is the AC'97
-sibling of that pair and is the only published register map here, so the model
-uses its addresses for the shared line-side fields.
+The board has an Si3021 and an Si3014. `docs/SI3038.PDF` is the AC'97 relative
+of that pair. It is the only published register map here. Thus, the model uses
+its addresses for the shared line-side fields.
 
-That attribution is about the **line interface**. The part on the DSP's own
-serial port is a different one: a TI `TLC320AC0x`, identified from the board and
-confirmed by the C51's firmware, which uses bit 0 of each transmitted word to
-request the secondary frame that carries a control register — the AC0x
-protocol. See [what is actually on the board](docs/board-parts.md). So
-`CodecBringUp`, which runs an `SI3038` register sequence, models a part the DSP
-does not talk to; the line-side attribution is untouched.
+That attribution applies to the **line interface**. The part on the serial
+port of the DSP is a different part: a TI `TLC320AC0x`. We identified it from
+the board, and the C51 firmware confirms it. The firmware uses bit 0 of each
+transmitted word to request the secondary frame that carries a control
+register. This is the AC0x protocol. See
+[what is actually on the board](docs/board-parts.md). Thus, `CodecBringUp`,
+which runs an `SI3038` register sequence, models a part that the DSP does not
+talk to. The line-side attribution does not change.
 
 ```sh
 ./courier run main211.xmf --instructions 20000000 \
   --daa-line dial-tone --at ATA --summary
 ```
 
-`dsp_bridge.codec` then reports the whole register file, the readiness byte,
-and the assembled line status:
+`dsp_bridge.codec` then reports the full register file, the readiness byte and
+the assembled line status:
 
 ```
 "steps": ["register-reset", "sample-rate", "power-up", "ready",
@@ -569,23 +571,27 @@ and the assembled line status:
 "line_status": "0x0050"          FDT set, LCS[3:0] = 4
 ```
 
-The seven steps are the datasheet's initialization procedure, including its
-readiness poll, and nothing in the Courier's firmware performs them: the 80186
-writes ports `0x40`..`0x4e` thousands of times and never reads them, and the
-C51's only external reads are the host mailbox window and the line ADC, so
-neither processor can see the readiness byte step 4 waits on. The sequence
-belongs to the interposed ASIC — the arrangement AN16 section 1.3 describes —
-and `CodecBringUp` stands in for it, one service frame per 100 ms.
+The seven steps are the initialization procedure of the datasheet, with its
+readiness poll. Nothing in the Courier firmware does these steps. The 80186
+writes ports `0x40`..`0x4e` thousands of times and never reads them. The only
+external reads of the C51 are the host mailbox window and the line ADC. Thus,
+neither processor can see the readiness byte that step 4 waits for. The
+sequence belongs to the interposed ASIC, as AN16 section 1.3 describes.
+`CodecBringUp` replaces it, with one service frame each 100 ms.
 
-There is no register-level read path from the firmware, so the model is driven
-rather than polled: hook and line state come from the behavioral DAA, ring
-bursts from the ring source, and loop-current sense, ring detect, frame lock,
-and the country settings come out of the registers. `--daa-codec-line` selects
-which line the part is strapped as (deciding whether readiness reads `0x0f` or
-`0x33`), and `--daa-codec-rate` programs register `40h`, rounding to the
-nearest rate the PLL offers.
+The firmware has no register-level read path. Thus, the harness drives the
+model and does not poll it:
 
-One thing the firmware does read is the DAA's identity, and `ATI7` prints it:
+- Hook state and line state come from the behavioral DAA.
+- Ring bursts come from the ring source.
+- Loop-current sense, ring detect, frame lock and the country settings come
+  from the registers.
+
+`--daa-codec-line` selects the line for which the part is strapped. This sets
+whether readiness reads `0x0f` or `0x33`. `--daa-codec-rate` programs register
+`40h`. It rounds to the nearest rate that the PLL has.
+
+The firmware does read one item: the identity of the DAA. `ATI7` prints it:
 
 ```sh
 ./courier run main211.xmf --instructions 14000000 --at ATI7
@@ -596,58 +602,72 @@ Product ID             00345302        with --no-daa-codec: XX345302
 DAA rev                0004            with --no-daa-codec: 0000
 ```
 
-The supervisor's receive table stores mailbox tag `0x7b`'s data word at
-`[0x287]`. `ATI7` prints that word as `DAA rev`, the self-test at `0x77eda`
-appends `" : DAA Failure (zero is Invalid)"` when it is zero, and `0x8369d`
-branches on it being 4 to print product ID `00345302` rather than the
-placeholder `XX345302`. Nothing was producing that message, so the firmware
-reported a DAA it considered invalid, which is why the codec is on by default
-rather than opt-in. The report goes out on the first DSP download, since a real
-part identifies itself at power up rather than at
-the dial/answer boundary; `--daa-codec-revision` changes the value, and 0 will
-reproduce the failure path. The 4 is read out of the firmware's own product-ID
-branch, not measured off a part.
+The receive table of the supervisor stores the data word of mailbox tag `0x7b`
+at `[0x287]`. `ATI7` prints that word as `DAA rev`. When the word is zero, the
+self-test at `0x77eda` adds `" : DAA Failure (zero is Invalid)"`. If the word is
+4, `0x8369d` branches to print product ID `00345302`, not the placeholder
+`XX345302`. Before, nothing made that message. Thus, the firmware reported a DAA
+that it considered invalid. This is why the codec is on by default and not
+optional.
+
+The report goes out on the first DSP download, because a real part identifies
+itself at power-up, not at the dial/answer boundary. `--daa-codec-revision`
+changes the value, and 0 causes the failure path again. The value 4 comes from
+the product-ID branch of the firmware. We did not measure it on a part.
 
 ## Complete flash ROM images
 
-`rom-info` describes a whole flash part rather than an update payload:
+`rom-info` describes a full flash part, not an update payload:
 
 ```sh
 ./courier rom-info IDSDL302.ROM
 ```
 
-An XMF carries only the application, so where it lives is a modelling choice. A
-ROM ends with the 80186 reset vector, and the stub there programs the chip
-select that decodes the ROM before it jumps, so the image places itself. For the
-1998 Courier V.Everything external ROM that gives flash at `0x80000..0xffc00`,
-128 KiB of RAM at `0x00000..0x20000`, and the peripheral control block relocated
-into memory at `0x0ff00` — which is the window this harness already hooks.
+An XMF carries only the application. Thus, its location is a modelling choice.
+A ROM ends with the 80186 reset vector. The stub there programs the chip select
+that decodes the ROM before it jumps. Thus, the image sets its own location.
+For the 1998 Courier V.Everything external ROM, this gives these locations:
 
-It also carries the ~6 KiB boot block above the application that an update image
-never replaces: the hardware setup tables, the copy of itself to physical zero,
-the power-on read of the settings EEPROM, the whole-flash CRC, and a second copy
-of the SDL loader.
+- Flash at `0x80000..0xffc00`
+- 128 KiB of RAM at `0x00000..0x20000`
+- The peripheral control block, relocated into memory at `0x0ff00`. This is the
+  window that this harness already hooks.
 
-`run` takes a ROM as well, booting it from its reset vector:
+The ROM also has the ~6 KiB boot block above the application. An update image
+never replaces this block. The block contains these items:
+
+- The hardware setup tables
+- The copy of itself to physical zero
+- The power-on read of the settings EEPROM
+- The CRC of the full flash
+- A second copy of the SDL loader
+
+`run` also accepts a ROM, and boots it from its reset vector:
 
 ```sh
 ./courier run IDSDL302.ROM --instructions 40000000 --int1-after 7
 ```
 
-The peripheral timers are modelled from the instruction clock - the enable
-gate, the zero-compare-is-full-range rule, single-shot versus continuous, the
-sticky max-count bit, and the mask side of the interrupt controller - which is
-what carries the ROM past its timer self-test at `0x80444`. It then reaches a
-tick wait whose period this firmware calibrates from an external INT1 edge
-rather than from a timer alone; `--int1-after` supplies one.
-`courier_firmware_analysis.md` has the full account, including where that
-sequence still stops, the cross-build confirmation of the latch driver, and
-every option switch.
+The harness models the peripheral timers from the instruction clock. The model
+includes these items:
+
+- The enable gate
+- The rule that a zero compare is the full range
+- Single-shot and continuous modes
+- The sticky max-count bit
+- The mask side of the interrupt controller
+
+This model moves the ROM past its timer self-test at `0x80444`. The ROM then
+gets to a tick wait. This firmware calibrates the period of that wait from an
+external INT1 edge, not only from a timer. `--int1-after` supplies that edge.
+`courier_firmware_analysis.md` has the full account. This includes where that
+sequence still stops, the confirmation of the latch driver across builds, and
+all the option switches.
 
 ## ISDN Courier XMP images
 
-`Ie030002.xmp` is an ISDN Courier update payload, and it is a different animal
-from an XMF: no product text header, and an obfuscated body.
+`Ie030002.xmp` is an ISDN Courier update payload. It is very different from an
+XMF: it has no product text header, and its body is obfuscated.
 
 ```sh
 ./courier xmp-info Ie030002.xmp
@@ -659,14 +679,15 @@ from an XMF: no product text header, and an obfuscated body.
 | `0x00000..0x0007f` | 128-byte header: `USR XMP\0` magic, three small fields, and a 0x70-byte table |
 | `0x00080..0xb807f` | 0xb8000-byte payload, every byte XOR `0x45` |
 
-The key falls out of the image without any code analysis. Erased flash still
-dominates the payload, and the pad byte reads `0xba`; `0xff ^ 0xba` is `0x45`.
-Decoding with it turns `0xff` back into the most common byte, and the result
-carries the VRTX kernel banner (`Copyright 1988, Ready Systems`) and the ISDN
-rate-adaptation strings (`SET_V110_ENTRY`, `V110_ATO`).
+You can find the key from the image without code analysis. Erased flash is
+still most of the payload, and the pad byte reads `0xba`. `0xff ^ 0xba` is
+`0x45`. When you decode with this key, `0xff` becomes the most common byte
+again. The result contains the VRTX kernel banner
+(`Copyright 1988, Ready Systems`) and the ISDN rate-adaptation strings
+(`SET_V110_ENTRY`, `V110_ATO`).
 
-The payload decodes to three programmed spans, the last being a two-byte word at
-the very top of flash:
+The decoded payload has three programmed spans. The last span is a two-byte
+word at the top of flash:
 
 | Payload range | Size |
 |---|---|
@@ -674,40 +695,40 @@ the very top of flash:
 | `0x64000..0xaab0c` | 289,548 |
 | `0xb7ffe..0xb8000` | 2 |
 
-It is an 80386 image, and it says so at payload offset `0x38`, where it clears
-`dr0..dr3` and `dr7` — registers the 80186 supervisor does not have. The code
-around it programs a linear address into `dr0`, sets the local and global enable
-bits in `dr7`, and installs its own INT1 (`#DB`) handler at `4000:0148`, so the
-firmware drives hardware breakpoints as a normal runtime mechanism. Note that
-this is vector 1, distinct from the 80186's `INT1_VECTOR = 13` pin interrupt in
-`timers.py`.
+It is an 80386 image. Payload offset `0x38` shows this: there, the code clears
+`dr0..dr3` and `dr7`. The 80186 supervisor does not have these registers. The
+code near this offset programs a linear address into `dr0`. It sets the local
+and global enable bits in `dr7`. It installs its own INT1 (`#DB`) handler at
+`4000:0148`. Thus, the firmware uses hardware breakpoints as a usual runtime
+mechanism. This is vector 1. It is different from the `INT1_VECTOR = 13` pin
+interrupt of the 80186 in `timers.py`.
 
-Nothing here executes yet. What is loaded is the container and the decoded body;
-what is not modelled is the board. Two things stand out from the decode:
+Nothing here executes yet. The harness loads the container and the decoded
+body. It does not model the board. The decode shows two important items:
 
-- Debug registers. Unicorn does not deliver `#DB` from guest-programmed `dr0..3`,
-  so the harness would have to match breakpoints itself.
-- The 0x70-byte header table at offset `0x10` is plaintext, not obfuscated, and
-  plainly structured — a handful of 16-bit values recur through it — but its
-  layout is not recovered, so `xmp-info` reports it verbatim as
-  `header_table_undecoded` rather than inventing fields for it.
+- Debug registers. Unicorn does not deliver `#DB` from `dr0..3` that the guest
+  programs. Thus, the harness must match breakpoints itself.
+- The 0x70-byte header table at offset `0x10` is plaintext, not obfuscated. It
+  has a clear structure: some 16-bit values occur many times in it. But its
+  layout is not recovered. Thus, `xmp-info` reports it verbatim as
+  `header_table_undecoded`. It does not invent fields for it.
 
 The load base is a modelling choice, as it is for an XMF. `FLASH_PHYSICAL_BASE`
-is set to `0x40000` because the boot code installs its INT1 handler in segment
-`0x4000`; the header's `load_hint` field reads `0x40`, which is consistent with
-that base in 4 KiB units, but nothing in the image confirms the unit.
+is `0x40000`, because the boot code installs its INT1 handler in segment
+`0x4000`. The `load_hint` field of the header reads `0x40`. This agrees with
+that base in units of 4 KiB, but nothing in the image confirms the unit.
 
-No protected-mode entry appears in the decoded payload — no `lgdt`, `lidt`,
-`lmsw`, or `mov cr` anywhere in it. This is 386 code running in real mode, using
-32-bit registers, `0x66`/`0x67` prefixes, and the debug registers.
+The decoded payload has no protected-mode entry. It has no `lgdt`, `lidt`,
+`lmsw` or `mov cr`. This is 386 code that runs in real mode. It uses 32-bit
+registers, `0x66`/`0x67` prefixes and the debug registers.
 
 ## ISDN Courier NAC images
 
 `Ie030002.nac` is the same firmware in a different container, and it is not
-obfuscated at all. It is **Intel HEX with the ASCII stripped out**: each record
-is a length byte, a big-endian 16-bit address, a type byte, and that many data
-bytes. The big-endian address is the giveaway — everything else in these images
-is little-endian, but Intel HEX writes its address big-endian even on x86.
+obfuscated. It is **Intel HEX with the ASCII removed**. Each record is a length
+byte, a big-endian 16-bit address, a type byte, and that quantity of data
+bytes. The big-endian address is the clue. All other data in these images is
+little-endian, but Intel HEX writes its address big-endian, also on x86.
 
 ```sh
 ./courier nac-info Ie030002.nac
@@ -728,7 +749,7 @@ Header fields:
 | `0x08` | Version triple `03 00 02`, matching the `Ie030002` file name: 3.0.2 |
 | `0x0f` | Product tag `IE(`, the same tag the `.sdl` loader carries |
 
-The record types are the Intel HEX ones:
+The record types are the Intel HEX types:
 
 | Type | Count | Meaning |
 |---|---:|---|
@@ -737,30 +758,32 @@ The record types are the Intel HEX ones:
 | `0x03` | 1 | Start segment address, `0ce0:0000` |
 | `0x01` | 1 | End of file |
 
-Unlike ASCII Intel HEX there is no per-record checksum byte; parsing without one
-consumes the stream exactly, from the end of the header to the EOF record.
+ASCII Intel HEX has a checksum byte for each record, but this format does not.
+A parse without a checksum uses the stream exactly, from the end of the header
+to the EOF record.
 
-The stream's very first record is a type `0x02` setting segment `0x4000`, so the
-image places itself at physical `0x40000` — the harness does not have to assume a
-base for a NAC the way it does for an XMF. That independently confirms the base
-the XMP section above had to infer from the boot code's INT1 handler.
+The first record of the stream is a type `0x02` that sets segment `0x4000`.
+Thus, the image sets its own location at physical `0x40000`. For a NAC, the
+harness does not have to assume a base, as it must for an XMF. This is an
+independent confirmation of the base that the XMP section above found from the
+INT1 handler of the boot code.
 
-The two containers agree exactly. Flattening the NAC's 42,023 data records
-produces a `0xb8000` image at `0x40000` that is byte-for-byte identical to the
-XOR-decoded XMP payload, and the 82,879 bytes the NAC never paints are precisely
-the bytes that read as erased flash in the XMP. Two independently encoded
-containers reaching the same image is the strongest check available on both
-decodes. Re-check it with `nac-info` against the XMP decode when validating a
-new image.
+The two containers agree exactly. When you flatten the 42,023 data records of
+the NAC, you get a `0xb8000` image at `0x40000`. This image is identical, byte
+for byte, to the XOR-decoded XMP payload. The NAC never writes 82,879 bytes,
+and these are exactly the bytes that read as erased flash in the XMP. Two
+containers with independent encodings give the same image. This is the
+strongest check that we have on the two decodes. When you validate a new
+image, check this again with `nac-info` against the XMP decode.
 
-What is not recovered: the two trailing bytes `e4 a0`. They are not a byte sum of
-the record stream and match none of the common CRC-16s (CCITT-FALSE, XMODEM, ARC,
-MODBUS, KERMIT, GENIBUS) over either the stream or the whole file, so `nac-info`
-reports them verbatim as `trailer_undecoded`.
+This item is not recovered: the two trailing bytes `e4 a0`. They are not a byte
+sum of the record stream. They do not match the common CRC-16s (CCITT-FALSE,
+XMODEM, ARC, MODBUS, KERMIT, GENIBUS) over the stream or over the full file.
+Thus, `nac-info` reports them verbatim as `trailer_undecoded`.
 
-The start segment address `0ce0:0000` is physical `0xce00`, which is RAM well
-below the flash — the entry after the boot block relocates itself, consistent
-with the code at payload `0x300` loading `0x0ce0` into a segment register.
+The start segment address `0ce0:0000` is physical `0xce00`. This is RAM far
+below the flash. The entry after the boot block relocates itself. This agrees
+with the code at payload `0x300`, which loads `0x0ce0` into a segment register.
 
 ## Board latches, front panel, and NVRAM
 
