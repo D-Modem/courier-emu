@@ -1,81 +1,81 @@
 # The Courier boot-block flash loader
 
-This is the downloader FreeLSD and SDL.EXE talk to. It lives in the top 16 KiB
-flash block and is a different mechanism from the application's `AT~X!` XMODEM
-updater: it takes a raw 512 KiB flash image rather than an `.XMD` container, and
-it speaks its own binary protocol. Everything here is disassembled from
-`artifacts/courier-board-21210-capture-01/courier-board.rom`, the user's own
-supervisor 7.3.14 unit. Physical addresses are file offset plus `0x80000`, and
+FreeLSD and SDL.EXE communicate with this downloader. It is in the top 16 KiB
+flash block. It is a different mechanism from the `AT~X!` XMODEM
+updater of the application. It accepts a raw 512 KiB flash image, not an `.XMD` container, and
+it uses its own binary protocol. We disassembled all of this from
+`artifacts/courier-board-21210-capture-01/courier-board.rom`, the
+supervisor 7.3.14 unit of the user. The physical addresses are the file offset plus `0x80000`, and
 segment `fc00` is file `0x7c000`.
 
 `courier_emu/sdl_download.py` implements the host side.
 
 ## Reset to RAM
 
-`0xffff0` programs the chip select that decodes the ROM and jumps:
+`0xffff0` programs the chip select that decodes the ROM, and then jumps:
 
 ```
 cli ; mov dx,0xffa4 (UCSST) ; mov ax,0x8000 ; out dx,ax ; jmp far fc00:11e9
 ```
 
-`fc00:11e9` zeroes the segment registers, sets `SP=0xf8`, writes RELREG, replays
+`fc00:11e9` sets the segment registers to zero, sets `SP=0xf8`, and writes RELREG. It replays
 `0x24` word records from `fc00:113e` and 9 byte records from `fc00:11ce` as
-`OUT`s, copies `0x113d` bytes of itself to physical zero and dispatches `INT 13h`
-through the IVT it just copied. The loader therefore executes from RAM, which is
-why it can erase the block it came from.
+`OUT`s. It copies `0x113d` bytes of itself to physical zero, and it dispatches `INT 13h`
+through the IVT that it copied. Thus, the loader executes from RAM. For this reason,
+it can erase the block from which it came.
 
 ## Which way it goes
 
 `fc00:07ad`:
 
-1. The word at `f7ff:000a` (`0xc000` on both this board and `IDSDL302.ROM`) sets
-   the installed image type in `cs:[0x127]`: `2` for it, `4` otherwise.
-2. `fc00:0702` identifies the flash: `0x90` to `0xffff0`, read manufacturer and
-   device, `0xff` to restore. `0x4470` selects the seven-block table and
-   `cs:[0x126]=6`; `0x2274` selects the five-block table and `4`; anything else
-   is unsupported and the loader refuses.
-3. `fc00:08a3` checks the image CRC. A failure goes straight to the download
+1. The word at `f7ff:000a` (`0xc000` on this board and on `IDSDL302.ROM`) sets
+   the installed image type in `cs:[0x127]`: `2` for that value, `4` for other values.
+2. `fc00:0702` identifies the flash: it writes `0x90` to `0xffff0`, reads the manufacturer and the
+   device, and writes `0xff` to restore. `0x4470` selects the seven-block table and
+   `cs:[0x126]=6`. `0x2274` selects the five-block table and `4`. All other values
+   are not supported, and the loader refuses them.
+3. `fc00:08a3` checks the image CRC. If the check fails, the loader goes directly to the download
    loop at `fc00:07f2`.
-4. With a good CRC it reads `in al, 0x12` and boots the application unless
-   `!(al & 0x14) && (al & 0x40) && !(P2PIN & 0x40)`. `0xff5a` is P2PIN, so that
-   last term is an input pin. 3Com's `XMODEM.TXT` documents the same condition
-   as DIP switches 1, 5 and 10 on with 8 off (7 on internal units). Which switch
-   drives which bit is not established here.
-5. Otherwise `cli; RELREG=0x00ff; jmp far f7ff:0005` into the application.
+4. If the CRC is good, it reads `in al, 0x12`. It boots the application, unless
+   `!(al & 0x14) && (al & 0x40) && !(P2PIN & 0x40)`. `0xff5a` is P2PIN. Thus, that
+   last term is an input pin. The `XMODEM.TXT` of 3Com documents the same condition
+   as DIP switches 1, 5 and 10 on, with 8 off (7 on internal units). We did not find here
+   which switch controls which bit.
+5. If not, it does `cli; RELREG=0x00ff; jmp far f7ff:0005` into the application.
 
 ## Autobaud, and the knock
 
 `fc00:0d38` arms the receive path. `fc00:0de6` and `fc00:0f61` sample the
-receive line as a **P2PIN bit under timer control** — software serial, not the
-UART — assemble one character, and require `(byte & 0x5f) == 'A'`. The captured
-timer value becomes B0CMP, so the host picks the rate by sending `A`. `fc00:0e52`
+receive line as a **P2PIN bit under timer control**. This is software serial, not the
+UART. They assemble one character, and they require `(byte & 0x5f) == 'A'`. The captured
+timer value becomes B0CMP. Thus, the host selects the rate when it sends `A`. `fc00:0e52`
 installs `0x802a` for the recognised case.
 
-Eight bytes then land at `0x12d` and `fc00:0d0c` compares them against the
+Then eight bytes go to `0x12d`, and `fc00:0d0c` compares them with the
 constant at `0x141`:
 
 ```
 02 45 07 48 6d 58 09 08
 ```
 
-This is the same value the `.XMD` header carries inverted in its first eight
-bytes, and byte 5 is the product discriminator (`0x58` Courier, `0x59` on
-`SV25.XMD`). A first byte of `'!'` boots the application instead. Anything else
-prints `MODEM FIRMWARE IS CORRUPTED. FIRMWARE DOWNLOAD IS NECESSARY.` and rearms,
-so a failed knock is safe to retry.
+This is the same value that the `.XMD` header contains, inverted, in its first eight
+bytes. Byte 5 is the product discriminator (`0x58` Courier, `0x59` on
+`SV25.XMD`). If the first byte is `'!'`, the loader boots the application. All other values
+print `MODEM FIRMWARE IS CORRUPTED. FIRMWARE DOWNLOAD IS NECESSARY.`, and the loader arms again.
+Thus, it is safe to try a failed knock again.
 
 ## Entering the loader from the application
 
-SDL.EXE has to get a running modem into the loader first. Gene Lowry's
-third-party flash write-up (`README.1ST` in the Metropoli `SD960123.ZIP`) calls
-this an undocumented `AT^BE^GHmX^I^H` command, and says the modem answers
-`3F`/`E3`/`E4`, the MR LED goes out, and there are ten seconds to carry on.
+SDL.EXE must first put a running modem into the loader. The third-party flash
+write-up of Gene Lowry (`README.1ST` in the Metropoli `SD960123.ZIP`) calls
+this an undocumented `AT^BE^GHmX^I^H` command. It says that the modem answers
+`3F`/`E3`/`E4`, the MR LED goes off, and there are ten seconds to continue.
 It is not an AT command. The eight bytes are the knock above.
 
 The application recognises them in the serial receive path, on the board ROM
 (supervisor 7.3.14). `0x89a06` masks the byte with `0x7f` and calls through a
-state vector, `call word ptr [0x0b7c]` at `0x89a09`. A carry return means the
-byte was not consumed and falls through to normal character handling. The
+state vector, `call word ptr [0x0b7c]` at `0x89a09`. A carry return means that the
+byte was not consumed, and the code continues to the normal character handling. The
 vector is a chain of one-byte states at `0x8b479`:
 
 | State | Expects | On match |
@@ -89,32 +89,32 @@ vector is a chain of one-byte states at `0x8b479`:
 | `0xb4eb` | `09` | `0xb4ff` |
 | `0xb4ff` | `08` | `cli; jmp far a764:198b` |
 
-Any mismatch resets the vector to `0xb479` and returns carry, so the byte is
-treated as ordinary input. There is no `AT` prefix and nothing is matched after
-the eighth byte: sending the ten bytes in the README only wastes the `AT`. The chain hard-codes `'X'`,
-so it is the Courier product byte, and `0x59` would not match.
+If a byte does not agree, the vector resets to `0xb479` and returns carry. Thus, the byte is
+processed as ordinary input. There is no `AT` prefix, and nothing is compared after
+the eighth byte. If you send the ten bytes in the README, the `AT` has no effect. The chain hard-codes `'X'`.
+Thus, it is the Courier product byte, and `0x59` would not agree.
 
 `a764:198b` is physical `0xa8fcb`. That is the reset entry of a **copy of the
-loader inside the application**, based at physical `0xa7640` (file `0x27640`).
-It does what `fc00:11e9` does: `cli; cld`, segment registers and `SS` zeroed,
+loader in the application**, with its base at physical `0xa7640` (file `0x27640`).
+It does the same as `fc00:11e9`: `cli; cld`, the segment registers and `SS` set to zero,
 `SP=0xf8`, `0x24` word records replayed from `cs:0x1898` and 9 byte records
 from `cs:0x1928` as `OUT`s, `0x1897` bytes copied to physical zero, then
-`INT 13h` through the IVT it just wrote (`[0x4c] = 0x0848`).
+`INT 13h` through the IVT that it wrote (`[0x4c] = 0x0848`).
 
-That copy is a different build from the one in the boot block. It is not
-byte-identical to `fc00:0000..1b13`, and the knock constant sits at base
-`+0x13c` (file `0x2777c`) rather than `+0x141`. In the 1994-95 SDL images the
-banner text follows the constant, so the data hit for the eight bytes in each
-image is this loader copy, not a table the state machine reads.
+That copy is a different build from the copy in the boot block. It is not
+byte-identical to `fc00:0000..1b13`, and the knock constant is at base
+`+0x13c` (file `0x2777c`), not at `+0x141`. In the SDL images of 1994-95, the
+banner text follows the constant. Thus, the data hit for the eight bytes in each
+image is this loader copy. It is not a table that the state machine reads.
 
-Not traced: where the `3F`/`E3`/`E4` acknowledgement and the ten-second timeout
-come from. The state machine sends nothing, so they happen after the jump, in
-the loader. The same eight bytes occur in every SDL image from 5/25/94 to
-3/13/98; the state machine itself has been located only in 7.3.14.
+Not traced: the source of the `3F`/`E3`/`E4` acknowledgement and of the ten-second timeout.
+The state machine sends nothing. Thus, they occur after the jump, in
+the loader. The same eight bytes occur in each SDL image from 5/25/94 to
+3/13/98. We found the state machine itself only in 7.3.14.
 
 ## Identify
 
-`fc00:0992`, and the application carries a byte-identical copy at file `0x28654`:
+`fc00:0992`. The application contains a byte-identical copy at file `0x28654`:
 
 | step | who | bytes |
 |---|---|---|
@@ -125,16 +125,16 @@ the loader. The same eight bytes occur in every SDL image from 5/25/94 to
 | 5 | modem | restores the autobaud rate, sends two identity bytes and two zeros |
 | 6 | host | image type (`2` or `4`), CRC high, CRC low |
 
-The three B0CMP values the loader uses are `0x802a`, `0x8082` and `0x8102`.
-`baud = clock / (8 × (CMP+1))` puts them at 58605, 19237 and 9730 on a 20.16 MHz
-part — 57600, 19200 and 9600. **The host has to follow both switches**, sending
-its `'Q'` at 19200 and reading the echo at 9600.
+The loader uses three B0CMP values: `0x802a`, `0x8082` and `0x8102`.
+`baud = clock / (8 × (CMP+1))` gives 58605, 19237 and 9730 on a 20.16 MHz
+part, that is, 57600, 19200 and 9600. **The host must follow the two rate changes**. It sends
+its `'Q'` at 19200 and reads the echo at 9600.
 
 ## Erase
 
-`fc00:043d` walks block indices from `cs:[0x108]` to `cs:[0x126]`. The start is
-2 for a 256 KiB image on a 512 KiB part and 0 otherwise. Indices 4 and 5 are
-skipped. From the table at `fc00:0393`:
+`fc00:043d` goes through the block indices from `cs:[0x108]` to `cs:[0x126]`. The start is
+2 for a 256 KiB image on a 512 KiB part, and 0 for other cases. The loader skips indices 4 and 5.
+From the table at `fc00:0393`:
 
 | idx | physical | size | erased |
 |---:|---|---|---|
@@ -146,51 +146,51 @@ skipped. From the table at `fc00:0393`:
 | 5 | `0xfa000` | 8K | **never** |
 | 6 | `0xfc000` | 16K | yes |
 
-So the only permanently protected regions are the two 8 KiB parameter blocks,
-which on this board hold nothing but a far jump at `0xfbff0`. **Block 6 is the
-loader itself**, and it is erased and reprogrammed by every download.
+Thus, the only regions with permanent protection are the two 8 KiB parameter blocks.
+On this board, they contain only a far jump at `0xfbff0`. **Block 6 is the
+loader itself**, and each download erases and programs it again.
 
 ## Records
 
-`fc00:0b3c` drops the P1LTCH bit 6 write gate and feeds each received byte to the
+`fc00:0b3c` drops the write gate of P1LTCH bit 6. It sends each received byte to the
 handler in `cs:[0x10e]`, a state machine at `fc00:0b65`:
 
 ```
 [len] [offset high] [offset low] [type] [data ...] [checksum]
 ```
 
-The offset field loads DI. Type `2` takes two big-endian bytes into ES; type `0`
-programs `len` bytes as little-endian words at ES:DI, advancing DI by two per
-word and padding an odd tail with `0xff`; any other type ends the stream and
-returns `0x17`. Every byte including the checksum is summed and must total zero.
+The offset field loads DI. Type `2` puts two big-endian bytes into ES. Type `0`
+programs `len` bytes as little-endian words at ES:DI. It advances DI by two for each
+word, and it pads an odd tail with `0xff`. All other types stop the stream and
+return `0x17`. The sum of all bytes, with the checksum, must be zero.
 
 The programming primitive at `fc00:0c67` is the Intel `0x40` word write with a
-status poll. A record aimed at flash the loader did not erase cannot succeed.
+status poll. A record for flash that the loader did not erase cannot succeed.
 
 ## CRC, and how the download ends
 
-`fc00:026f` is a table-less CRC-16 seeded `0xffff`. The spans it walks depend on
+`fc00:026f` is a CRC-16 without a table, with the seed `0xffff`. The spans that it reads depend on
 the image type, from `fc00:08a3`:
 
 - type 2: `0xc0000..0xf7ffd`
 - type 4: `0xc0000..0xfffff` **then** `0xc0000..0xf7ffd`, because the longer path
-  falls through into the shorter one. Four blocks are summed twice and the
-  parameter blocks and boot block are included. Both loops start at segment
-  `c000`; this is what the ROM does.
+  continues into the shorter path. Four blocks are added two times, and the
+  parameter blocks and the boot block are included. The two loops start at segment
+  `c000`. This is what the ROM does.
 
-Reimplementing it reproduces the word stored at `0xf7ffe` in both real images —
-`0x3e73` for the board, `0x53bc` for `IDSDL302.ROM` — which pins the algorithm.
-In download mode the loader computes that word itself and programs it at
-`fc00:0956`, so a record stream must leave those two bytes alone.
+Our new implementation gives the same word as the one stored at `0xf7ffe` in the two real images:
+`0x3e73` for the board, `0x53bc` for `IDSDL302.ROM`. This confirms the algorithm.
+In download mode, the loader calculates that word itself and programs it at
+`fc00:0956`. Thus, a record stream must not change those two bytes.
 
-The modem sends `0x15` before the erase and `0x16` when it completes, then
-after the records: `0x14` complete, `0x17` stream ended, `0x18` record checksum
+The modem sends `0x15` before the erase and `0x16` when the erase completes. After
+the records, it sends: `0x14` complete, `0x17` stream ended, `0x18` record checksum
 error, `0x19` image CRC mismatch, `0x1a` program timeout, `0x1b` erase failed,
 `0x1d` block erase error. Then it reboots into the application.
 
-A CRC mismatch is not fatal: the word is never programmed, so the next reset
-fails the check at step 3 and drops back into this loader. The unrecoverable
-window is a failure while block 6 is erased or being written.
+A CRC mismatch is not fatal. The word is never programmed. Thus, at the next reset, the check
+at step 3 fails, and the modem goes back into this loader. The only period without recovery
+is a failure while block 6 is erased or while it is written.
 
 ## Building a stream
 
@@ -200,31 +200,30 @@ window is a failure while block 6 is erased or being written.
   --image-type 4 --output artifacts/sdl-download-idsdl302-type4
 ```
 
-`--preserved` supplies the blocks this download will not erase, so the expected
-CRC is computed over what the flash will actually contain rather than over the
-image alone. The report carries the CRC to hand the modem, the erased and
-protected spans, and the result of replaying the stream through a model of the
-loader's own state machine. For `IDSDL302.ROM` at type 4 that is 507,902 bytes
-programmed in a 527,803-byte stream with no mismatches, expecting `0x952d`;
-at type 2 it is 245,758 bytes expecting `0x53bc`, the word the reference ships.
+`--preserved` supplies the blocks that this download will not erase. Thus, the expected
+CRC is calculated over the actual contents of the flash, and not over the
+image alone. The report contains the CRC to give to the modem, the erased and
+protected spans, and the result of a replay of the stream through a model of the
+state machine of the loader. For `IDSDL302.ROM` at type 4, that is 507,902 bytes
+programmed in a 527,803-byte stream with no mismatches, with the expected CRC `0x952d`.
+At type 2, it is 245,758 bytes with the expected CRC `0x53bc`, the word that the reference ships.
 
-Type 2 does not erase blocks 0 and 1, where `IDSDL302.ROM` differs from this
-board in 180 bytes including the `LK2` dispatcher at `0x25ba9`, so a type 2
-download would install the modified image only in part.
+Type 2 does not erase blocks 0 and 1. In these blocks, `IDSDL302.ROM` is different from this
+board in 180 bytes, which include the `LK2` dispatcher at `0x25ba9`. Thus, a type 2
+download would install only a part of the modified image.
 
 ## What is verified, and what is not
 
-Verified offline: the CRC algorithm against two real images; the record format,
-checksums and coverage, by replaying a generated stream through a model of
-`fc00:0b65`; the erase set and the protected blocks; the knock constant against
+Verified offline: the CRC algorithm against two real images. The record format, the
+checksums and the coverage, by a replay of a generated stream through a model of
+`fc00:0b65`. The erase set and the protected blocks. The knock constant against
 the boot block.
 
-Not verified: everything on the wire. The autobaud, the knock exchange, the
-three-rate identify handshake and the erase and result timings are transcribed
-from the disassembly and have never been run against hardware or an emulated
-loader. Running the boot block under the `recovery.py` style harness and driving
-`Session` against it is the next step, and would close that gap without touching
-the modem.
+Not verified: all items on the wire. We transcribed the autobaud, the knock exchange, the
+three-rate identify handshake and the erase and result timings
+from the disassembly. We never ran them against hardware or an emulated
+loader. The next step is to run the boot block under a harness of the `recovery.py` type and to operate
+`Session` against it. This would close that gap without a change to the modem.
 
 Tests:
 
