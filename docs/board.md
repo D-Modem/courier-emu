@@ -1,177 +1,188 @@
 # The board
 
-The 20.16 MHz Courier and the 25 MHz Courier 2806, identified from photographs
-and from the owner's continuity readings, with each claim checked against the
-firmware where the firmware can check it.
+This file describes the 20.16 MHz Courier and the 25 MHz Courier 2806. We
+identified the parts from photographs and from continuity readings that the
+owner made. Where the firmware can check a claim, we checked the claim against
+the firmware.
 
-> **Which board a reading came from matters per pin.** The **DSP side
-> transfers**: stock 7.3.14 runs on both the 20.16 MHz AC01 board and the 25 MHz
-> AC03 board and its **DSP payload is byte-identical between them** - 126,851
-> consecutive identical bytes covering the payload and all three overlays - and
-> code that identical cannot be talking to two different interfaces. So `IS`,
-> `INT2`, `READY` and the data bus are findings about both.
+> **For each pin, the board that gave the reading is important.** The **DSP
+> side transfers**: stock 7.3.14 runs on the 20.16 MHz AC01 board and on the
+> 25 MHz AC03 board. Its **DSP payload is byte-identical between the two
+> boards**. There are 126,851 consecutive identical bytes, which include the
+> payload and all three overlays. Code that is this identical cannot operate
+> two different interfaces. Thus `IS`, `INT2`, `READY` and the data bus are
+> findings about the two boards.
 >
-> **The CPU side does not.** The whole difference between those two images is in
-> the supervisor, which is exactly where differing CPU-side wiring would show up.
-> `ALE`, `RD#`, `WR#`, the interrupt lines and the unconnected `INT0` are
-> findings about the 2806 alone.
+> **The CPU side does not transfer.** All of the difference between the two
+> images is in the supervisor, and a difference in the CPU-side wiring would
+> show there. `ALE`, `RD#`, `WR#`, the interrupt lines and the unconnected
+> `INT0` are findings about the 2806 only.
 >
-> **A third board, the 2805 ISA internal, was metered on 2026-09-18** and is
-> written up in
+> **The owner metered a third board, the 2805 ISA internal, on 2026-09-18.**
+> The record of that work is in
 > [asic-pinout.md](asic-pinout.md#the-2805-isa-board---a-third-unit-and-the-first-internal-one).
-> It confirms the memory side on a second unit and diverges on the panel side,
-> where an internal card has no lamps and the ASIC's bottom-edge pins are
-> re-used for a host-facing 16550.
+> That board confirms the memory side on a second unit. It is different on the
+> panel side: an internal card has no lamps, and the board uses the bottom-edge
+> pins of the ASIC again for a 16550 that faces the host.
 >
-> The pin readings below are the **2806's**. The ASIC marking is the
-> **20.16 MHz** board's - the 2806's ASIC has never been read for a marking, so
-> nothing establishes the two carry the same gate array. Reading it is the
-> cheapest outstanding item here.
+> The pin readings below are from the **2806**. The ASIC marking is from the
+> **20.16 MHz** board. Nobody has read the marking on the ASIC of the 2806.
+> Thus, no evidence shows that the two boards have the same gate array. A read
+> of that marking is the least expensive open item here.
 
 ## The parts
 
 | marking | what it is |
 |---|---|
-| `NEC USA 1-016-905 9948LV001` | **the ASIC.** A USR part number on an NEC-fabricated gate array, week 48 1999. No catalogue part, no datasheet, custom metal. |
-| `TI DSP 16-912 (C) US ROBOTICS D17140PQ` | the C5x-family DSP, custom-marked. Probably a **'C50 or 'LC50**, not the 'C52 the core models - see below. |
-| `S80C186` | the supervisor, more precisely an **80C186EB in the 80-lead QFP**: `RD`/`WR`/`ALE` on 36/37/38 and `INT0`/`INT2` on 62/64 match that package's Table 7 exactly and the XL's not at all. Which is the device `uart.py`'s `EbSerial` already assumes. Its `GCS0` (pin 59) is the ASIC's chip select. |
-| `TLC...320AC01CFN` | the voice-band codec, PLCC, next to the DSP. The 2806 carries an **AC03** instead. |
-| `ECLIPTEK EC11 40.320M` | the **ASIC's** oscillator, the same part on both boards - so the DSP's clock and the codec's `MCLK` are board-independent. The 2806 carries a **second** crystal for the CPU alone. |
-| `NEC D43256BGU-70LL` x2 | the **80186's** SRAM, `U4` and `U12`: not two banks but the low and high byte lanes of one **32K x 16**. |
-| `CY7C199-15VC` x2 | the **DSP's** SRAM: 2 x 32Kx8 = 32K words on a 16-bit bus, exactly `0x8000`-`0xffff`. |
+| `NEC USA 1-016-905 9948LV001` | **the ASIC.** A USR part number on a gate array that NEC made, week 48 1999. There is no catalogue part, no datasheet, and the metal is custom. |
+| `TI DSP 16-912 (C) US ROBOTICS D17140PQ` | the C5x-family DSP, with a custom marking. Possibly a **'C50 or 'LC50**, not the 'C52 that the core models. Refer to the text below. |
+| `S80C186` | the supervisor. More exactly, an **80C186EB in the 80-lead QFP**: `RD`/`WR`/`ALE` on 36/37/38 and `INT0`/`INT2` on 62/64 agree exactly with Table 7 of that package, and do not agree with the XL. `uart.py`'s `EbSerial` already assumes this device. Its `GCS0` (pin 59) is the chip select of the ASIC. |
+| `TLC...320AC01CFN` | the voice-band codec, PLCC, adjacent to the DSP. The 2806 has an **AC03** in its place. |
+| `ECLIPTEK EC11 40.320M` | the oscillator of the **ASIC**. Both boards have the same part. Thus the DSP clock and the codec `MCLK` do not change between the boards. The 2806 has a **second** crystal for the CPU only. |
+| `NEC D43256BGU-70LL` x2 | the SRAM of the **80186**, `U4` and `U12`. They are not two banks. They are the low and high byte lanes of one **32K x 16**. |
+| `CY7C199-15VC` x2 | the SRAM of the **DSP**: 2 x 32Kx8 = 32K words on a 16-bit bus, exactly `0x8000`-`0xffff`. |
 | `ISSI IS61C256AH-15J` | 32Kx8 15 ns SRAM. |
-| `ADM707` | supervisory reset - and on this board a **power-good reset only, with its watchdog unused**. |
-| `74VHC573`, `74VHC32`, `74VHC04` | bus glue. Exactly **one** '573, latching the **high** byte; the ASIC latches the low byte. |
-| `PA28F400` | the **flash**. Intel 4 Mbit / 512 KiB, which is the 2806 dump exactly. |
-| `SN75188` x2, `U22`/`U23` | the **EIA-232 drivers**, TTL in / EIA out, modem-to-DTE only. Three of each part's four gates are fed from the ASIC. |
+| `ADM707` | supervisory reset. On this board it is **a power-good reset only, and its watchdog is not used**. |
+| `74VHC573`, `74VHC32`, `74VHC04` | bus glue. There is exactly **one** '573, which latches the **high** byte. The ASIC latches the low byte. |
+| `PA28F400` | the **flash**. Intel 4 Mbit / 512 KiB, which is exactly the size of the 2806 dump. |
+| `SN75188` x2, `U22`/`U23` | the **EIA-232 drivers**, TTL in / EIA out, modem-to-DTE only. The ASIC supplies three of the four gates of each part. |
 | `DS1489AM`, `U18` | the **EIA-232 receiver**, EIA in / TTL out, DTE-to-modem. |
-| `74AHC04` | inverter; one gate sits in the `SD` path. |
-| `H11B2` x2, `U14`/`U16` | **optocouplers** - the line-side isolation barrier, and the first named parts in the DAA section. |
-| `RA5W-K` | the **hook relay**. The `OH` lamp is on its pin 9, which is why `OH` is the one panel line not on the ASIC. |
-| Atmel 93C66 | serial EEPROM, the settings store. On the 2806 it is the **CPU's**, not the ASIC's. |
+| `74AHC04` | inverter. One gate is in the `SD` path. |
+| `H11B2` x2, `U14`/`U16` | **optocouplers**. They are the isolation barrier of the line side, and the first named parts in the DAA section. |
+| `RA5W-K` | the **hook relay**. The `OH` lamp is on its pin 9. This is why `OH` is the one panel line that is not on the ASIC. |
+| Atmel 93C66 | serial EEPROM, which stores the settings. On the 2806 it is the EEPROM of the **CPU**, not of the ASIC. |
 
-The DAA/line section was not in the photograph, so nothing here describes it
-beyond the two optocouplers.
+The DAA/line section was not in the photograph. Thus this file does not
+describe it, except for the two optocouplers.
 
 ## The ASIC is the entire board outside the two processors
 
-The 80186 talks to the world through it, the C5x talks to the 80186 through it,
-and the line-side parts answer to it. On the CPU's I/O bus it is not a peripheral
-among several - **it is the only device there is**, which is a measurement rather
-than a figure of speech: the CPU's own peripheral control block is relocated into
-*memory* at `0xff00`-`0xffff`, and flash and SRAM are memory too, so anything
-answering an `IN` is the gate array.
+The 80186 communicates with all other parts through the ASIC. The C5x
+communicates with the 80186 through it, and the line-side parts answer to it.
+On the I/O bus of the CPU, it is not one peripheral of many: **it is the only
+device on that bus**. This is a measurement, not a figure of speech. The CPU
+moves its own peripheral control block into *memory* at `0xff00`-`0xffff`, and
+flash and SRAM are also memory. Thus, any device that answers an `IN` is the
+gate array.
 
-Its four jobs:
+It has four functions:
 
-1. **The board's I/O** - ports `0x10`, `0x12`, `0x14` carry the hook relay, the
-   NVRAM strobe, the carrier-detect pair, ring detect and the option straps.
-2. **Bootstrapping the DSP** - it holds the C5x in reset and writes its program
-   RAM through the `0x40`-`0x4e` window.
-3. **The mailbox** - it bridges *CPU I/O ports* to *DSP data-memory cells*. Two
-   address spaces with nothing to do with each other are joined inside it, and
-   that is the single most important thing it does for the emulator. See
+1. **The I/O of the board.** Ports `0x10`, `0x12`, `0x14` carry the hook relay,
+   the NVRAM strobe, the carrier-detect pair, ring detect and the option straps.
+2. **The bootstrap of the DSP.** It holds the C5x in reset and writes the
+   program RAM of the C5x through the `0x40`-`0x4e` window.
+3. **The mailbox.** It connects *CPU I/O ports* to *DSP data-memory cells*. The
+   two address spaces are not related, and the ASIC joins them. For the
+   emulator, this is the most important function of the ASIC. Refer to
    [dsp-cpu-link.md](dsp-cpu-link.md).
-4. **The address latch** - it latches the CPU's low address byte for both
-   memories and drives the flash's top three address lines. It does **not**
-   drive the flash's `CE#`; `UCS` does. *Corrected 2026-09-18 - this read "the
-   memory controller ... folds four upper address lines into three".*
+4. **The address latch.** It latches the low address byte of the CPU for the
+   two memories, and it drives the top three address lines of the flash. It
+   does **not** drive the `CE#` of the flash. `UCS` drives it. *Corrected
+   2026-09-18 - this read "the memory controller ... folds four upper address
+   lines into three".*
 
-**Not the timebase.** The 5.000 ms tick is the 80186's own Timer 0 - max count
-25,200 at CLKOUT/4 - confirmed four ways, including a counter routine run on the
-modem that logged exactly 200.0 increments a second. `40.320 / 2 = 20.16 MHz`
-CLKOUT, so the timer clock is 5.04 MHz. (25,200 lands on a round figure either
-way - 5 ms at 20.16 MHz CLKOUT, or 10 ms if 20.16 had been the crystal - and the
-board's own `&T1` slope of 1.000031 s per `S18` unit had already chosen the
-first.)
+**Not the timebase.** The 5.000 ms tick is Timer 0 of the 80186 itself, with a
+max count of 25,200 at CLKOUT/4. Four methods confirmed this. One method was a
+counter routine on the modem, which logged exactly 200.0 increments each
+second. `40.320 / 2 = 20.16 MHz` CLKOUT, thus the timer clock is 5.04 MHz.
+25,200 gives a round figure in the two cases: 5 ms at 20.16 MHz CLKOUT, or
+10 ms if 20.16 was the crystal. The `&T1` slope of the board, 1.000031 s for
+each `S18` unit, had already selected the first case.
 
-**Not in the CPU's audio path.** Sweeping every port during analogue loopback,
-only the four handshake registers move; no CPU port carries samples.
+**Not in the audio path of the CPU.** We swept all ports during analogue
+loopback. Only the four handshake registers changed. No CPU port carries
+samples.
 
-**Not the tone generator**, though the README once said so. Dialling sends
-`0x16:0000`, three constant lanes `0x19`/`0x1a`/`0x1b`, the keypad index on
-`0x13`, then `0x16:0000` when the tone ends - and those lanes are host-write tags
-whose handlers store into **DSP data memory** at `0x03ad`, `0x0392` and `0x03f1`.
-The tone parameters go to the C5x, so the synthesiser is the datapump's.
+**Not the tone generator**, although the README said this at one time. A dial
+sends `0x16:0000`, then three constant lanes `0x19`/`0x1a`/`0x1b`, then the
+keypad index on `0x13`. When the tone ends, it sends `0x16:0000`. Those lanes
+are host-write tags. Their handlers write to **DSP data memory** at `0x03ad`,
+`0x0392` and `0x03f1`. The tone parameters go to the C5x, thus the
+synthesiser is part of the datapump.
 
 ## The CPU's I/O space
 
-Only **even** addresses are decoded - all 64 odd ports below `0x80` read `0x00` -
-and the decode **stops at `0x7f`**, above which all 64 even ports read back their
-own address and all odd ports read `0x00`, which is an undriven bus. That is 64
-registers, and the firmware uses about half.
+The ASIC decodes only **even** addresses. All 64 odd ports below `0x80` read
+`0x00`. The decode **stops at `0x7f`**. Above that address, all 64 even ports
+read back their own address and all odd ports read `0x00`, which is a bus that
+nothing drives. Thus there are 64 registers, and the firmware uses about half
+of them.
 
-**The idle default is `0x00`, not `0xff`.** 96 of the 128 ports below `0x80` read
-zero on the board, where the harness returns `0xff` for any port it does not
-model. `courier_emu.asic_ports` carries the measured map; `asic_ports.seed()`
-produces it in the form `port_values` takes. It is **not wired in by default** -
-it is the idle, on-hook state, so holding those values static through a run that
-goes off hook could be worse than `0xff`.
+**The idle default is `0x00`, not `0xff`.** On the board, 96 of the 128 ports
+below `0x80` read zero. The harness returns `0xff` for each port that it does
+not model. `courier_emu.asic_ports` holds the measured map, and
+`asic_ports.seed()` gives it in the form that `port_values` accepts. It is
+**not connected by default**. The map is the idle, on-hook state. If a run goes
+off hook, static values from that state can be worse than `0xff`.
 
 | ports | sites | idle | what it is |
 |---|---|---|---|
 | `0x00` | 12 r/w | `00` | DTE serial data path |
 | `0a` `0c` `0e` | 5r / 21w | `f7` `60` `07` | configuration; `0e` is the panel latch driver, write-only |
 | `10` `12` `14` | 20r / 34w | `86` `8a` `7e` | **board latches** - hook relay, NVRAM, carrier-detect pair, ring detect, straps |
-| `18` `1a` `1c` `1e` | 104r / 137w | `ff` `ff` `fd` `ff` | **the handshake**, busiest group by far; `1c`/`1e` are the mailbox status pair, `18` is the ROM images' DSP command port and `1e` the XMF images' |
-| `40`-`4e` | 20r / 45w | `ff` | **the DSP download window** - eight latches carrying four payload words |
+| `18` `1a` `1c` `1e` | 104r / 137w | `ff` `ff` `fd` `ff` | **the handshake**, the group with the most traffic; `1c`/`1e` are the mailbox status pair, `18` is the DSP command port of the ROM images and `1e` that of the XMF images |
+| `40`-`4e` | 20r / 45w | `ff` | **the DSP download window** - eight latches that carry four payload words |
 | `50`-`56` | 9r / 8w | `ff` | second window bank |
 | `58` `5a` / `5c` `5e` | 68r / 44w | `20` `00` / `0e` `00` | **the mailbox** - tag pair and data pair |
-| `60` `62` | **27r / 0w** | `4b` `00` | **DSP-to-host stream** - pure input |
-| `64`-`7e` | 3r / 0w | `78 09 8f a7 e8 aa b6 97 51 51 06 4f b3` | read almost never; identity or strapping |
+| `60` `62` | **27r / 0w** | `4b` `00` | **DSP-to-host stream** - input only |
+| `64`-`7e` | 3r / 0w | `78 09 8f a7 e8 aa b6 97 51 51 06 4f b3` | almost never read; identity or strapping |
 
-Two rows carry their own argument. **`60`/`62` has zero write sites in the whole
-image**, so it is one-way out of the DSP. And **ten of the thirteen values in
-`64`-`7e` are byte-identical** to a sweep taken when this unit ran stock 7.3.14
-instead of ID_SDL 4.03 - the same values across two firmware versions and two
-sessions is what fixed configuration looks like. The three that differ (`68`,
-`6a`, `70`, and also `58` and `60`) are state.
+Two rows give their own evidence. **`60`/`62` has zero write sites in all of
+the image**. Thus data goes in one direction only, out of the DSP. Also, **ten
+of the thirteen values in `64`-`7e` are byte-identical** to a sweep from the
+time when this unit ran stock 7.3.14, not ID_SDL 4.03. The same values across
+two firmware versions and two sessions show fixed configuration. The three that
+are different (`68`, `6a`, `70`, and also `58` and `60`) are state.
 
-**Nothing reads `0x64`-`0x7e`.** No instruction in the supervisor reads or writes
-any port in that block; the only code touching it is the `0x60`/`0x62` reader.
-That rests on a raw-byte refutation of every candidate, not a boundary heuristic,
-and it is not a proof of absence - a `DX` loaded from memory, as the downloader
-does at `0e515`, could reach those ports on a path the analysis cannot bound.
+**Nothing reads `0x64`-`0x7e`.** No instruction in the supervisor reads or
+writes a port in that block. The only code that touches it is the `0x60`/`0x62`
+reader. This result comes from a raw-byte refutation of each candidate, not from
+a boundary heuristic. But it is not a proof of absence. A `DX` loaded from
+memory, as the downloader does at `0e515`, can get to those ports on a path
+that the analysis cannot bound.
 
-**And the streaming reading of that block is refuted.** Repeated reads do not
-pop, advance or disturb it, so those are sixteen stable registers and the `01fe0`
-machine is polling one register rather than draining a queue.
+**Also, the streaming interpretation of that block is refuted.** Repeated reads
+do not pop, advance or change it. Thus those are sixteen stable registers. The
+`01fe0` machine polls one register. It does not empty a queue.
 
 > **The `0xc0`-`0xc6` cluster is a device-programming path, not a diagnostic
 > read.** The block at `08332..083b5` sets `PACS` to `0xe000` and `[0xff18]` to
-> `0x10`, then reads `0xc2`/`0xc0` and writes `0xc4`/`0xc6` while streaming
-> `0x1554` words from segment `0xe000`, entered from an `AT` handler checking for
-> a literal `L`. **Do not invoke it on the physical modem.** It is `ATNL`; see
-> [probing.md](probing.md).
+> `0x10`. Then it reads `0xc2`/`0xc0` and writes `0xc4`/`0xc6` while it streams
+> `0x1554` words from segment `0xe000`. An `AT` handler that looks for a literal
+> `L` starts it. **Do not start it on the physical modem.** It is `ATNL`. Refer
+> to [probing.md](probing.md).
 
-> **The monitor lies about the download window.** `ATGLK2I` and the CPU's own
-> `IN` agree on 51 of 64 ports and disagree on all twelve of `0x40`-`0x56`, with
-> the pairing inverted. Anything about the window resting on a monitor sweep
-> needs re-taking.
+> **The monitor gives incorrect data about the download window.** `ATGLK2I` and
+> the `IN` of the CPU agree on 51 of 64 ports. They disagree on all twelve of
+> `0x40`-`0x56`, and the pairing is inverted. If a statement about the window
+> comes from a monitor sweep, take the reading again.
 
-Only four ports differ between idle and `AT&T8` analogue loopback: `18`
+Only four ports are different between idle and `AT&T8` analogue loopback: `18`
 (`c0`/`c6`/`c7`), `1a` (`c0`), `1c` (`f9`) and `1e` (`fb`). `1c` and `1e` both
-move on bit 2 - the bit the supervisor's mailbox interrupt acknowledges - and
-`18` varies *within* the active state, so it carries live signal. With the loop
-on hook and no call, most of the ASIC never does anything.
+change on bit 2, which is the bit that the mailbox interrupt of the supervisor
+acknowledges. `18` changes *within* the active state, thus it carries a live
+signal. When the loop is on hook and there is no call, most of the ASIC does
+nothing.
 
-> **A reset sweep is a clean negative and a structural limit.** Sweeping either
-> side of an `ATZ` finds **0 of 256 ports differing**, because the monitor is
-> firmware: the board stops answering the moment it restarts and is readable
-> again only once the supervisor is back at its command loop. The outage is under
-> 375 ms. Moving the download window needs a transition the monitor can survive,
-> and there are only two - power-on, unobservable through the firmware's own
-> monitor, and a call setup, which needs the loop off hook.
+> **A reset sweep gives a clean negative and shows a structural limit.** A
+> sweep before and after an `ATZ` finds **0 of 256 ports different**, because
+> the monitor is firmware. The board stops its answers when it restarts. You
+> can read it again only when the supervisor is back at its command loop. The
+> outage is less than 375 ms. To move the download window, a transition that the
+> monitor can survive is necessary. There are only two. Power-on, which you
+> cannot see through the monitor of the firmware. And a call setup, which needs
+> the loop off hook.
 
 ## Orientation and pin numbering
 
-120 pins, 30 a side, index dot at the **bottom left** - in the part's own frame,
-viewed from above with the `NEC USA 1-016-905` markings upright. That is the
-orientation to reproduce before re-checking any of this.
+The part has 120 pins, 30 on each side. The index dot is at the **bottom
+left**. This is in the frame of the part itself, seen from above, with the
+`NEC USA 1-016-905` markings upright. Use this orientation before you check
+these data again.
 
-Under JEDEC's convention of pin 1 at the dot, numbering counter-clockwise from
-a top view - **confirmed by the owner**, who took the readings and owns the
-frame they were recorded in:
+The numbering uses the JEDEC convention: pin 1 is at the dot, and the numbers
+go counter-clockwise in a top view. **The owner confirmed this.** The owner
+took the readings and recorded them in this frame:
 
 | pins | edge | direction |
 |---|---|---|
@@ -180,42 +191,47 @@ frame they were recorded in:
 | `61`-`90` | top | right to left |
 | `91`-`120` | left | top to bottom |
 
-Readings were taken in per-side local numbering; the translation is **top** pin
-= `91 - N` counted left to right, **right** pin = `61 - N` counted top to
-bottom, **left** pin = `121 - N` counted bottom to top.
+The owner took the readings with a local numbering for each side. Use these
+translations:
 
-Three independent checks agree with the direction. The bottom-edge readings
-land on the one edge that was unread and the edge the panel was predicted to be
-on; read clockwise, five of them would collide with pins already measured as
-the DSP data bus. The CPU's four upper address lines land on four ASIC pins
-stepping over a corner supply pair. And **all eight corner pins are read and
-all eight are supplies**:
+- **top** pin = `91 - N`, counted left to right.
+- **right** pin = `61 - N`, counted top to bottom.
+- **left** pin = `121 - N`, counted bottom to top.
+
+Three independent checks agree with the direction. First, the bottom-edge
+readings are on the one edge that was not read, and on the edge where we
+predicted the panel. With clockwise numbering, five of them would be on pins
+that we measured as the DSP data bus. Second, the four upper address lines of
+the CPU are on four ASIC pins, and these step over a supply pair at a corner.
+Third, **we read all eight corner pins and all eight are supplies**:
 
 | corner | pins | | corner | pins |
 |---|---|---|---|---|
 | bottom left | `120` `GND`, `1` `VCC` | | top right | `60` `GND`, `61` `VCC` |
 | bottom right | `30` `VCC`, `31` `GND` | | top left | `90` `VDD`, `91` `GND` |
 
-A corner pad is a supply under *either* numbering direction, so this confirms
-the 30-a-side count rather than the direction - but it holds everywhere it has
-been checked, and it is what the inferred bus runs below lean on.
+A corner pad is a supply with *either* numbering direction. Thus this check
+confirms the count of 30 on each side, not the direction. But it is true at
+all locations that we checked, and the inferred bus runs below depend on it.
 
-Every bare pin number below is an **ASIC** pin; DSP and CPU pins are named as
-such, because they collide otherwise.
+Each bare pin number below is an **ASIC** pin. We name DSP and CPU pins as
+such, because otherwise the numbers are the same.
 
 ![The ASIC's pins as currently mapped](asic-pinout.svg)
 
-Generated from `tools/draw_asic_pinout.py`, which holds the map as data. When a
-reading lands or is corrected, edit the table here **and** `PINS` there, then
-re-run the tool. [board-map.svg](board-map.svg) answers the other question -
-what talks to what - from `tools/draw_board_map.py` on the same terms.
+`tools/draw_asic_pinout.py` makes this image, and it holds the map as data.
+When you get a new reading or a correction, edit the table here **and** `PINS`
+in the tool. Then run the tool again. [board-map.svg](board-map.svg) answers
+the other question - which part communicates with which part. It comes from
+`tools/draw_board_map.py` in the same way.
 
 ![The board's parts and the nets between them](board-map.svg)
 
 ## What is connected
 
-Measured pins are marked; the rest of a bus run is **inferred** from the
-measured ends being contiguous and in order, and is marked so.
+The tables mark the measured pins. If the measured ends of a bus run are
+contiguous and in sequence, we **inferred** the remainder of the run, and the
+tables mark these pins as inferred.
 
 ### Top edge - the address side
 
@@ -238,7 +254,7 @@ measured ends being contiguous and in order, and is marked so.
 | 29 | 62 | CPU `A17` **in** - CPU pin 30 |
 | 30 | 61 | `VCC` |
 
-Pin `72` is the only unread one on this edge.
+Pin `72` is the only pin on this edge that is not read.
 
 ### Right edge - CPU bus control, the DTE, and the telco
 
@@ -250,7 +266,7 @@ Pin `72` is the only unread one on this edge.
 | 4 | 57 | `ALE` | 38 |
 | 5 | 56 | `WR#` | 37 |
 | 6 | 55 | `RD#` | 36 |
-| 7 | 54 | *unread* - the prime suspect for the ASIC's own chip select | - |
+| 7 | 54 | *unread* - the most probable location of the chip select of the ASIC | - |
 | 8 | 53 | `INT2`/`INTA0#` | 64 |
 | 9 | 52 | `RESIN` **out** - through `R1`, 1k | 68 |
 | 10 | 51 | `TXD0` **in** - serial channel 0's transmit | 2 |
@@ -264,15 +280,17 @@ Pin `72` is the only unread one on this edge.
 | 24 | 37 | phone-line header pin 5 | - |
 | 30 | 31 | `GND` | - |
 
-Three groups down one edge: CPU bus control at the top, the DTE's EIA-232
-interface in the middle, the telco at the bottom. `ALE`, `WR#` and `RD#` land
-adjacent, and pin `54` sits between `RD#` and the first interrupt - which is
-where the decode for the `0x00`-`0x7f` I/O window would be.
+This edge has three groups. CPU bus control is at the top, the EIA-232
+interface of the DTE is in the middle, and the telco is at the bottom. `ALE`,
+`WR#` and `RD#` are adjacent. Pin `54` is between `RD#` and the first
+interrupt. The decode for the `0x00`-`0x7f` I/O window is probably at that
+location.
 
 CPU `INT0` (CPU pin 62) is **not connected**.
 
-Eleven pins are unread here, `32`-`36` and `39`-`44` - the largest unread run on
-the package, bracketed by the DTE group above and the telco pins below.
+Eleven pins are not read here, `32`-`36` and `39`-`44`. This is the largest
+unread run on the package. The DTE group is above it and the telco pins are
+below it.
 
 ### Left edge - the DSP's bus, its clock, and the codec's
 
@@ -300,12 +318,13 @@ the package, bracketed by the DTE group above and the telco pins below.
 | 29 | 119 | DSP `X2/CLKIN` (pin 96) - **the ASIC clocks the DSP** |
 | 30 | 120 | `GND` |
 
-The five measured data pins fall in two exact descending runs - `99`-`92` for
-`D8`-`D15` and `101`-`108` for `D7`-`D0` - so the twelve between them are
-inferred. **Pin 100 sits between the two groups**, and a ground splitting the
-bus halves was predicted from the shape of the run alone and then measured.
+The five measured data pins are in two exact descending runs: `99`-`92` for
+`D8`-`D15` and `101`-`108` for `D7`-`D0`. Thus we inferred the twelve pins
+between them. **Pin 100 is between the two groups.** From the shape of the run
+only, we predicted a ground that divides the two halves of the bus. Then we
+measured it.
 
-Pin `117` is the only unread one on this edge.
+Pin `117` is the only pin on this edge that is not read.
 
 ### Bottom edge - the panel, the DIP switches, the barrier
 
@@ -339,13 +358,13 @@ Pin `117` is the only unread one on this edge.
 | 29 | 29 | phone-line header pin 12 |
 | 30 | 30 | `VCC` |
 
-Bottom-edge local and absolute numbering are the same thing. `23`, `26` and
-`28` are unread.
+On the bottom edge, the local numbering and the absolute numbering are the
+same. `23`, `26` and `28` are not read.
 
-**`AA` lands on two pins**, 13 and 21, where the firmware drives one bit
-(`0x14` bit `0x10`). Doubled drive for lamp current, a sense return, or two
-`AA`-labelled nets merged in the reading - unresolved, and a continuity check
-between the two settles it.
+**`AA` is on two pins**, 13 and 21, but the firmware drives one bit (`0x14` bit
+`0x10`). Possible causes are: two drivers for more lamp current, a sense return,
+or two nets with the `AA` label that the reading merged. This is not resolved.
+A continuity check between the two pins will give the answer.
 
 ## The part is a memory controller
 
