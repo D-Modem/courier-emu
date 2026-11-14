@@ -1336,50 +1336,50 @@ port 5e = argument high
 port 1c = valid/acknowledge state
 ```
 
-After `OUT 5e,AL`, no 80186 routine dispatches the command locally.  The only
-software on the far side in the image is the C52, and it cannot be the
+After `OUT 5e,AL`, no 80186 routine dispatches the command locally.  In the image, the only
+software on the far side is the C52, and it cannot be the
 consumer:
 
 - its downloaded program never executes an `IN` from these 80186 ports;
 - the eight-byte C52 window is the separate `0x40..0x4e` bootstrap surface;
-- applying every runtime pair as C52 data writes changes no execution state;
-- its only steady external reads are the reserved/frame word corresponding to
-  `0x50` and line ADC `0x54`; and
-- every tested command value at the former is discarded before `TC` is used.
+- when we apply each runtime pair as C52 data writes, no execution state changes;
+- its only steady external reads are the reserved/frame word that agrees with
+  `0x50`, and line ADC `0x54`; and
+- the program discards each tested command value at `0x50` before it uses `TC`.
 
-The receive direction proves the same topology.  The 80186 reads replies back
-from `0x58..0x5e`, including DAA identity and detector results that originate
-outside either processor, while bit 1 of port `0x1c` advertises them.  Thus the
-bidirectional queue terminates in the interposed Courier ASIC's hardware
-command engine.  It is not an omitted 80186 routine or a hidden entry in the
+The receive direction proves the same topology.  The 80186 reads replies
+from `0x58..0x5e`. These include the DAA identity and detector results that come from
+outside the two processors. Bit 1 of port `0x1c` shows that they are available.  Thus the
+bidirectional queue ends in the hardware command engine of the Courier ASIC, which is
+between the two processors.  It is not a missing 80186 routine or a hidden entry in the
 downloaded C52 program.
 
-The code also constrains what that hardware engine does with the call block.
-Commands `0x13..0x1f` repeat while register `0x82.5` enables the engine;
-`0x82.6` starts it, and clearing `0x82.5` stops it.  The same ASIC is demonstrably
-the master of the Si3021 serial link and the source/sink of the C52's framed
-ADC/DAC words.  Therefore the consumer is the ASIC's line-frame/call state
-machine, which translates the queue into DAA transactions and DSP frame/control
-state.  Its gates or microcode are silicon and are absent from all supplied
-firmware files; the XMF contains only the producer and the downstream C52
+The code also limits what that hardware engine does with the call block.
+Commands `0x13..0x1f` repeat while register `0x82.5` enables the engine.
+`0x82.6` starts it, and when `0x82.5` is cleared, the engine stops.  The evidence shows that the same ASIC is
+the master of the Si3021 serial link, and the source/sink of the framed
+ADC/DAC words of the C52.  Thus the consumer is the line-frame/call state
+machine of the ASIC. It translates the queue into DAA transactions and DSP frame/control
+state.  Its gates or microcode are in the silicon. They are not in the supplied
+firmware files. The XMF contains only the producer and the downstream C52
 payload.
 
 A first behavioral implementation now consumes that block.  It stores
-registers `0x13..0x1f`, recognizes the observed `0x1f:0000 -> 0x1f:8000`
-rising edge as commit, starts the call engine once, and returns tags `0x02` and
-`0x03` because the recovered supervisor receive table maps those to its two
-coprocessor-ready latches.  Repeated commit edges are counted but do not repeat
-the ready reports.  In an 8 M-instruction `ATDT123` run the original firmware
+registers `0x13..0x1f`. It recognizes the observed `0x1f:0000 -> 0x1f:8000`
+rising edge as commit. It starts the call engine one time. It returns tags `0x02` and
+`0x03`, because the recovered supervisor receive table maps those to its two
+coprocessor-ready latches.  It counts repeated commit edges, but it does not send
+the ready reports again.  In an `ATDT123` run of 8 M instructions, the original firmware
 accepts both replies and changes its callbacks to `50ad,18e3,4cac`, with
-`[0x1cf0]=1`; the C52 still emits only its single startup nonzero sample.
+`[0x1cf0]=1`. The C52 still sends only its single nonzero startup sample.
 
 That result validates the guessed **command acceptance/ready** half of the ASIC
-contract while falsifying the idea that ready replies alone activate the
-modulation code.  The remaining guessed half must be DSP-facing frame/control
-state generated on commit; it cannot be replaced by another supervisor tag.
+contract. It also shows that the ready replies alone do not activate the
+modulation code.  The remaining guessed half must be frame/control state for the DSP,
+which the ASIC generates on commit. Another supervisor tag cannot replace it.
 
-There is a non-accidental DSP-side interpretation of the control block: every
-command number is a C52 memory-mapped control-register address.
+There is a DSP-side interpretation of the control block that is not an accident: each
+command number is the address of a C52 memory-mapped control register.
 
 | command | C52 register | supplied value |
 |---:|---|---:|
@@ -1391,53 +1391,53 @@ command number is a C52 memory-mapped control-register address.
 | `0x1b` | `CBER1` | `0c08` |
 | `0x1f` | `BMAR` | `0000 -> 8000` |
 
-The byte lanes need swapping at the ASIC/C52 boundary.  The unswapped pair
-`CBSR1=3000, CBER1=0c08` describes an impossible descending circular buffer;
-the physical C52 values are the coherent `CBSR1=0030, CBER1=080c`.  The whole
-batch therefore becomes `AR3=0100`, `ARCR=0d02`, `CBSR1=0030`, `CBER1=080c`,
-and `BMAR=0080`.  This is strong independent evidence that these are genuine
-C52 register lanes rather than command numbers that happen to overlap them.
+The byte lanes must be swapped at the ASIC/C52 boundary.  The unswapped pair
+`CBSR1=3000, CBER1=0c08` gives a descending circular buffer, which is not possible.
+The physical C52 values are the coherent `CBSR1=0030, CBER1=080c`.  Thus the full
+batch becomes `AR3=0100`, `ARCR=0d02`, `CBSR1=0030`, `CBER1=080c`,
+and `BMAR=0080`.  This is strong independent evidence that these are real
+C52 register lanes, and not command numbers that are the same by accident.
 
-The behavioral consumer now batches those values and publishes them to the
-C52 atomically on the wire-level `BMAR=8000` (C52 `0080`) commit edge.  This is materially different
-from the earlier failed experiment that replayed every mailbox pair at
-arbitrary instruction boundaries: the ASIC owns the frame boundary and the
+The behavioral consumer now collects those values into a batch. It publishes them to the
+C52 atomically on the wire-level `BMAR=8000` (C52 `0080`) commit edge.  This is very different
+from the earlier failed experiment, which replayed each mailbox pair at
+random instruction boundaries. The ASIC controls the frame boundary, and the
 `BMAR` transition is its commit marker.  A full run accepts 77 commits and
-remains stable, but still emits no carrier.  So this recovers one real-looking
-piece of DSP control state, while showing that the register batch alone is not
-the missing frame event.  The next control surface is the event accompanying
-the atomic register publication—most likely the ASIC's C52 frame/TDM edge or a
-program-memory block move selected by `BMAR`.
+stays stable, but it still sends no carrier.  Thus this recovers one item of
+DSP control state that looks real. It also shows that the register batch alone is not
+the missing frame event.  The next control surface is the event that comes with
+the atomic register publication. This is most probably the C52 frame/TDM edge of the ASIC, or a
+program-memory block move that `BMAR` selects.
 
-The earlier bounded behavioral V.8 fallback is no longer attached to normal
-calls. It proved that 1300 Hz CI and 2100 Hz ANSam could cross the recovered
-9.6 kHz line path, but it also replaced every subsequent DSP DAC word and hid
-the failure being investigated. The explicit native tone API remains useful as
-a transport test; the bridge now relinquishes the DAC after board-side DTMF so
+The earlier behavioral V.8 fallback, with its limits, is no longer attached to normal
+calls. It proved that 1300 Hz CI and 2100 Hz ANSam can go through the recovered
+9.6 kHz line path. But it also replaced each subsequent DSP DAC word and hid
+the failure that we investigate. The explicit native tone API is still useful as
+a transport test. The bridge now releases the DAC after the board-side DTMF. Thus
 V.8 and all later modulation must come from downloaded DSP code.
 
-The computed call-engine entry is now pinned at C52 program `0x2295`.  Forcing
-that PC from the settled service state immediately executes `BLPD *BMAR`, then
-branches through `0xa9a9`, runs a substantial datapump initializer, and returns
-to the 169-instruction service cycle.  It originally stopped at two missing
-core operations; implementing the documented C5x `BLPD BMAR` and `MAC`
-semantics makes the whole path complete.  This is the first recovered
-call-time transition inside the original C52 rather than behavioral line
-synthesis.  The ASIC commit now enters `0x2295` after publishing
-`BMAR=0x0080`; a regression executes 5,000 instructions from that entry and
-requires it to return to stable line-frame output without an unsupported
+We now know that the calculated call-engine entry is at C52 program `0x2295`.  If we force
+that PC from the settled service state, the code immediately executes `BLPD *BMAR`. Then it
+branches through `0xa9a9`, runs a large datapump initializer, and goes back
+to the 169-instruction service cycle.  At first, it stopped at two missing
+core operations. When we implemented the documented C5x `BLPD BMAR` and `MAC`
+semantics, the full path completed.  This is the first recovered
+call-time transition in the original C52, and not behavioral line
+synthesis.  The ASIC commit now enters `0x2295` after it publishes
+`BMAR=0x0080`. A regression test executes 5,000 instructions from that entry. The test
+makes sure that the code goes back to stable line-frame output without an unsupported
 opcode.
 
-`ATA` and originate commits still enter the recovered C52 call boundary, but no
-longer arm synthesized ANSam or CI. `dsp_bridge.asic.v8_armed` now means that
-the datapump entry was requested; nonzero post-dial DAC output is evidence the
-firmware itself advanced, rather than evidence that a fallback was attached.
+`ATA` and originate commits still enter the recovered C52 call boundary. But they
+no longer arm synthesized ANSam or CI. `dsp_bridge.asic.v8_armed` now means that
+the datapump entry was requested. Nonzero DAC output after the dial is evidence that the
+firmware advanced. It is not evidence that a fallback was attached.
 
 The bridge reports `call_engine_started`, `commit_edges`,
 `dsp_register_commits`, and the complete latched command register block under
-`dsp_bridge.asic` so each subsequent DSP-side experiment is observable.
+`dsp_bridge.asic`. Thus you can monitor each subsequent DSP-side experiment.
 
-The recovered responsibilities now make the ASIC boundary fairly tight:
+The recovered responsibilities now give the ASIC boundary a narrow definition:
 
 - arbitrate the 80186 command queue and interrupt/status handshake;
 - bootstrap the C52 through the eight-byte `0x40..0x4e` window;
@@ -1447,41 +1447,41 @@ The recovered responsibilities now make the ASIC boundary fairly tight:
 - sequence a call through register `0x82` independently of whether the
   supervisor selected originate or answer.
 
-Dynamic tracing also recovers queue helper `0x6b067` (`MOV [BX],AX` at
-`0x6b083`) and now records both its return address and the outer producer when
-a wrapper is used.  That separates detector polling (`0x6db4c/0x6db5b`), call
-control (`0x6cebc`), and other producers instead of attributing every command
+A dynamic trace also recovers queue helper `0x6b067` (`MOV [BX],AX` at
+`0x6b083`). The trace now records its return address and, when a wrapper is used, also the outer producer.
+This separates detector polling (`0x6db4c/0x6db5b`), call
+control (`0x6cebc`), and other producers. Thus the trace does not give each command
 to the common sender.
 
-What the supervisor's runtime channel *is* remains well defined — 2,274
-two-word messages in a 12 M-instruction run, with a valid/ack handshake on port
-`0x1c` (`in 0x1c` 2,279, `out 0x1c` 4,558), and the `0x40..0x4e` window used
-only for the two program downloads — but its consumer on the board is not the
-C52 code these images run. The remaining candidates are that the datapump entry
-lives in the downloaded low bank and is never entered here, or that the channel
-terminates in the ASIC rather than in the C52 at all.
+We still know well what the runtime channel of the supervisor *is*. A run of 12 M instructions has 2,274
+two-word messages, with a valid/ack handshake on port
+`0x1c` (`in 0x1c` 2,279, `out 0x1c` 4,558). The `0x40..0x4e` window is used
+only for the two program downloads. But the consumer of the channel on the board is not the
+C52 code that these images run. There are two remaining candidates. Possibly the datapump entry
+is in the downloaded low bank, and the code never enters it here. Or possibly the channel
+ends in the ASIC and not in the C52.
 
 ## The datapump is resident, idle, and gated on one bit
 
-Decoding a C5x image statically floods, because any word decodes; taking the
-instruction boundaries from a real run does not. On that basis the whole of
-what the C52 executes in steady state is **167 instructions**, and one pass of
-it is 169 instructions — about 6% of the 2,604 cycles a 25 MHz part has per
-9.6 kHz sample. It is entered per sample at `0x0cb1` and runs:
+A static decode of a C5x image gives too many results, because each word decodes.
+If we take the instruction boundaries from a real run, this problem does not occur. With that method, all
+that the C52 executes in steady state is **167 instructions**. One pass of
+it is 169 instructions. This is about 6% of the 2,604 cycles that a 25 MHz part has for each
+9.6 kHz sample. The code enters it at `0x0cb1` for each sample, and it runs:
 
 ```
 0cb1 (low bank)  ->  c1cd  ->  de89  ->  8c19  ->  b2e9  ->  c7f7
                  ->  e24b  ->  b30b  ->  de9c  ->  8195  ->  a8c7  ->  back
 ```
 
-The first thing that settles is that the **downloaded bank is entered**. Of the
-three program segments the image carries, only the low one (`0x0000..0x75d9`)
-is what the supervisor downloads, and the loop head at `0x0cb1` is inside it.
-The datapump is resident and running, not waiting to be started.
+The first result is that the code **enters the downloaded bank**. The image has
+three program segments. The supervisor downloads only the low segment (`0x0000..0x75d9`),
+and the loop head at `0x0cb1` is in it.
+The datapump is resident and it runs. It does not wait for a start.
 
 ### The gate
 
-Near the end of every pass:
+Near the end of each pass:
 
 ```
 a8c7  b5cc  LAR   AR5, #0xcc
@@ -1490,8 +1490,8 @@ a8ca  4b80  BIT   *, 4          ; bit 4 of [0x00cc]
 a8cb  e900  CC    0xb4d4, TC    ; never taken
 ```
 
-`[0x00cc]` reads zero on every sample of every run, so `0xb4d4` is never
-entered. Setting bit 4 by hand is the first thing that has moved the datapump:
+`[0x00cc]` reads zero on each sample of each run. Thus the code never enters `0xb4d4`.
+When we set bit 4 manually, the datapump changed state for the first time:
 
 | | line-DAC writes | non-zero samples | parked PC |
 |---|---:|---:|---|
@@ -1500,12 +1500,12 @@ entered. Setting bit 4 by hand is the first thing that has moved the datapump:
 
 ### What sets `[0x00cc]`
 
-The datapump itself, from a value it carries around a closed loop. Tracing
-every data write into the frame block shows `[0x00cc]` written to zero on every
-sample from four sites — three in the `0xde89` prologue and `0x81a0` — and it
-sits one cell above `[0x00cb]`, the line-DAC source. `0x81a0` is the last of the
-four before the test, and single-stepping the block with signal on the line
-gives the whole chain:
+The datapump sets it, from a value that it keeps in a closed loop. A trace of
+each data write into the frame block shows that four sites write zero to `[0x00cc]` on each
+sample: three in the `0xde89` prologue, and `0x81a0`. `[0x00cc]` is one cell above `[0x00cb]`,
+the line-DAC source. `0x81a0` is the last of the
+four before the test. A single-step run of the block with signal on the line
+shows the full chain:
 
 ```
 b304  ADD  @54        ; ACC 00000000 -> ffffe605, the held ADC word
@@ -1522,64 +1522,64 @@ b30d  SACB
 a8ca  BIT  *, 4       ; bit 4 of it
 ```
 
-So `[0x00cc]` is the low half of a 32-bit word the datapump carries from sample
-to sample through `[0x7e]:[0x7d]` and ACCB. It holds `0x0555_0000` for the whole
-run — high half `0x0555`, low half zero — so bit 4 is clear and the gate stays
-shut.
+Thus `[0x00cc]` is the low half of a 32-bit word that the datapump moves from sample
+to sample through `[0x7e]:[0x7d]` and ACCB. It holds `0x0555_0000` for the full
+run (high half `0x0555`, low half zero). Thus bit 4 is clear and the gate stays
+closed.
 
-That also explains why signal changes nothing. The line sample *does* reach the
-accumulator at `0xb304` and *is* stored, to `[0x7f]` at `0xb305`. Then `LACB` at
-`0xb306` reloads ACC from ACCB and the sum is discarded, and `[0x7f]` itself is
-overwritten at `0x81b1` by a `TBLR` from a program table before anything reads
-it. The receive path is a dead end in this state by construction, not by
-accident of what the harness feeds it.
+This also explains why a signal changes nothing. The line sample *does* get to the
+accumulator at `0xb304`, and the code *does* store it, to `[0x7f]` at `0xb305`. Then `LACB` at
+`0xb306` loads ACC from ACCB again and the sum is discarded. Also, a `TBLR` from a program table
+at `0x81b1` writes over `[0x7f]` before any instruction reads
+it. In this state, the design of the code stops the receive path. The input from the harness
+is not the cause.
 
-Nothing outside can set the word either. Holding each cell of the C52's
-on-chip data space in turn — 1,952 of them — and comparing line-DAC counts, the
-serial registers, the parked PC and the cycle count moves the run for **eight**:
+Also, nothing outside can set the word. We held each cell of the
+on-chip data space of the C52 in turn (1,952 cells), and compared the line-DAC counts, the
+serial registers, the parked PC and the cycle count. Only **eight** cells changed the run:
 
 | cell | what it is |
 |---|---|
-| `[0x00cb]`, `[0x00cc]` | the frame block's DAC source and the gate |
-| `[0x007f]` | the scratch cell the discarded sample lands in |
-| `[0x0082]` | perturbs the run without producing output |
-| `[0x037d]`, `[0x037e]`, `[0x03fd]`, `[0x03fe]` | the same `@7d`/`@7e` offsets on the DP pages `0xde9c` and `0xa8d0` select |
+| `[0x00cb]`, `[0x00cc]` | the DAC source of the frame block, and the gate |
+| `[0x007f]` | the scratch cell that gets the discarded sample |
+| `[0x0082]` | changes the run, but gives no output |
+| `[0x037d]`, `[0x037e]`, `[0x03fd]`, `[0x03fe]` | the same `@7d`/`@7e` offsets on the DP pages that `0xde9c` and `0xa8d0` select |
 
-An idle datapump reads essentially nothing: not its own RAM, not the line, not
-the host window, and not an interrupt — `IMR` is zero. Whatever starts it does
-not arrive through any input this build of the C52 is watching.
+An idle datapump reads almost nothing: not its own RAM, not the line, not
+the host window, and not an interrupt (`IMR` is zero). The event that starts it does
+not come through an input that this build of the C52 monitors.
 
 ### The receiver is gated off, not merely unsignalled
 
-Feeding the ASIC line input a 2100 Hz, 1800 Hz or 980 Hz tone at the confirmed
-9.6 kHz cadence, or noise, instead of silence leaves every counter identical:
-19,984 line-DAC writes, one of them non-zero, `[0x00cc]` never anything but
-zero, and the same parked PC. The datapump does not respond to signal at all
-until something commands it, which is consistent with the gate above and rules
-out "it is listening but hears nothing".
+We supplied a 2100 Hz, 1800 Hz or 980 Hz tone at the confirmed
+9.6 kHz cadence, or noise, to the ASIC line input, instead of silence. Each counter stayed identical:
+19,984 line-DAC writes, one of them non-zero, `[0x00cc]` always
+zero, and the same parked PC. The datapump does not respond to a signal
+until it gets a command. This agrees with the gate above. It excludes the theory
+"it listens but it hears nothing".
 
 ### What `0xb4d4` expects on entry: nothing, because it is not code
 
-Forcing the gate and catching the first entry gives the state it is handed —
+We forced the gate and caught the first entry. This shows the state at entry:
 `DP` 0x380, `ARP` 5, `AR5` = `0x00cc`, `ACC` `ffffff00`, `ACCB` `05550000`,
-`[0x7b..0x7f]` = 0, 0, 0, `0555`, 0 — and then 570 instructions that decode as a
-run of `LAR AR0, @xx` over a smooth numeric sequence broken by runs of `0xffff`:
+`[0x7b..0x7f]` = 0, 0, 0, `0555`, 0. Then 570 instructions follow. They decode as a
+sequence of `LAR AR0, @xx` over a smooth numeric sequence, with runs of `0xffff` between the parts:
 
 ```
 b4d4: 0053 0064 0079 0092 ffff ffff ffff ffff ffff 0093 0078 0061 0052 0049
 b4e2: 002a 002f 003a 0047 005f 007d 009e ffff ffff ffff 009f 007b 005e 0046
 ```
 
-That is a table, not a routine. It falls through into `0xc418`, `0xe580` and
-`0xb671`, spends 1,171 instructions there, and returns. So the earlier reading
-of `0xa8cb` as a live conditional call into the datapump was wrong: forcing the
-bit runs the CPU into data, and the ten non-zero line words it produced are
-that, not a carrier.
+That is a table, not a routine. Execution continues into `0xc418`, `0xe580` and
+`0xb671`, runs 1,171 instructions there, and returns. Thus the earlier interpretation
+of `0xa8cb` as an active conditional call into the datapump was incorrect. When we force the
+bit, the CPU runs into data. The ten non-zero line words that it gave are
+the result of this. They are not a carrier.
 
 ### The reset code, which is anchored, says something different
 
-Program `0x0000` — the one origin that is not a guess, since it is the bank the
-supervisor downloads — is unambiguous C5x startup:
+Program `0x0000` is the only origin that is not a guess, because it is the bank that the
+supervisor downloads. It is clear C5x startup code:
 
 ```
 0000  LDP  #0
@@ -1596,95 +1596,95 @@ supervisor downloads — is unambiguous C5x startup:
 00cf  CALL 0x8188
 ```
 
-The `CALL 0x8188` literal lands exactly where `SPC` is written again — the one
-site in the image carrying `0x40c8`, and here it writes `0x0000`. So the serial
-port is opened by the reset code and closed immediately by the routine reset
-calls; "nothing in the reachable image turns it back on" was half the story.
+The `CALL 0x8188` literal goes exactly to the location where the code writes `SPC` again. This is the only
+site in the image that contains `0x40c8`, and here it writes `0x0000`. Thus the reset code opens the serial
+port, and the routine that the reset code calls closes it immediately.
+"No code that can run in the image enables it again" was only half of the explanation.
 
 ### Two earlier measurements were mine, not the firmware's
 
-`courier_c5x_get_data` and `courier_c5x_set_data` go straight to the data array
-and skip the C5x register decode, so reading address `0x04` answers
-`m_data[0x04]` rather than `IMR`. **`IMR` is not zero.** It is `0x002a` out of
-reset and every sample ends with `0x0080` written to it from `0x81be`.
+`courier_c5x_get_data` and `courier_c5x_set_data` go directly to the data array
+and do not use the C5x register decode. Thus a read of address `0x04` gives
+`m_data[0x04]`, not `IMR`. **`IMR` is not zero.** It is `0x002a` after
+reset. At the end of each sample, the code at `0x81be` writes `0x0080` to it.
 
 ### Interrupt 7 is enabled, and raising it re-runs the boot
 
-Raising each of the sixteen interrupts in turn, exactly one changes the run —
-number 7, the TDM serial port. It looked at first like the datapump coming
-alive: executed instruction sites went from 167 to 521, most of the line-DAC
-words stopped being zero, and the C52 started writing its serial transmit
-register. It is not that. Counting where those instructions go:
+We raised each of the sixteen interrupts in turn. Exactly one changes the run:
+number 7, the TDM serial port. At first, it looked like the datapump started
+to operate. The executed instruction sites increased from 167 to 521, most of the line-DAC
+words changed from zero, and the C52 started to write its serial transmit
+register. But that is not the cause. A count of the locations of those instructions:
 
 | | sites | instructions below `0x00d0` | `0x0010` entered | SPC writes |
 |---|---:|---:|---:|---:|
 | idle | 167 | 0 | 0 | 0 |
 | interrupt 7 driven | 521 | **5,895** | **5** | 15, from `00be`, `00c0`, `8189` |
 
-`PMST.IPTR` is zero, so interrupt 7 vectors to program `0x0010` — which is
-inside the reset code. The extra 354 sites are the boot path, the SPC and DXR
-writes are the boot's own, and the line output is the DC level boot leaves
-behind. Driving the interrupt partially reboots the C52.
+`PMST.IPTR` is zero. Thus interrupt 7 vectors to program `0x0010`, which is
+in the reset code. The 354 more sites are the boot path. The SPC and DXR
+writes are those of the boot. The line output is the DC level that the boot leaves.
+When we drive the interrupt, the C52 partially boots again.
 
 ### There is no vector table in this image
 
-That collision is not a detail; it is the whole question. `PMST.IPTR` can only
-place the table on one of 32 two-kiloword boundaries, and a C5x table is 2 words
-per vector, normally a branch. Scoring all 32 legal bases for a run of
-consecutive two-word branches whose targets land inside a loaded segment gives
-the longest run as **one slot**, at `0xc800`. Relaxing the search to the whole
-image finds nothing table-shaped either — the longest runs are `0x519a` (14),
-`0x2184` (8) and `0xbb70` (7), and all three are ordinary sequential `CALL`
-code; `0xbb70` is seven identical `CALL 0xc881`.
+That collision is not a small item. It is the main question. `PMST.IPTR` can only
+put the table on one of 32 two-kiloword boundaries. A C5x table has 2 words
+for each vector, usually a branch. We scored all 32 permitted bases for a run of
+consecutive two-word branches with targets in a loaded segment. The
+longest run is **one slot**, at `0xc800`. A search of the full
+image also finds no table: the longest runs are `0x519a` (14),
+`0x2184` (8) and `0xbb70` (7), and all three are usual sequential `CALL`
+code. `0xbb70` is seven identical `CALL 0xc881`.
 
-Nor is the area rewritten after boot. Over 600,000 instructions of startup the
-only program-memory-touching instruction executed is a single `BLPD` at
-`0x0030`, and `BLPD` reads program into data. No `TBLW`, no `BLDP`. The reset
-code stays on top of the vector area for the life of the run.
+Also, the code does not write the area again after boot. In 600,000 instructions of startup, the
+only executed instruction that touches program memory is one `BLPD` at
+`0x0030`, and `BLPD` reads program into data. There is no `TBLW` and no `BLDP`. The reset
+code stays on the vector area for the full run.
 
-So the vectors are not in the XMF. The reading that fits is that the C52 is in
-microcomputer mode, its program `0x0000..0x0fff` is on-chip ROM carrying both
-the vector table and the bootstrap that receives the download, and neither is in
-this image — which means the harness's assumption that the downloaded segment
-begins at program `0x0000` puts the downloaded init on top of the vectors.
+Thus the vectors are not in the XMF. The interpretation that agrees with the data is this: the C52 is in
+microcomputer mode. Its program `0x0000..0x0fff` is on-chip ROM that contains
+the vector table and the bootstrap that receives the download. Neither is in
+this image. Thus the harness assumes that the downloaded segment
+starts at program `0x0000`, and this puts the downloaded init on the vectors.
 
 ### No image in the tree has one either
 
-The absence is not peculiar to `main211`. Scanning all fifteen images here — six
-XMFs, four XMDs, the ISDN ROM, `.nac`, `.sdl` and `.xmp` — in both byte orders
-for runs of two-word branch slots turns up nothing table-shaped anywhere. The
-apparent 15- and 16-slot runs in `SV25.XMD`, `SDL0430.XMD`, `SV_49.XMD` and
-`IDSDL302.XMD` are filler: one word repeated, `7d77`, `7a37` or `7077`. The
+The table is also not in images other than `main211`. We scanned all fifteen images here (six
+XMFs, four XMDs, the ISDN ROM, `.nac`, `.sdl` and `.xmp`), in both byte orders,
+for runs of two-word branch slots. We found no table. The
+15-slot and 16-slot runs in `SV25.XMD`, `SDL0430.XMD`, `SV_49.XMD` and
+`IDSDL302.XMD` are filler: one repeated word, `7d77`, `7a37` or `7077`. The
 runs in the XMFs are all the same sliding window over one block of sequential
-`CALL` code — `0xa624` in the 2.1/2.2 builds, `0x4554` in `main2205` — whose
-targets repeat rather than fan out. Requiring the handler word to vary leaves
-nothing.
+`CALL` code (`0xa624` in the 2.1/2.2 builds, `0x4554` in `main2205`). The
+targets of these calls repeat and do not spread. If the handler word must change, nothing
+remains.
 
-Nor would a C52 boot ROM be here to find: it is a TI mask ROM, not something
-USR ships in a firmware update.
+Also, a C52 boot ROM cannot be in these files. It is a TI mask ROM. USR does not
+supply it in a firmware update.
 
 ### What the family does share, and where it splits
 
-Every XMF's DSP payload starts at file `0x2f0` with reset code, in two variants:
+The DSP payload of each XMF starts at file `0x2f0` with reset code. There are two variants:
 
 | build | opening |
 |---|---|
 | `main211`, `main2205`, `3453Bv2.1.1` | `LDP #0` · `SPLK #0xffff, @57` · `SPLK #0, @7a` · `SETC INTM` |
 | `2_3_33`, `MAIN_2.3.12/15/31` | `LDP #0xfe` · `SPLK #0xffff, @53` · **`OUT @53, 0x8057`** · `LDP #0` · `SPLK #0, @7a` · `SETC INTM` |
 
-The three older builds are byte-identical over their whole opening. The 2.3.x
-build differs in two ways worth following. Its very first act, before it sets
-wait states or anything else, is an external write of `0xffff` to I/O port
-`0x8057`. And it programs different wait states: `PDWSR` `0x2000` against
-`0x000a`, `IOWSR` `0x0101` against `0x0001`.
+The three older builds are byte-identical over their full opening. The 2.3.x
+build is different in two ways that are important. Its first action, before it sets
+wait states or other items, is an external write of `0xffff` to I/O port
+`0x8057`. Also, it programs different wait states: `PDWSR` `0x2000` instead of
+`0x000a`, and `IOWSR` `0x0101` instead of `0x0001`.
 
 ### What the wait states say
 
-`PDWSR` gives each 16K block of program and data space a two-bit field, `IOWSR`
-gives each pair of I/O ports one — or each 8K block when `CWSR`'s `BIG` bit is
-set — and `CWSR` decides whether a field means 0/1/2/3 wait states or 0/1/3/7
+`PDWSR` gives a two-bit field to each 16K block of program and data space. `IOWSR`
+gives one to each pair of I/O ports (or to each 8K block when the `BIG` bit of `CWSR` is
+set). `CWSR` sets if a field means 0/1/2/3 wait states or 0/1/3/7
 (SPRU056D §9.4.1–9.4.3, tables 9–5 and 9–10). Both builds write `CWSR` `0x0010`:
-`BIG` set, and every space on the plain 0/1/2/3 scale. That resolves the two
+`BIG` set, and each space on the plain 0/1/2/3 scale. With this, we can decode the two
 `PDWSR` words:
 
 | build | field | range | wait states |
@@ -1695,42 +1695,42 @@ set — and `CWSR` decides whether a field means 0/1/2/3 wait states or 0/1/3/7
 | 2.3.x (`0x2000`) | Data 3 | `0x8000..0xbfff` | **2** |
 | | everything else | | 0 |
 
-and the two `IOWSR` words: 2.1/2.2 `0x0001` gives I/O `0x0000..0x1fff` one wait
-state; 2.3.x `0x0101` gives that block one and `0x8000..0x9fff` one as well —
-the block holding port `0x8057`, which is the port its very first instruction
+We can also decode the two `IOWSR` words. 2.1/2.2 `0x0001` gives one wait
+state to I/O `0x0000..0x1fff`. 2.3.x `0x0101` gives one to that block, and also one to `0x8000..0x9fff`.
+That block contains port `0x8057`, which is the port that its first instruction
 writes.
 
-Software wait states only apply to **off-chip** accesses. Zero says nothing,
-because zero is also what you leave a region you do not care about, but a
-non-zero field is the firmware stating it expects external memory there. So:
+Software wait states apply only to **off-chip** accesses. A zero value gives no information,
+because zero is also the value for a region that is not important. But a
+non-zero field shows that the firmware expects external memory there. Thus:
 
-- **The 2.1/2.2 boards put program `0x0000..0x7fff` off-chip**, which is exactly
-  the span of the 30,172-word segment the supervisor downloads
-  (`0x0000..0x75d9`). The download lives in external program RAM at `0x0000`.
-- The 2.3.x boards need no wait states in program space at all and instead put
-  slow external memory in **data** `0x8000..0xbfff`. The two generations hang
-  their external memory off different spaces.
+- **The 2.1/2.2 boards put program `0x0000..0x7fff` off-chip**. This is exactly
+  the range of the 30,172-word segment that the supervisor downloads
+  (`0x0000..0x75d9`). The download is in external program RAM at `0x0000`.
+- The 2.3.x boards need no wait states in program space. Instead, they put
+  slow external memory in **data** `0x8000..0xbfff`. The two generations connect
+  their external memory to different spaces.
 
-That settles `MP/MC`. Table 8–3 says microcomputer mode puts 4K of on-chip ROM
-at program `0x0000..0x0fff`, where wait states would do nothing; programming two
-of them across `0x0000..0x3fff` is only meaningful with **`MP/MC` = 1**, all
-program space off-chip. The pin now defaults to 1 for that reason rather than
-by convention, and the flat program space this harness always had turns out to
-be right — now for a stated reason.
+This gives the answer for `MP/MC`. Table 8–3 says that microcomputer mode puts 4K of on-chip ROM
+at program `0x0000..0x0fff`, where wait states have no effect. Two wait states
+across `0x0000..0x3fff` have a function only with **`MP/MC` = 1**, with all
+program space off-chip. For that reason, the default of the pin is now 1. The reason is not
+convention. The flat program space that this harness always had is
+correct, and now we know why.
 
-Either way, the vector area holding reset code is a property of every build in
-the tree, across five years and two product lines, rather than a quirk of one
+In both cases, all builds in the tree have reset code in the vector area,
+across five years and two product lines. It is not a special property of one
 image.
 
 ### The memory map, now modelled
 
-`PMST` carries `MP/MC`, `OVLY` and `RAM`, and this core parsed all three and
-acted on none of them. It now decodes both spaces through the C52's map:
+`PMST` contains `MP/MC`, `OVLY` and `RAM`. This core parsed all three and
+did not use them. It now decodes both spaces through the map of the C52:
 
-The regions are the C52's own, from tables 8–3 and 8–10 rather than the family
-generalities: **the C52 has no SARAM at all**, which makes `PMST.RAM` and
-`PMST.OVLY` don't-cares on this part, and its data space is off-chip only from
-`0x0800` up with two reserved gaps below that.
+The regions are those of the C52, from tables 8–3 and 8–10, and not the general data for the
+family. **The C52 has no SARAM**. Thus `PMST.RAM` and
+`PMST.OVLY` have no effect on this part. Its data space is off-chip only from
+`0x0800` and up, with two reserved gaps below that address.
 
 | space | region | when |
 |---|---|---|
@@ -1742,15 +1742,15 @@ generalities: **the C52 has no SARAM at all**, which makes `PMST.RAM` and
 | data | external, `0x0800..0xffff` | always |
 | data | reserved — `0x0080..0x00ff` and `0x0500..0x07ff` | |
 
-`MP/MC` is a pin, not something an image records, so it is supplied to the core
-and defaults to 0 — the level this core has always presented when the firmware
-reads `PMST` back, and the firmware does read it. `courier_c5x_set_mpmc_pin`
-changes it; over a 1.5 M-instruction run either level ends at the same PC, so
-the bit costs almost nothing in behaviour and buys the accounting.
+`MP/MC` is a pin. An image does not record it. Thus the core gets it as an input,
+and the default is 0. This is the level that this core always gave when the firmware
+reads `PMST`, and the firmware does read it. `courier_c5x_set_mpmc_pin`
+changes it. Over a run of 1.5 M instructions, both levels end at the same PC. Thus
+the bit has almost no effect on behaviour, and it gives the accounting.
 
-There is no on-chip ROM to put in the window — no XMF carries one — so with none
-supplied the window still answers from the downloaded image, exactly as before,
-and the fetches are counted instead. That count is the size of the assumption.
+There is no on-chip ROM to put in the window, because no XMF contains one. When no ROM is
+supplied, the window still answers from the downloaded image, as before.
+The core counts these fetches. That count shows the size of the assumption.
 Over a 12 M-instruction `ATA`:
 
 ```
@@ -1759,70 +1759,70 @@ data_registers    1,176,533    data_daram 1,384,195
 data_reserved       692,047    data_external 69,208
 ```
 
-`courier_c5x_load_rom` takes a ROM if a dump of the C52's ever appears; until
-then `dsp_bridge.dsp_memory_map` reports the mode bits, the wait-state decode,
-the per-region counts and the hole count on every run.
+If a dump of the ROM of the C52 becomes available, `courier_c5x_load_rom` accepts it. Until
+then, `dsp_bridge.dsp_memory_map` reports the mode bits, the wait-state decode,
+the counts for each region and the hole count on each run.
 
-Two of those counts are worth reading.
+Two of those counts are important.
 
-`program_rom` is 692,059 even with the pin at 1, because `PMST` is written zero
-mid-run — by the same stores at `0xb626`, `0xb65f`, `0xb667`, `0xb677` and
-`0xb67c` that zero `IMR` and `IFR` — which clears `MP/MC` and re-opens the ROM
-window under the running program. Firmware does not switch the part out of
-microprocessor mode on purpose.
+`program_rom` is 692,059 also with the pin at 1. The reason is that the code writes zero to `PMST`
+in the middle of the run. The same stores at `0xb626`, `0xb65f`, `0xb667`, `0xb677` and
+`0xb67c` that set `IMR` and `IFR` to zero do this. This clears `MP/MC` and opens the ROM
+window again under the running program. Firmware does not intentionally change the part from
+microprocessor mode.
 
-`data_reserved` is 692,047: **nearly 700,000 data accesses a run land in the
-C52's reserved windows.** Those are the frame-block cells — `[0x00ca]` through
-`[0x00cd]`, holding the line-DAC source and the gate this section opened with —
-and `0x0080..0x00ff` is a range the C52 has nothing in. On silicon those
-addresses hold no storage at all. That is an independent confirmation, from the
-part's own memory map rather than from behaviour, of what the vector-table
-search concluded from the other end: the addresses the low bank computes are
-not landing where the code thinks they are.
+`data_reserved` is 692,047: **in each run, almost 700,000 data accesses go to the
+reserved windows of the C52.** These are the frame-block cells `[0x00ca]` through
+`[0x00cd]`, which hold the line-DAC source and the gate at the start of this section.
+The C52 has nothing in the range `0x0080..0x00ff`. On silicon, those
+addresses have no storage. This is an independent confirmation, from the
+memory map of the part and not from behaviour, of the conclusion of the vector-table
+search from the other direction: the addresses that the low bank calculates are
+not at the locations that the code expects.
 
 ### Two core defects found on that path
 
-- **TREG0 was not memory-mapped.** `LT` and its relatives wrote `m_treg0`
-  while a data-space access to `0x0c` saw a cell nothing updated, even though
-  its neighbours TREG1, TREG2 and DBMR were all mapped. Fixed. It is not on the
-  idle loop, so no result above changes.
-- **The BIO pin is unimplemented** — `GET_TP_CONDITION` answers "BIO low"
-  false unconditionally, which makes every conditional instruction that tests
-  it dead. There are 711 candidate sites in the image, including `0x0cc0`, a
-  `CCD` a few words past the loop head. None is reached: counting evaluated
-  opcodes over a run, idle and with the gate forced, gives **zero**. So the TODO
-  costs nothing today and would matter the moment a new state reaches one.
+- **TREG0 was not memory-mapped.** `LT` and the related instructions wrote `m_treg0`,
+  but a data-space access to `0x0c` saw a cell that nothing updated. Its
+  neighbours TREG1, TREG2 and DBMR were all mapped. We repaired this. It is not on the
+  idle loop. Thus no result above changes.
+- **The BIO pin is not implemented**. `GET_TP_CONDITION` always answers false for "BIO low".
+  Thus each conditional instruction that tests
+  it can never be true. There are 711 candidate sites in the image, including `0x0cc0`, a
+  `CCD` a few words after the loop head. The code gets to none of them. A count of evaluated
+  opcodes over a run, idle and with the gate forced, gives **zero**. Thus the TODO
+  has no effect now. It becomes important when a new state gets to one of these sites.
 
 ## Datapump is present & readable — but needs human-driven RE
 
-Confirmed by decoding real code: the DSP region contains genuine V.34/V.90
-datapump code, e.g. at file `0x040F98`:
+A decode of real code confirms that the DSP region contains real V.34/V.90
+datapump code, for example at file `0x040F98`:
 ```
 rptk B5h ; mac $4450,*0+,AR3     ; 182-tap MAC, coeffs @prog 0x4450
 rptk B5h ; mac $5450,*0+,AR3     ; another 182-tap filter @0x5450
 mac  $2756 ; blkp $CD2F ; macd $37C4 ; macd $28C4 ...
 ```
-That's a **bank of 182-tap correlators / matched filters** — the equalizer /
-DIL-correlation machinery. The `mac` coefficient tables (e.g. file `0x320A0` =
-prog `0x4450`) hold 182 large-amplitude signed values — consistent with **DIL /
-probing reference sequences**, a strong candidate for the DIL-correlation input.
+That is a **bank of 182-tap correlators / matched filters**: the equalizer /
+DIL-correlation machinery. The `mac` coefficient tables (for example, file `0x320A0` =
+prog `0x4450`) hold 182 signed values of large amplitude. This agrees with **DIL /
+probing reference sequences**. It is a strong candidate for the DIL-correlation input.
 
-**What automation can't do here** — narrowed 2026-09-05. The DSP load/base
-problem below is **solved**; see [How the DSP is loaded and run](#how-the-dsp-is-loaded-and-run)
-for the descriptor table, the overlay map and the transfer protocol. What remains:
-- Isolate the specific DIL/constellation-design routine. Needs a person who can
+**What automation cannot do here** (scope made smaller on 2026-09-05). The DSP load/base
+problem below is **solved**. Refer to [How the DSP is loaded and run](#how-the-dsp-is-loaded-and-run)
+for the descriptor table, the overlay map and the transfer protocol. The remaining tasks:
+- Isolate the specific DIL/constellation-design routine. This task needs a person who can
   recognise routine boundaries, coefficient tables, and algorithm shape.
-- ~~Identify what drains the supervisor's command queue~~ — done, see
+- ~~Identify what drains the supervisor's command queue~~. Done. Refer to
   [the queue consumer](#the-queue-consumer-and-the-0x58-0x5e-mailbox).
 
-**Recommendation:** load `SV25.XMD` into **IDA** (has a TMS320C5x processor
-module) or Ghidra, region `0x29080–0x43700`, **little-endian** words, and drive it
-manually — seed from the FIR bank at `0x040F98` and the reference tables at prog
+**Recommendation:** load `SV25.XMD` into **IDA** (it has a TMS320C5x processor
+module) or Ghidra, region `0x29080–0x43700`, **little-endian** words, and analyze it
+manually. Start from the FIR bank at `0x040F98` and the reference tables at prog
 `0x4450/0x5450`. The region and the (now corrected) endianness are the reliable
-part of the head-start; the verified code site, candidate DIL tables and
-`c25dis.py` output all came from big-endian decoding and must be re-derived.
-Alternatively, a live DSP dump from the modem sidesteps the base/overlay problem
-entirely.
+part of this start. The verified code site, the candidate DIL tables and the
+`c25dis.py` output all came from big-endian decoding. You must derive them again.
+Alternatively, a live DSP dump from the modem avoids the base/overlay problem
+completely.
 
 ## How the DSP is loaded and run
 
