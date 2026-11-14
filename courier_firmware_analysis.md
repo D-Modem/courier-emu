@@ -3362,143 +3362,142 @@ the loader.
 
 ## Older C51 SDL package and V.8 frame path
 
-The DOS `SDL_49.EXE` stores firmware in 16-byte records followed by a checksum,
+The DOS `SDL_49.EXE` stores firmware in 16-byte records. Each record is followed by a checksum,
 a `0x10` marker, and a 24-bit address token. `tools/unpack_sdl.py` removes that
-framing, joins continuation runs, decodes each module's `02 00 00 02` load
-descriptor, and reconstructs a sparse 1 MiB flash image. The C51 resident DSP
-image is loaded at program `0x8000`; call overlay 7 is downloaded to `0xb000`.
+framing, joins continuation runs, decodes the `02 00 00 02` load
+descriptor of each module, and reconstructs a sparse 1 MiB flash image. The C51 resident DSP
+image loads at program `0x8000`. Call overlay 7 downloads to `0xb000`.
 The mapping is exact in the reconstructed flash: module 10 at physical/file
 `0xa9140` supplies 55,392 bytes at C51 program `0x8000`, and module 12 at
 `0xbc3b0` supplies 14,976 bytes at program `0xb000`. For example, dispatcher
-word `BACC` at program `0xc537` is byte `20 be` at flash `0xbee1e`, independently
-fixing the overlay origin. The supervisor selects it with `[0x0d28]=7` and
-transfers it through ports `0x40..0x4e` under command/status port `0x1e`.
+word `BACC` at program `0xc537` is byte `20 be` at flash `0xbee1e`. This independently
+confirms the overlay origin. The supervisor selects it with `[0x0d28]=7` and
+transfers it through ports `0x40..0x4e`, with command/status port `0x1e`.
 
-Overlay 7's V.8 setup occupies `0xb4c5..0xb55c`, its dispatcher is
-`0xc529..0xc537`, and the state table is `0xc538..0xc5e9`. The indirect branch
-at `0xc537` reads callback word `[0x03c8]`; handlers beginning at `0xc5ea` and
-`0xc5f9` advance it through the table and reach the matched-filter code around
-`0xc9d9`. This path exposed and now has implementations for `MACD`, `SQRA`,
-`SQRS`, `SUB ...,16`, `NORM`, `ZALR`, `ABS`, and `SATH` in the native core.
+The V.8 setup of overlay 7 occupies `0xb4c5..0xb55c`. Its dispatcher is
+`0xc529..0xc537`, and its state table is `0xc538..0xc5e9`. The indirect branch
+at `0xc537` reads callback word `[0x03c8]`. Handlers that start at `0xc5ea` and
+`0xc5f9` advance it through the table and get to the matched-filter code near
+`0xc9d9`. This path showed missing instructions in the native core. The core now has implementations for `MACD`, `SQRA`,
+`SQRS`, `SUB ...,16`, `NORM`, `ZALR`, `ABS`, and `SATH`.
 
-The older ASIC's line output is external C51 I/O port `0x006a`. Startup clears
-it at program `0x804e`, and the two runtime paths write words at `0x81ea` and
-`0x8205`; the native sample collector now captures that port. Their separation
-is now concrete rather than just an observed alternation. The interrupt-side
+The line output of the older ASIC is external C51 I/O port `0x006a`. Startup clears
+it at program `0x804e`. The two runtime paths write words at `0x81ea` and
+`0x8205`. The native sample collector now captures that port. We now know why the two paths
+are separate. Before, we only saw that they alternate. The interrupt-side
 entry at `0x81cc` first executes `LDP #0x17`, uses data page `0x0b80`, writes
 its `@0x7b` word at `0x81ea`, and ends in `RETE` at `0x81f0`. The datapump calls
-the other entry, `0x81f5`, from exactly `0xb318` and `0xcf99`. It retains the
-caller's page (`DP=0x0380` on the V.8 path), tests `BIT @0x1f,8`—effective cell
-`0x039f`—and branches to `0x89da` while that bit is clear. With bit 8 set it
-falls through and writes the page's `@0x7e` word (`0x03fe`) at `0x8205`.
-Dynamic runs take 166 instructions and emit nothing for the clear phase, versus
-20 instructions and one `0x8205` write for the set phase. Thus `0x81ea` is the
-interrupt/control slot and `0x8205` is the paced datapump slot; treating every
-`0x006a` write as consecutive PCM would interleave two different TDM slots.
-The paced slot is consistent with one complete line sample at **9.6 kHz**, the
-same rate used by the later board.
+the other entry, `0x81f5`, from exactly `0xb318` and `0xcf99`. That entry keeps the
+page of the caller (`DP=0x0380` on the V.8 path) and tests `BIT @0x1f,8` (effective cell
+`0x039f`). It branches to `0x89da` while that bit is clear. With bit 8 set, it
+continues and writes the `@0x7e` word of the page (`0x03fe`) at `0x8205`.
+In dynamic runs, the clear phase takes 166 instructions and sends nothing. The set phase takes
+20 instructions and does one `0x8205` write. Thus `0x81ea` is the
+interrupt/control slot, and `0x8205` is the paced datapump slot. If you use each
+`0x006a` write as consecutive PCM, you mix two different TDM slots.
+The paced slot agrees with one complete line sample at **9.6 kHz**. This is the
+same rate that the later board uses.
 
-Forcing the ready bit proves transport and captures nonzero words, but does not
-yet produce valid V.8 audio without the C51 mask-ROM scheduler and real ASIC
-phase word. The other previously-fatal boundary is now decoded and implemented
-architecturally: `0xbe71` at `0xcfa6` is `INTR 17`, specifically the software
+When we force the ready bit, this proves transport and captures nonzero words. But it does not
+give valid V.8 audio yet, because the C51 mask-ROM scheduler and the real ASIC
+phase word are missing. We also decoded and implemented the other boundary that stopped the core before.
+`0xbe71` at `0xcfa6` is `INTR 17`, specifically the software
 TRAP vector. It pushes `PC+1`, masks interrupts, saves the interrupt context,
-and transfers to `(PMST.IPTR<<11)|0x22`; `RETI` restores that context while
-leaving `INTM` set. This removes an emulator opcode gap but also makes the
-remaining hole precise: vector `0x22` and its handler are in the absent C51
-mask ROM, not in the downloaded resident or overlay image.
+and goes to `(PMST.IPTR<<11)|0x22`. `RETI` restores that context and keeps
+`INTM` set. This removes an opcode gap in the emulator. It also gives a precise location for the
+remaining hole: vector `0x22` and its handler are in the C51
+mask ROM, which we do not have. They are not in the downloaded resident or overlay image.
 
-The initial V.8 table selector is now exact. At `0xb4da`, AR1 is loaded with
-`0x006f`; the code masks that control word to its low two bits, ORs in `0x0050`,
-and tests bit 1. It first installs table `0xc544`, then `XC 2,TC` conditionally
-replaces it with `0xc53c`. Thus `[0x006f]&2` selects `0xc53c` and a clear bit
-selects `0xc544`. Dynamic execution confirms the resulting words are `0x0052`
-and `0x0050`, respectively. Later states explicitly install `0xc548` at
+We now know the exact initial V.8 table selector. At `0xb4da`, the code loads AR1 with
+`0x006f`. It masks that control word to its low two bits, ORs in `0x0050`,
+and tests bit 1. It first installs table `0xc544`. Then `XC 2,TC` conditionally
+replaces it with `0xc53c`. Thus `[0x006f]&2` selects `0xc53c`, and a clear bit
+selects `0xc544`. Dynamic execution confirms that the resulting words are `0x0052`
+and `0x0050`. Later states explicitly install `0xc548` at
 `0xb50d`, `0xc538` at `0xb521`, `0xc540` at `0xb544`, and `0xc53c` at `0xb559`.
-The table choice is therefore DSP-local originate/answer control, not an ASIC
-address: the ASIC supplies phase-ready bit 8 at `[DP|0x1f]`, while the low
-control bits at `[0x006f]` select the V.8 state family. Launching through the
-real selector now works: establish ARP1, set `[0x006f]=2`, and enter `0xb4d7`;
-the routine normalizes the control to `0x0052`, installs `0xc53c`, and the
-`0xc529` dispatcher enters `0xc5f9` rather than a manually seeded callback. It
-advances the active handler to `0xc61c` while retaining pattern `0x0303` in the
-state block. Reinvoking the dispatcher without the mask-ROM frame service only
-toggles state word `[0x03ca]` between zero and one and leaves `0xc61c` active.
-The slot interpretation is therefore no longer the ambiguous part: the missing
+Thus the table choice is a DSP-local originate/answer control, not an ASIC
+address. The ASIC supplies phase-ready bit 8 at `[DP|0x1f]`, and the low
+control bits at `[0x006f]` select the V.8 state family. A launch through the
+real selector now operates correctly: set ARP1, set `[0x006f]=2`, and enter `0xb4d7`.
+The routine normalizes the control to `0x0052` and installs `0xc53c`. Then the
+`0xc529` dispatcher enters `0xc5f9`, not a manually set callback. It
+advances the active handler to `0xc61c` and keeps pattern `0x0303` in the
+state block. If we call the dispatcher again without the mask-ROM frame service, it only
+toggles state word `[0x03ca]` between zero and one and keeps `0xc61c` active.
+Thus the slot interpretation is no longer unclear. The missing
 emulator step is in the DSP control path that drives the `0x81cc` control
-interrupt, publishes bit 8 in `[0x039f]`, and resumes the V.8 callback once per
-audio slot. It is not another table selector or evidence that the initiating
+interrupt, publishes bit 8 in `[0x039f]`, and resumes the V.8 callback one time for each
+audio slot. It is not another table selector. It is also not evidence that the initiating
 behavior belongs to the ASIC.
 
 ## C52 call-overlay publication and recovered service slot
 
-The later C52 image carries the call datapump as a runtime program overlay at
-source `0xb9c0`, with `0x0a58` words copied to destination `0xc418`. Publishing
-that bank immediately is incorrect: the resident idle service still executes
-through the destination range before the ASIC commits the call bank. The native
-ASIC model therefore holds the overlay pending and publishes it atomically with
+The later C52 image contains the call datapump as a runtime program overlay at
+source `0xb9c0`, with `0x0a58` words copied to destination `0xc418`. If the core publishes
+that bank immediately, this is incorrect: the resident idle service still executes
+through the destination range before the ASIC commits the call bank. Thus the native
+ASIC model keeps the overlay pending and publishes it atomically with
 the call entry.
 
-The missing mask-ROM dispatcher also imposes a concrete entry ABI. The
-call initializer begins at the overlapping instruction stream at `0x2295` and
-must be entered while resident code is at `0xb2f6`, with TDM phase zero and
-between 128 and 192 C52 cycles remaining before the next 258-cycle frame edge.
-Entering at an arbitrary instruction or at the wrong subframe writes zero to
-`IMR` after roughly 45 frames and strands the datapump around `0xc81a`. At the
-recovered service slot it installs `IMR=0x9880`; IRQ 7 continues through the
-downloaded ISR at `0x0228`, and the overlay emits sustained nonzero samples.
-The ASIC also changes the shared `0x50..0x5f` pins from download-window data to
-running TDM latches on this same edge.
+The missing mask-ROM dispatcher also sets a specific entry ABI. The
+call initializer starts at the overlapping instruction stream at `0x2295`. The core
+must enter it while resident code is at `0xb2f6`, with TDM phase zero and
+128 to 192 C52 cycles before the next 258-cycle frame edge.
+If the core enters at a random instruction or at the incorrect subframe, the code writes zero to
+`IMR` after about 45 frames, and the datapump stays near `0xc81a`. At the
+recovered service slot, it installs `IMR=0x9880`. IRQ 7 continues through the
+downloaded ISR at `0x0228`, and the overlay sends continuous nonzero samples.
+On this same edge, the ASIC also changes the shared `0x50..0x5f` pins from download-window data to
+running TDM latches.
 
-Tracing both reads and writes in the ISR pins the external TDM slots more
-closely. The handler reads prior/control words at `0xfff8..0xfffd`, rereads the
-normalization word at `0xfffe` three times from PC `0x0241`, writes the
-oversampled line result to `0xfffd` at PC `0x0238`, and writes the repeating
+A trace of the reads and writes in the ISR gives more precise locations for the external TDM slots.
+The handler reads prior/control words at `0xfff8..0xfffd`. It reads the
+normalization word at `0xfffe` three more times from PC `0x0241`. It writes the
+oversampled line result to `0xfffd` at PC `0x0238`, and it writes the repeating
 control word to `0xffff` at PC `0x0247`. Constant-value experiments identify
-`0xfff8` and `0xfff9` as the two input-delay terms multiplied by the phase
-coefficient at `0xfffa`; changing either strongly changes the result, while
-changing `0xfffd` before the ISR or changing `0xfffe` does not. The ASIC now
-shifts each new 9.6 kHz ADC word through `0xfff8/0xfff9` and boxcar-filters the
-`0xfffd` polyphase output back to line rate. I/O `0x5b`/`0x5e` is used only
-during a short initializer around `0xb627..0xb669`, not continuously.
+`0xfff8` and `0xfff9` as the two input-delay terms that the code multiplies by the phase
+coefficient at `0xfffa`. A change to either one changes the result much.
+A change to `0xfffd` before the ISR, or a change to `0xfffe`, has no effect. The ASIC now
+shifts each new 9.6 kHz ADC word through `0xfff8/0xfff9`, and it uses a boxcar filter to change the
+`0xfffd` polyphase output back to line rate. The code uses I/O `0x5b`/`0x5e` only
+during a short initializer near `0xb627..0xb669`, not continuously.
 
-The 258-cycle interrupt is a roughly 96.9 kHz TDM *slot* clock, not itself the
-9.6 kHz codec rate. Physical line exchange is consequently paced by complete
-960-sample DSP frames instead of the faster supervisor instruction clock. This
-removed a large queue of stale idle samples that had delayed current call audio
+The 258-cycle interrupt is a TDM *slot* clock of about 96.9 kHz. It is not the
+9.6 kHz codec rate. Thus complete 960-sample DSP frames pace the physical line exchange,
+not the faster supervisor instruction clock. This
+removed a large queue of old idle samples. That queue had delayed the current call audio
 by many emulated seconds.
 
 The linked-line model now also supplies exchange dial tone until an originating
-side starts dialing, then switches to the peer's loop/audio; it no longer
-requires the obsolete second-bootstrap assumption. Repeated supervisor register
-commits are only latched by the ASIC and are not written asynchronously into a
-running C52. That prevents hundreds of later `AR3..BMAR` command blocks from
-corrupting the datapump context.
+side starts to dial. Then it changes to the loop/audio of the peer. It no longer
+needs the obsolete second-bootstrap assumption. The ASIC only latches repeated supervisor register
+commits. It does not write them asynchronously into a
+running C52. This prevents the corruption of the datapump context by hundreds of later `AR3..BMAR` command blocks.
 
-With one side originating and one answering, both consume current line-rate
-peer samples and produce distinct role-dependent output. The input is now
-observably live: feeding the answer stream instead of zero changes receive
-filter cells `0x035c`, `0x069c`, and `0x0b49`, which are consumed by the long
-convolution loops at `0xc81c` and `0xc855`. A 50-million-instruction linked run
-exchanges 79,018 samples per side without stale backlog or an emulator error,
-but still does not reach `CONNECT`. The remaining blocker is the call-state
-transition/callback after these filters, including the still-unmodeled
-ASIC-to-supervisor completion publication; native `TRCV/TDXR` is polled during
-initialization but does not carry the sustained stream.
+With one side that originates and one side that answers, both consume current line-rate
+peer samples and give different output for each role. We can now see that the input is
+live. When we supply the answer stream instead of zero, receive
+filter cells `0x035c`, `0x069c`, and `0x0b49` change. The long
+convolution loops at `0xc81c` and `0xc855` consume these cells. A linked run of 50 million instructions
+exchanges 79,018 samples for each side, without an old backlog or an emulator error.
+But it still does not get to `CONNECT`. The remaining blocker is the call-state
+transition/callback after these filters. This includes the
+ASIC-to-supervisor completion publication, which we did not model yet. The code polls native `TRCV/TDXR` during
+initialization, but it does not carry the continuous stream.
 
 ### The firmware route to CM/JM, and the word that blocks it
 
-The answer-side experiment that re-entered `0x2295` after detecting CI was
-wrong. `0x2295` is the one-time call initializer; entering it again discarded
-the live datapump context and eventually wrote zero to `IMR`. The downloaded
-overlay remains active across the CI/ANSam handoff. The ASIC now only stops its
-bootstrap tone and releases the overlay's callback-ready bit; it does not
+The answer-side experiment that entered `0x2295` again after it detected CI was
+incorrect. `0x2295` is the call initializer, which runs one time. A second entry discarded
+the live datapump context, and after some time it wrote zero to `IMR`. The downloaded
+overlay stays active across the CI/ANSam handoff. The ASIC now only stops its
+bootstrap tone and releases the callback-ready bit of the overlay. It does not
 invent a second firmware entry.
 
-Following that route exposes the firmware's own V.8 state engine. Handler
+When we follow that route, we see the V.8 state engine of the firmware. Handler
 `0xc617` calls the indirect dispatcher at `0xc418` while timer 0 counts down.
-The dispatcher reads handler pointer `0xc617` from data register `0x48`. Once
-the countdown expires, the handler executes the setup through `0xc6bc` and
+The dispatcher reads handler pointer `0xc617` from data register `0x48`. When
+the countdown ends, the handler executes the setup through `0xc6bc` and
 enters the convolution/division loop at `0xc853`:
 
 ```text
@@ -3509,53 +3508,47 @@ c856  MPYU  *-, AR1       ; delay slot
 ```
 
 The first operand pair is exact: data `0xa51b` is zero and data `0xd2a8` is
-one. Subsequent cells on both walks are zero. `ZPR` clears the first product,
-so `LTS` never reduces the positive accumulator; AR1 walks upward and AR2
-downward forever while IRQ 7 continues to service TDM. This is not a missing
-callback: it is the callback running on an absent data vector.
+one. The subsequent cells on both walks are zero. `ZPR` clears the first product.
+Thus `LTS` never decreases the positive accumulator. AR1 moves up and AR2 moves
+down without end, while IRQ 7 continues to service TDM. This is not a missing
+callback. It is the callback, which runs on a data vector that is not there.
 
-Two bounded perturbations locate what is missing. Setting only `0xa51b` to
-`0xffff` lets the first invocation return and changes the active handler from
-`0xc617` to `0xc597`. Presenting `0xffff` across the walked range carries the
-firmware farther, through `0xc865`/`0xc872`. Copying program words into the
-range instead eventually branches through a zero handler and is decisively
-wrong. None of these perturbations is retained as a device model, and their
-audio is not evidence of CM or JM; they prove that the next input is an
-ASIC/external-data vector, not another PC, BIO edge, normalization constant, or
+Two limited perturbations show what is missing. When we set only `0xa51b` to
+`0xffff`, the first call returns and the active handler changes from
+`0xc617` to `0xc597`. When we put `0xffff` across the full walked range, the
+firmware goes farther, through `0xc865`/`0xc872`. When we copy program words into the
+range instead, the code then branches through a zero handler. This is clearly
+incorrect. We did not keep any of these perturbations as a device model, and their
+audio is not evidence of CM or JM. They prove that the next input is an
+ASIC/external-data vector. It is not another PC, BIO edge, normalization constant, or
 supervisor message.
 
-The practical route to **CM/JM and beyond** is therefore:
+Thus the practical route to **CM/JM and later stages** is:
 
 1. keep the call overlay and its `IMR=0x9880` context live after CI/ANSam;
 2. release callback-ready bit 8 at `0x039f` when the opposite bootstrap signal
    qualifies;
-3. recover and publish the ASIC-produced external-data vector beginning at
-   `0xa51b` before `c617` dispatches the next state; and
-4. let `c418` advance the firmware handler table naturally, then publish its
+3. recover and publish the external-data vector that the ASIC produces, which starts at
+   `0xa51b`, before `c617` dispatches the next state; and
+4. let `c418` advance the firmware handler table normally, and then publish its
    completion/status word to the supervisor.
 
 The summary now reports `0xa51b`, `0xd2a8`, the role detector byte `0x0306`,
-and per-frame 980/1180 Hz V.21 scores. That makes a future vector experiment
-falsifiable: reaching a later PC is not enough; CM/JM must appear as strong
-300-bit/s V.21 low-channel symbols in firmware DAC output.
+and the 980/1180 Hz V.21 scores for each frame. Thus a future vector experiment
+can be proved false: it is not sufficient to get to a later PC. CM/JM must occur as strong
+300-bit/s V.21 low-channel symbols in the firmware DAC output.
 
 ### Publishing a guessed vector does not work
 
-The proposed next step above has now been executed, and it corrects one part of
+We did the next step that we proposed above. It corrects one part of
 that conclusion: `0xa51b` is the first missing operand, but it is **not the
-start of one contiguous ASIC vector that can be reconstructed from the line
+start of one contiguous ASIC vector that we can reconstruct from the line
 samples**.
 
-The core now records every entry into the three identical numerical loops at
-`0xc7f7`, `0xc81a`, and `0xc853`, including accumulator, source address/value,
-and paired address/value. With the callback held low until native CI/ANSam
-qualification, the first firmware-owned entry is reproducibly:
-
-```text
-loop=c853  ACC=00007fef  source=a51b:0000  pair=d2a8:0001
-```
-
-The following models were then tried at the real read boundary:
+The core now records each entry into the three identical numerical loops at
+`0xc7f7`, `0xc81a`, and `0xc853`. It records the accumulator, the source address/value,
+and the paired address/value. With the callback held low until native CI/ANSam
+qualification, the first entry that the firmware controls is always:
 
 - a single `ffff` or Q15 `8000` at `a51b`;
 - the same value in the descending four-word cells `a51b`, `a517`, ...;
@@ -3564,35 +3557,35 @@ The following models were then tried at the real read boundary:
 - program-space words mirrored into data space; and
 - a Q15 result returned directly to the source operand of all three loops.
 
-The first two let `c853` return, but later invocations request `a517` and other
-work cells. Filling those reaches `c81a`, whose next source is register `0035`
-(`TRAD`), then `ffd0`; forcing those reaches `c7f7`, whose source becomes
-`0000`. Constant-Q15 publication can keep all three routines executing, but it
-makes them cycle hundreds of thousands of times, eventually clears `IMR`, and
-produces no strong 980/1180 Hz symbols. Mirroring program words eventually
-branches through a zero handler. Raw codec history also reaches later loops but
-fails their fixed-point tests. These are clean falsifications, not candidate
-implementations, and none remains enabled.
+The first two let `c853` return. But later calls request `a517` and other
+work cells. When we fill those, the code gets to `c81a`. The next source of `c81a` is register `0035`
+(`TRAD`), and then `ffd0`. When we force those, the code gets to `c7f7`, and its source becomes
+`0000`. Constant-Q15 publication can keep all three routines in execution. But it
+makes them cycle hundreds of thousands of times. Then it clears `IMR`, and it
+gives no strong 980/1180 Hz symbols. When we mirror program words, the code then
+branches through a zero handler. Raw codec history also gets to later loops, but
+it fails their fixed-point tests. These results clearly prove the models false. They are not candidate
+implementations, and none of them is still enabled.
 
-So the values are intermediate fixed-point work products with addresses passed
-by the firmware's state routines, not a wire-format sample or detector array.
-The absent customer-ROM/ASIC scheduler must run an upstream producer that
-constructs that workspace before releasing `039f.8`. The update firmware
-contains the consumers and coefficient tables but not that producer. There is
-no value-preserving way to synthesize it from the supplied images alone; a
+Thus the values are intermediate fixed-point work products. The state routines of the firmware give their
+addresses. They are not a wire-format sample or a detector array.
+The customer-ROM/ASIC scheduler, which we do not have, must run an upstream producer that
+builds that workspace before it releases `039f.8`. The update firmware
+contains the consumers and coefficient tables, but not that producer. The supplied images alone
+give no way to synthesize it with correct values. A
 physical C52 data-memory capture at callback release, or the customer mask ROM,
-is required. The new loop diagnostics define the minimum useful capture:
+is necessary. The new loop diagnostics define the minimum useful capture:
 `ST0/ARP`, all AR registers, ACC/PREG/TREG0, and data around the reported source
 and pair for each of the three loop PCs.
 
 ### Replacing the DAA layer with a modeled line
 
-The three-layer stand-in above is now two. `--exchange` attaches a modeled
-central office (`courier_emu/exchange.py`) that runs on the codec sample stream:
-it holds 350+440 Hz dial tone for as long as the loop is seized and undialed,
-decodes DTMF off the DSP's own transmit samples with a Goertzel receiver, and
-returns ringback, busy, reorder or 2100 Hz answer tone according to what was
-dialed. On `main211.xmf` with `ATDT5551212` routed to `answer`:
+The three-layer replacement above now has two layers. `--exchange` attaches a modeled
+central office (`courier_emu/exchange.py`) that runs on the codec sample stream.
+It holds 350+440 Hz dial tone while the loop is seized and not dialed.
+It decodes DTMF from the transmit samples of the DSP with a Goertzel receiver. It
+returns ringback, busy, reorder or 2100 Hz answer tone, as applicable to the
+dialed number. On `main211.xmf` with `ATDT5551212` routed to `answer`:
 
 ```
 exchange: dialed=5551212 digits_decoded=5551212 outcome=answer
@@ -3600,41 +3593,40 @@ exchange: dialed=5551212 digits_decoded=5551212 outcome=answer
 serial:   OK / CONNECT
 ```
 
-The middle layer - the DAA faking the line transition - is gone: the DAA's
-`line_state` now follows what the exchange presents, and its five-hit detector
-debounce counts samples the exchange actually delivered (`CourierDaa.observe`).
-The outer two remain. The bridge still parses `ATD` at the DTE level and still
-asks the C52 to emit the digits through `set_dtmf_digits`; what changed is that
-those digits now have to survive the line and be read back off it, and the
-firmware's dial tone is no longer withdrawn by the model at the moment dialing
+The middle layer (the DAA that simulated the line transition) is removed. The
+`line_state` of the DAA now follows the signal from the exchange, and its five-hit detector
+debounce counts the samples that the exchange delivered (`CourierDaa.observe`).
+The two outer layers remain. The bridge still parses `ATD` at the DTE level and still
+asks the C52 to send the digits through `set_dtmf_digits`. The change is that
+those digits now must go through the line and be read back from it. Also, the model
+no longer removes the dial tone of the firmware at the moment that dialing
 starts.
 
-Two orderings had to move for that to run, and both are line-side decisions the
-harness was previously making:
+For that to run, we had to change two orderings. Before, the harness made both of these line-side decisions:
 
-- The ASIC call engine now waits for the exchange to connect the call rather
-  than starting on the detector debounce. Without that gate the datapump starts
-  at seizure and the transmit stream is a flat 1300 Hz V.8 calling tone for ten
-  seconds - the modem never dials, and the exchange correctly times out into
-  reorder. That run is the clearest evidence yet that the datapump entry is the
-  harness's, not the firmware's.
-- Dialing is released on the exchange's dial tone rather than on the call
-  engine having started, which would otherwise deadlock against the gate above.
+- The ASIC call engine now waits until the exchange connects the call. It does
+  not start on the detector debounce. Without that gate, the datapump starts
+  at seizure, and the transmit stream is a flat 1300 Hz V.8 calling tone for ten
+  seconds. The modem never dials, and the exchange correctly times out into
+  reorder. That run is the clearest evidence that the harness, and not the firmware,
+  controls the datapump entry.
+- The exchange dial tone releases dialing. The start of the call
+  engine does not release it, because that would cause a deadlock with the gate above.
 
-Still unresolved: the armed callback at `0x5d37f` is not what places this call.
-Reaching it needs the supervisor's own dial code at `0x85000`-`0x87000`, which
-no run has entered.
+Still unresolved: the armed callback at `0x5d37f` does not place this call.
+To get to it, the dial code of the supervisor at `0x85000`-`0x87000` must run. No
+run has entered that code.
 
 ### The firmware's own dial code, running
 
-Traced 2026-09-05 on `main211.xmf` with `ATDT5551212`, `--exchange`, and every
-DTE-level stand-in removed. The earlier conclusion in this file - that the dial
-code is never entered and that `[0x298]` is an armed dial callback - was wrong
-on both counts. `[0x298]` holds the supervisor's serial transmit ISR pointer
-(`0x5d37f` ends in `iret` after pushing a byte to `0xff6a`), chosen between
-three variants at `0x5d334`. It has nothing to do with dialing.
+We traced this on 2026-09-05 on `main211.xmf` with `ATDT5551212`, `--exchange`, and all
+DTE-level replacements removed. The earlier conclusion in this file (that the code never enters the dial
+code, and that `[0x298]` is an armed dial callback) was incorrect
+in both parts. `[0x298]` holds the pointer to the serial transmit ISR of the supervisor
+(`0x5d37f` ends in `iret` after it pushes a byte to `0xff6a`). The code at `0x5d334` selects it from
+three variants. It is not related to dialing.
 
-**The dial path, all of it the firmware's:**
+**The dial path. The firmware does all of it:**
 
 | step | address | what it does |
 |---|---|---|
