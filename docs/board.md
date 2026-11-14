@@ -1539,96 +1539,101 @@ correct for the function, with a small margin.
 | the 25 MHz Courier 2806 | **TLC320AC03** |
 | the 3453C - taken to be `main211.xmf` | **Si3021 + Si3014**, no TI codec |
 
-Three generations, one part each, reported by the owner from the units in hand.
-TI first, Silicon Labs last.
+There are three generations, with one part each. The owner reported these from
+the units that the owner has. TI is first, and Silicon Labs is last.
 
-**The firmware does not prove the part, and a claim that it did is withdrawn.**
+**The firmware does not prove the part, and we withdraw a claim that it did.**
 The 16-word control table at program `0x019c` - `0911 0967 0956 0934 0923 0969
-0989 bc07 1019 ba01 9019 f788 be4c 7718 8b8f 8711` - was offered as proof of a
-TLC320AC0x. It appears in `main211.xmf` **and nowhere else**, and `main211`'s
-board is the one carrying **no TI codec at all**. So that table is the bring-up of
-the Silicon Labs pair, and the claim was exactly inverted. (This rehabilitates
-`CodecBringUp`, which runs an `SI3038.PDF` sequence: a Silicon Labs sequence is
-the right family for that build, and only the part number is in doubt.)
+0989 bc07 1019 ba01 9019 f788 be4c 7718 8b8f 8711` - was given as proof of a
+TLC320AC0x. It occurs in `main211.xmf` **and in no other file**, and the board
+of `main211` is the one that has **no TI codec**. Thus that table is the
+bring-up of the Silicon Labs pair, and the claim was exactly the opposite of the
+truth. (This makes `CodecBringUp` correct again. It runs an `SI3038.PDF`
+sequence. A Silicon Labs sequence is the correct family for that build, and only
+the part number is not certain.)
 
-The secondary-frame protocol - bit 0 of the transmitted DAC word requesting a
-control frame - cannot discriminate either, because it appears on both sides of
-the split: in `main211` (Si pair) and in the ID_SDL 4.03 build for an AC01 board.
-A protocol common to both is evidence about serial framing, not about silicon.
+The secondary-frame protocol cannot identify the part either. In that protocol,
+bit 0 of the transmitted DAC word requests a control frame. It occurs on the two
+sides of the split: in `main211` (Si pair) and in the ID_SDL 4.03 build for an
+AC01 board. A protocol that both use is evidence about serial framing, not about
+the silicon.
 
-**The AC01-to-AC03 change is invisible to the DSP**, and the reason is not the
-ASIC. An earlier explanation had the ASIC fronting the codec so the DSP need not
-know which variant is fitted; the continuity readings put `DOUT`, `DIN` and `FS`
-straight onto DSP pins 43, 106 and 104, with the ASIC's only line being `MCLK`.
-The simpler explanation survives and needs no ASIC: **AC01 and AC03 are the same
-family**, same protocol, same register map, so identical DSP code drives either.
+**The DSP cannot see the AC01-to-AC03 change**, and the cause is not the ASIC.
+An earlier explanation said that the ASIC is in front of the codec, so that the
+DSP does not need to know which variant is installed. But the continuity
+readings put `DOUT`, `DIN` and `FS` directly on DSP pins 43, 106 and 104, and
+the only line from the ASIC is `MCLK`. The simpler explanation is still correct
+and needs no ASIC: **AC01 and AC03 are the same family**, with the same protocol
+and the same register map. Thus identical DSP code drives the two.
 
 ## The flash is Intel and the harness models an AMD part
 
-The 2806's flash is marked `PA28F400`, Intel's 4 Mbit boot-block part.
-`courier_emu/flash_device.py` models an **AMD Am29F400AT**, device code `0x2223`,
-with that part's eleven-sector top-boot map hard-coded as fixed geometry.
+The flash of the 2806 has the marking `PA28F400`, which is the Intel 4 Mbit
+boot-block part. `courier_emu/flash_device.py` models an **AMD Am29F400AT**,
+device code `0x2223`. It has the eleven-sector top-boot map of that part as
+fixed geometry in the code.
 
-Those disagree, but not yet in a way that is demonstrably a bug. The AMD choice
-was never read off a board: it was **inferred from the update image**,
-`Ie030002.nac`, which probes for a manufacturer word and takes the AMD path when
-Intel does not answer. That image is the I-modem's, not the 2806's.
+These disagree, but we cannot yet show that this is a bug. Nobody read the AMD
+selection from a board. It was **inferred from the update image**,
+`Ie030002.nac`. That image probes for a manufacturer word and uses the AMD path
+when Intel does not answer. That image is for the I-modem, not for the 2806.
 
-What makes it worth recording is that the sector map is load-bearing: the file
-reasons from the Am29F400AT's boot-block layout that the updater's one erase lands
-in `SA8` and leaves `SA9`/`SA10` untouched, "which is what a settings store in
-flash looks like". An Intel 28F400 has its own block map, and `-T` and `-B` parts
-put the boot blocks at opposite ends.
+It is important to record this because other conclusions depend on the sector
+map. The file uses the boot-block layout of the Am29F400AT to conclude that the
+one erase of the updater is in `SA8`, and that `SA9`/`SA10` do not change,
+"which is what a settings store in flash looks like". An Intel 28F400 has its
+own block map, and `-T` and `-B` parts put the boot blocks at opposite ends.
 
-**The cheap check is the one the update image itself performs**: read the
-autoselect words out of the 2806. Manufacturer `0x0089` is Intel, `0x0001` is AMD,
+**The easy check is the check that the update image itself does**: read the
+autoselect words from the 2806. Manufacturer `0x0089` is Intel, `0x0001` is AMD,
 and the device word names the part and its boot orientation. That is a monitor
 read.
 
-The flash pinout is confirmed against the Am29F400B 44-lead SO diagram - `A17`,
-`A7` and `A0` on pins 3, 4 and 11 all match the board readings - and `BYTE#` is
-tied high, so it runs in word mode and its `A`n is system `A`n+1.
+The flash pinout is confirmed against the Am29F400B 44-lead SO diagram. `A17`,
+`A7` and `A0` on pins 3, 4 and 11 all agree with the board readings. `BYTE#` is
+tied high, thus the part runs in word mode, and its `A`n is system `A`n+1.
+
 ## Method rules this board taught
 
 **A continuity reading to ground is not evidence that a pin is a ground.** It is
-evidence that a pin is grounded *at that moment*. The DIP bank's common is
-grounded, so any pin tied to ground through a closed switch reads exactly like a
-supply. Pin `118` sat in the left-edge table as "DSP `VSSC`/`VDDI`, decoupled"
-because switch 3 was closed when that pass was taken; pin `15` was recorded as
-ground because the Talk/Data button was pressed. **Only readings taken with the
-switch moved distinguish them.**
+evidence that a pin is grounded *at that time*. The common of the DIP bank is
+grounded. Thus a pin that connects to ground through a closed switch reads
+exactly like a supply. Pin `118` was in the left-edge table as "DSP
+`VSSC`/`VDDI`, decoupled", because switch 3 was closed during that pass. Pin
+`15` was recorded as ground, because the Talk/Data button was pressed. **Only
+readings with the switch moved can show the difference.**
 
-That direction is the dangerous one. A switch reading on a supply pin is
-obviously wrong and gets challenged. A supply reading on a switch pin looks like
-the pad-ring convention holding up, agrees with everything around it, and gets
-believed.
+That direction is the dangerous one. A switch reading on a supply pin is clearly
+wrong, and somebody will question it. A supply reading on a switch pin agrees
+with the pad-ring convention and with all the adjacent readings. Thus people
+believe it.
 
-Grounds without independent corroboration want re-reading with the switches
-open. `100` and `120` are corroborated by position and by the bus shape that
-predicted them; the corner pins are safe for the same reason. `24` is not - it
-was taken in the same pass as pin 15 and has not been re-read.
+Read again, with the switches open, each ground that has no independent
+confirmation. The position and the bus shape that predicted them confirm `100`
+and `120`. The corner pins are safe for the same reason. `24` is not safe. We
+took it in the same pass as pin 15, and we did not read it again.
 
-**A trace that terminates at a part's input pin has found one end of a net, not
-the whole of it.** `CD` and `RD` were both listed as "not on the ASIC" on the
-strength of landing at a 75188's TTL-side input; both are ASIC outputs. The
-claim was about where the probe stopped. `OH` is the only one of that original
-list that is safe, because a relay coil is a terminus rather than an input.
+**If a trace stops at the input pin of a part, it found one end of a net, not
+all of the net.** We listed `CD` and `RD` as "not on the ASIC", because they
+went to the TTL-side input of a 75188. But the two are ASIC outputs. The claim
+was only about the location where the probe stopped. `OH` is the only item of
+that original list that is safe, because a relay coil is an end point, not an
+input.
 
-**Off-by-one pin miscounts happen.** Three have been found: the top edge counted
-from 60 rather than 61 (making one flash line `73` instead of `74`, and hiding
-that `73` and `74` are two different flash pins), CPU pin 28 recorded where 29
-was meant, and `LCS`/`UCS` on adjacent CPU pins 60 and 61. When two readings
-conflict on adjacent pins, that is the likely explanation rather than anything
-subtle.
+**Off-by-one pin errors occur.** We found three. The top edge was counted from
+60, not 61. This made one flash line `73` and not `74`, and it hid the fact that
+`73` and `74` are two different flash pins. CPU pin 28 was recorded where 29 was
+correct. And `LCS`/`UCS` are on adjacent CPU pins 60 and 61. When two readings
+conflict on adjacent pins, this is the probable explanation.
 
 ## Reference tables, carried so nobody has to fetch them
 
 ### 80C186EB, 80-lead QFP - Table 7
 
 The part is an **80C186EB in the 80-lead QFP**, not the plain `S80C186` that
-[board-parts.md](board-parts.md) records from the marking: the XL's QFP puts
-`ALE` on pin 10 and `INT0` on 31, which these readings are nothing like. Every
-CPU pin number in this file checks against this table, `INT3` excepted.
+[board-parts.md](board-parts.md) records from the marking. The QFP of the XL
+puts `ALE` on pin 10 and `INT0` on 31, and these readings are very different.
+Each CPU pin number in this file agrees with this table, except `INT3`.
 
 | pin | name | pin | name | pin | name | pin | name |
 |---|---|---|---|---|---|---|---|
@@ -1653,8 +1658,8 @@ CPU pin number in this file checks against this table, `INT3` excepted.
 | 19 | `AD3` | 39 | `BHE/RFSH` | 59 | `P1.0/GCS0` | 79 | `P2.7` |
 | 20 | `AD11` | 40 | `S2` | 60 | `LCS` | 80 | `P2.6` |
 
-Source: Intel `80C186EB/80C188EB, 80L186EB/80L188EB` datasheet, Table 7. Names
-in the 188EB's parentheses are dropped.
+Source: Intel `80C186EB/80C188EB, 80L186EB/80L188EB` datasheet, Table 7. We
+removed the names in parentheses for the 188EB.
 
 ### TLC320AC01, FN package - terminal functions
 
@@ -1672,115 +1677,121 @@ Source: TI `TLC320AC01C` data manual, SLAS057D.
 
 ## Readings that need retaking
 
-1. **The `SD` group.** Recorded as CPU pins 4, 7 and 63 plus 74AHC04 pin 11. CPU
-   63 is `INT1`, now read from both ends (ASIC `47` to CPU `63`). CPU 7 is
-   `P2.0/RXD1`, the receive half of a channel whose transmit pin is not
-   connected. Two of three have failed, so **where the `SD` lamp is driven from
-   is unknown again** and the group should be retaken pin by pin rather than
-   reinterpreted.
-2. **`'573` pin 19**, recorded as reaching RAM pin 1 and flash pin 20. Flash pin
-   20 is `DQ10`, a *data* line; RAM pin 1 is `A14`, an address line. No latch
-   output is both.
-3. **The `A7` net** at flash pin 4 and RAM pin 3, recorded as running to `'573`
-   pin 12. The '573 latches `A8`-`A15` and cannot carry `A7`; the ASIC drives
-   system `A7` from pin 64. Retake toward the ASIC.
-4. **CPU `INT3`**, recorded on CPU pin 75. Table 7 gives 75 as `T0OUT`; `INT3` is
-   pin 65. If `T0OUT` really is on that net, a timer output going somewhere is a
-   finding in itself.
-5. **`LCS` or `UCS` on the SRAM bank.** The pair shares one `CE#` net, so one of
-   the two adjacent readings is wrong. Probe RAM pin 20 against CPU 60, then
-   against 61; exactly one should answer. The 80186's `LCS` covers low memory
-   from address zero and `UCS` the top of the space, so the firmware's memory map
-   follows from which.
-6. **A second `RS` reaching codec pin 13.** Pin 13 is `SCLK`, the serial shift
-   clock, which is not a reset of anything and belongs on the DSP's shift clock
-   beside the three serial lines on DSP 43, 104 and 106. Almost certainly a
-   mislabel, and it has a predicted destination to check against.
-7. **Pin `24`, recorded as `GND`** in the same pass as pin 15, which turned out
-   to be a pressed button. Re-read with the panel's switches moved.
+1. **The `SD` group.** The record gives CPU pins 4, 7 and 63, and 74AHC04 pin
+   11. CPU 63 is `INT1`, and we now read it from the two ends (ASIC `47` to CPU
+   `63`). CPU 7 is `P2.0/RXD1`, the receive half of a channel with a transmit
+   pin that is not connected. Two of the three are not correct. Thus **we again
+   do not know the source that drives the `SD` lamp**. Take the readings of the
+   group again, one pin at a time. Do not only interpret the old readings again.
+2. **`'573` pin 19.** The record says that it goes to RAM pin 1 and flash pin
+   20. Flash pin 20 is `DQ10`, a *data* line. RAM pin 1 is `A14`, an address
+   line. No latch output is both.
+3. **The `A7` net** at flash pin 4 and RAM pin 3. The record says that it goes
+   to `'573` pin 12. The '573 latches `A8`-`A15` and cannot carry `A7`. The ASIC
+   drives system `A7` from pin 64. Take the reading again toward the ASIC.
+4. **CPU `INT3`.** The record puts it on CPU pin 75. Table 7 gives 75 as
+   `T0OUT`, and `INT3` is pin 65. If `T0OUT` is really on that net, a timer
+   output that goes to a different part is a finding itself.
+5. **`LCS` or `UCS` on the SRAM bank.** The pair shares one `CE#` net. Thus one
+   of the two adjacent readings is wrong. Probe RAM pin 20 against CPU 60, then
+   against 61. Exactly one must answer. The `LCS` of the 80186 covers low memory
+   from address zero, and `UCS` covers the top of the space. Thus the memory map
+   of the firmware follows from the result.
+6. **A second `RS` that goes to codec pin 13.** Pin 13 is `SCLK`, the serial
+   shift clock. It is not a reset. It must be on the shift clock of the DSP,
+   adjacent to the three serial lines on DSP 43, 104 and 106. This is almost
+   certainly an incorrect label, and it has a predicted destination for a
+   check.
+7. **Pin `24`, recorded as `GND`.** We took it in the same pass as pin 15, which
+   was a pressed button. Read it again with the switches of the panel moved.
 
 ## What is still unknown
 
-Sixteen of the 120 pins are unread; of the rest, seventeen are inferred middles
-of measured runs (the two DSP data groups and `A2`-`A6`). The top and left edges
-are finished but for one pin each; the bottom edge is at 26 of 30; the right
-edge has eleven unread, `32`-`36` and `39`-`44`.
+Sixteen of the 120 pins are not read. Of the others, seventeen are inferred
+middles of measured runs (the two DSP data groups and `A2`-`A6`). The top and
+left edges are complete except for one pin each. The bottom edge is at 26 of
+30. The right edge has eleven unread pins, `32`-`36` and `39`-`44`.
 
-In the order they would pay:
+These items are in the sequence of their value:
 
-1. **The frequency at DSP pin 96.** The ASIC drives the DSP's clock and nothing
-   here knows what rate it produces. A scope on that pin is the only thing that
-   answers it, and the DSP's machine cycle - which the timebase note and every
-   DSP-side analysis treat as a board constant - follows from it. `CLKMD1` (DSP
-   pin 71) and `CLKMD2` (pin 103) say what the DSP divides it by, and those are
-   meter readings.
-2. **Whether there is any paging at all.** *Downgraded 2026-09-18.* This used to
-   read "the paging register" and be the largest unmodelled behaviour on the
-   board. The ASIC does **not** drive the flash's `CE#` - `UCS` does - and its
-   four-in/three-out address path is what a flat map needs, with `A19` consumed
-   by the `UCS` decode. Nothing now argues for a paging register, and the flat
-   512 KiB image the harness uses matches both boards. What remains open is the
-   weaker question of why the top three address lines are routed through the
-   ASIC at all.
-3. **The left edge's last two, `112` and `117`**, against the DSP control signals
-   still missing. The ASIC has the data bus, `IS`, `R/W`, `STRB`, `INT2` and the
-   clock. Four candidates would each change something: **`DS` (DSP pin 89) and
-   `PS` (91)** - `IS` alone makes the ASIC an I/O device, `DS` would put it in
-   the DSP's *data memory* alongside the SRAM; **`MP/MC` (pin 5)**, which decides
-   whether the DSP boots from on-chip ROM or external memory, and which
-   [board-parts.md](board-parts.md) records as running at 1 without saying who
-   sets it; **`BIO` (130)** and **`XF` (109)**, a handshake pair the firmware
-   could poll and answer with. Two pins for four candidates.
-4. **The phone-line header's pinout.** Twelve positions, three of them reaching
-   the ASIC, with two optocouplers beside them. Continuity to the `RA5W-K`'s coil
-   names the hook output; watching the pins while the line rings names the ring
-   input.
-5. **Which port bit each DIP switch appears in**, and what is on the other side
-   of switch 1. Live through the monitor rather than with a meter: flip each
-   switch in turn and watch which port bit moves. It also shows which switches
-   are read by nothing. For switch 1, one probe on its other terminal -
-   ground/`VCC` makes it a strap on `P2.6`, the DTR net makes `P2.6` the signal
-   and the override hardware. A second check separates them live: unplug the DTE
-   so nothing asserts DTR, then toggle the switch.
+1. **The frequency at DSP pin 96.** The ASIC drives the clock of the DSP, and
+   nothing here knows its rate. Only a scope on that pin can give the answer.
+   The machine cycle of the DSP follows from it. The timebase note and each
+   DSP-side analysis use the machine cycle as a board constant. `CLKMD1` (DSP
+   pin 71) and `CLKMD2` (pin 103) give the divisor of the DSP, and a meter can
+   read those.
+2. **Whether there is any paging at all.** *Downgraded 2026-09-18.* Previously,
+   this item was "the paging register", and it was the largest behaviour of the
+   board that was not modelled. The ASIC does **not** drive the `CE#` of the
+   flash. `UCS` drives it. The four-in/three-out address path of the ASIC is
+   what a flat map needs, and the `UCS` decode uses `A19`. Now no evidence
+   supports a paging register, and the flat 512 KiB image of the harness agrees
+   with the two boards. A weaker question is still open: why do the top three
+   address lines go through the ASIC?
+3. **The last two pins of the left edge, `112` and `117`**, against the DSP
+   control signals that are not yet found. The ASIC has the data bus, `IS`,
+   `R/W`, `STRB`, `INT2` and the clock. Each of four candidates would change
+   something. **`DS` (DSP pin 89) and `PS` (91)**: `IS` alone makes the ASIC an
+   I/O device, but `DS` would put it in the *data memory* of the DSP, with the
+   SRAM. **`MP/MC` (pin 5)**: it sets whether the DSP boots from on-chip ROM or
+   from external memory. [board-parts.md](board-parts.md) records that it runs
+   at 1, but does not say which part sets it. **`BIO` (130)** and **`XF`
+   (109)**: a handshake pair that the firmware can poll and answer. There are
+   two pins for four candidates.
+4. **The pinout of the phone-line header.** It has twelve positions. Three of
+   them go to the ASIC, and the two optocouplers are adjacent. Continuity to the
+   coil of the `RA5W-K` identifies the hook output. Monitor the pins while the
+   line rings to identify the ring input.
+5. **The port bit of each DIP switch**, and the connection on the other side of
+   switch 1. Use the monitor live, not a meter. Move each switch in turn and
+   find which port bit changes. This also shows which switches nothing reads.
+   For switch 1, probe its other terminal one time. If it is ground/`VCC`, it is
+   a strap on `P2.6`. If it is the DTR net, `P2.6` is the signal and the
+   override is hardware. A second live check separates them: disconnect the DTE
+   so that nothing asserts DTR, then toggle the switch.
 6. **What gates the transmit path.** `TXD0` goes into the ASIC and the `RD`
-   driver comes out of it while receive reaches the CPU directly. A part on one
-   direction only is there to do something to it, and no port bit is identified.
-7. **What `J7` carries.** The DSP's second serial port streams continuously to
-   that header and nothing knows what is in it. A capture, not a meter - and the
-   one item here that could produce new information about the *firmware* rather
-   than about the board.
-8. **The right edge's unread block**, `32`-`36` and `39`-`44`. By elimination it
-   is where the codec and the DAA behind the phone-line header must land. Not a
-   single probe but the place to sweep once the targeted ones are done.
+   driver comes out of it, but receive goes directly to the CPU. A part in one
+   direction only must do something to that direction, and we have not
+   identified a port bit.
+7. **What `J7` carries.** The second serial port of the DSP streams to that
+   header all the time, and nobody knows what the stream contains. This needs a
+   capture, not a meter. It is the one item here that can give new information
+   about the *firmware*, not about the board.
+8. **The unread block of the right edge**, `32`-`36` and `39`-`44`. By
+   elimination, the codec and the DAA behind the phone-line header must connect
+   there. It is not a single probe. Sweep it after the specific probes are
+   complete.
 9. **Why `AA` is on two ASIC pins**, 13 and 21, when the firmware drives one bit.
-   A continuity check between them.
-10. **What else is on CPU pin 68**, and **what level ASIC pin `52` takes while
-    the ASIC is itself in reset.** If it does not hold low, the CPU is released
-    before the ASIC is ready and the boot chain above describes the steady state
-    rather than power-on.
-11. **CPU `RESOUT` (pin 69)**, and **`INT4` (pin 66)**. Neither has been
-    followed.
-12. **`U18`'s output `3Y`** (pin 8). Three DTE inputs are accounted for, so the
-    fourth channel is spare or carries something unexpected.
-13. **Top-edge pin `72`.** Three of that edge's four unread pins went to the
-    flash, so `72` is most likely a fourth flash line. Completeness rather than a
-    question with something riding on it.
-14. **The unpopulated four-switch footprint's pads**, against the three unread
-    bottom-edge pins and against ground.
-15. **The codec's `M/S` (pin 18).** The firmware's free-run configuration implies
-    the codec is the slave and the DSP drives `SCLK`/`FS`. One meter reading.
-    `MCLK` needs no reading - it is 2.880 MHz, solved from the divider registers.
-16. **Whether `&T1` is the codec's analog loopback.** Register 5 `DS01`-`DS00` =
-    `00` is analog loopback and the bring-up writes `0505`, which is not. A
-    `0504` in the payload would tie the `AT` diagnostic to a hardware mode; its
-    absence would say the loopback is arithmetic in the DSP. No hardware needed.
-17. **DSP `A6` (61) and `A7` (62), and a second pass on `A4` (59).** The hole in
-    the address decode: the firmware writes port `0x60`, which needs `A6`, and
-    six lines with a gap at `A4` cannot produce it. At least one more address
-    line is on an unread edge.
+   Do a continuity check between them.
+10. **The other connections on CPU pin 68**, and **the level of ASIC pin `52`
+    while the ASIC itself is in reset.** If the pin does not stay low, the CPU
+    is released before the ASIC is ready. Then the boot chain above describes
+    the steady state, not power-on.
+11. **CPU `RESOUT` (pin 69)**, and **`INT4` (pin 66)**. Nobody has traced
+    either of them.
+12. **The output `3Y` of `U18`** (pin 8). We know the three other DTE inputs.
+    Thus the fourth channel is a spare or carries an unexpected signal.
+13. **Top-edge pin `72`.** Three of the four unread pins of that edge went to
+    the flash. Thus `72` is probably a fourth flash line. This is for
+    completeness. No other result depends on it.
+14. **The pads of the unpopulated four-switch footprint**, against the three
+    unread bottom-edge pins and against ground.
+15. **The `M/S` of the codec (pin 18).** The free-run configuration of the
+    firmware shows that the codec is the slave and the DSP drives `SCLK`/`FS`.
+    This is one meter reading. `MCLK` needs no reading. It is 2.880 MHz,
+    calculated from the divider registers.
+16. **Whether `&T1` is the analog loopback of the codec.** Register 5
+    `DS01`-`DS00` = `00` is analog loopback. The bring-up writes `0505`, which
+    is not analog loopback. A `0504` in the payload would connect the `AT`
+    diagnostic to a hardware mode. If there is no `0504`, the loopback is
+    arithmetic in the DSP. This needs no hardware.
+17. **DSP `A6` (61) and `A7` (62), and a second pass on `A4` (59).** This is the
+    hole in the address decode. The firmware writes port `0x60`, which needs
+    `A6`, and six lines with a gap at `A4` cannot make that address. A minimum
+    of one more address line is on an unread edge.
 18. **`GCS0 Start`/`Stop` at `0xff80`/`0xff82`, and Port 1 Control at
-    `0xff54`.** Those define the address range that selects the ASIC and which
-    `P1` pins are generic chip selects. Both are readable out of a run with no
-    hardware at all, and nothing in `courier_emu` looks at either.
-19. **The 2806's ASIC marking.** Still unread, and it is what decides whether any
-    of the CPU-side findings here transfer to the 20.16 MHz board.
+    `0xff54`.** These set the address range that selects the ASIC, and which
+    `P1` pins are generic chip selects. You can read the two from a run, with no
+    hardware. Nothing in `courier_emu` examines either of them.
+19. **The ASIC marking of the 2806.** Nobody has read it yet. It decides whether
+    the CPU-side findings here transfer to the 20.16 MHz board.
