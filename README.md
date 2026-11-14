@@ -787,10 +787,11 @@ with the code at payload `0x300`, which loads `0x0ce0` into a segment register.
 
 ## Board latches, front panel, and NVRAM
 
-Every board output goes through one read-modify-write latch driver, recovered at
-physical `0x5e2b0` (set), `0x5e2e5` (clear), `0x5e335` (read an input port), and
-`0x5e294` (read the shadow). Callers pass `AX = mask << 8 | index`; the index
-table at `0x5e31c` and the shadow bytes seeded at `0x5e26c` give:
+All board outputs go through one read-modify-write latch driver. We recovered
+it at these physical addresses: `0x5e2b0` (set), `0x5e2e5` (clear), `0x5e335`
+(read an input port) and `0x5e294` (read the shadow). Callers pass
+`AX = mask << 8 | index`. The index table at `0x5e31c` and the shadow bytes
+seeded at `0x5e26c` give this map:
 
 | index | port | shadow | contents |
 |---:|---|---|---|
@@ -799,14 +800,15 @@ table at `0x5e31c` and the shadow bytes seeded at `0x5e26c` give:
 | 2 | `0x14` | `0x064f` | indicators, board-ID strap drives |
 | 3 | `0x12` | `0x0650` | second `0x12` signal group |
 
-Both entry points special-case `AX == 0x0408` and `AX == [0x065c]`: the set path
-at `0x5e2b4` jumps into the clear body and the clear path at `0x5e2e9` jumps into
-the set body. `0x0408` is latch 0 bit `0x04`, so the **hook relay is asserted by
-driving its latch bit low**. Latch 0 bit `0x01` is raised over exactly the same
+The two entry points have special cases for `AX == 0x0408` and
+`AX == [0x065c]`. The set path at `0x5e2b4` jumps into the clear body. The
+clear path at `0x5e2e9` jumps into the set body. `0x0408` is latch 0 bit
+`0x04`. Thus, the firmware **asserts the hook relay when it drives its latch
+bit low**. The firmware sets latch 0 bit `0x01` high over exactly the same
 window (`0x5db4e` on seizure, `0x5e197` on release).
 
-Every run now reports a `panel` block with the current latch values, the asserted
-state of each named line, `off_hook`, and a change trace:
+Each run now reports a `panel` block with these items: the current latch
+values, the asserted state of each named line, `off_hook` and a change trace:
 
 ```text
 i=2191703 port=0x10 value=0xf2 pc=0x5e317 +hook-relay
@@ -815,36 +817,36 @@ i=2291289 port=0x10 value=0xf2 pc=0x5e317 -off-hook-aux
 i=2291366 port=0x10 value=0xf6 pc=0x5e2e0 -hook-relay
 ```
 
-Bits are only named where the firmware shows what the line does. Two runtime
-DTE lines are now named as well:
+The harness names a bit only where the firmware shows the function of the
+line. Two runtime DTE lines now also have names:
 
-- Latch 2 bits `0x01` and `0x80` are driven as one pair by `0x5de57`: cleared
-  together at `0x5de65`/`0x5de6b` when the `&C` setting at `[0x09e9]` is zero and
-  set together at `0x5de7d`/`0x5de83` otherwise. `&C0` is "carrier detect always
-  on", so the cleared level is the asserted one and these are the carrier-detect
-  pair. Which one is the DTE pin and which is the front-panel lamp is not
-  established, so they are reported as `carrier-detect-a` and
-  `carrier-detect-b`.
-- Input port `0x12` bit `0x40` is DTR. `0x5e375` samples it, `0x5e395` and
-  `0x5e3b5` re-poll it, the two transitions post supervisor events 6 and 7, and
-  `0x5e887` turns a low reading into event 10 when S14 bit 0 is set.
+- `0x5de57` drives latch 2 bits `0x01` and `0x80` as one pair. It clears them
+  together at `0x5de65`/`0x5de6b` when the `&C` setting at `[0x09e9]` is zero.
+  If not, it sets them together at `0x5de7d`/`0x5de83`. `&C0` is "carrier detect
+  always on". Thus, the cleared level is the asserted level, and these bits are
+  the carrier-detect pair. It is not known which bit is the DTE pin and which is
+  the front-panel lamp. Thus, the harness reports them as `carrier-detect-a`
+  and `carrier-detect-b`.
+- Input port `0x12` bit `0x40` is DTR. `0x5e375` samples it. `0x5e395` and
+  `0x5e3b5` poll it again. The two transitions post supervisor events 6 and 7.
+  When S14 bit 0 is set, `0x5e887` changes a low reading into event 10.
 
-The remaining indicator bits on `0x12` and `0x14` are reported under placeholder
-names with their driver-wrapper addresses in `courier_emu/panel.py`; mapping them
-onto front-panel legends still needs a physical reference.
+`courier_emu/panel.py` reports the remaining indicator bits on `0x12` and
+`0x14` with placeholder names and the addresses of their driver wrappers. A
+physical reference is necessary to map them to the legends of the front panel.
 
 ### Option switches
 
-The board option switches are input bits on the same latch ports, sampled with
-the same `mov ax, mask << 8 | index; call 0x2d4a` form the straps use. Six are
-read while the profile is built at `0x63d31..0x63ec2` and the carrier-detect
-switch is read separately at `0x5e3cf`. The firmware reads a **closed** switch as
-a low bit, so the sense is inverted, and each switch also records itself in the
-shadow word at `[0x0659]`.
+The option switches of the board are input bits on the same latch ports. The
+firmware samples them with the same `mov ax, mask << 8 | index; call 0x2d4a`
+form that the straps use. It reads six switches while it builds the profile at
+`0x63d31..0x63ec2`. It reads the carrier-detect switch separately at
+`0x5e3cf`. The firmware reads a **closed** switch as a low bit, so the sense is
+inverted. Each switch also records itself in the shadow word at `[0x0659]`.
 
-Every row below was confirmed by running `ATI4` with that one input bit pulled
-low and diffing the profile the firmware prints, so the effect column is
-observed rather than inferred:
+We confirmed each row below with a run of `ATI4` with only that input bit pulled
+low. Then we compared the profile that the firmware prints. Thus, the effect
+column is observed, not inferred:
 
 | switch | port/bit | closed behaviour | observed |
 |---|---|---|---|
@@ -857,18 +859,18 @@ observed rather than inferred:
 | `carrier-detect-override` | `0x14` `0x04` | `0x5e3e1` clears `[0x09e9]` | `&C0` |
 | `no-auto-answer` | `0x14` `0x10` | `0x63eb5` leaves S0 at `[0x08de]` clear | `S00=000` |
 
-Three of these names are corrections. `[0x08de]` is S0, not a profile source, so
-that switch is the auto-answer switch and its closed position is the one that
-stops the modem answering; the switches previously called `verbose` and `echo`
-both *disable* those settings when closed. Names now describe what closing the
-switch does. Mapping them onto the switch numbers printed on the case still needs
-a physical unit.
+Three of these names are corrections. `[0x08de]` is S0, not a profile source.
+Thus, that switch is the auto-answer switch, and its closed position stops the
+modem from answering. The switches that had the names `verbose` and `echo` both
+*disable* those settings when they are closed. The names now tell what the
+switch does when you close it. A physical unit is necessary to map them to the
+switch numbers on the case.
 
-`--dip` closes a switch and is repeatable; the first use replaces the default
-set, and `--dip none` leaves every switch open. `result-codes` is closed by
-default because a directly attached DTE wants result codes — with it open the
-modem is genuinely silent, which is the real behaviour and used to be papered
-over by writing `[0x092f]` directly:
+`--dip` closes a switch, and you can use it many times. The first use replaces
+the default set. `--dip none` leaves all switches open. By default,
+`result-codes` is closed, because a DTE that is directly attached needs result
+codes. When this switch is open, the modem is really silent. This is the real
+behavior. Before, the harness hid it with a direct write to `[0x092f]`:
 
 ```sh
 ./courier run main211.xmf --instructions 4000000 --at AT --dip none
@@ -876,19 +878,19 @@ over by writing `[0x092f]` directly:
 
 ### Dedicated-line operation
 
-A modem on a dedicated line has no DTE holding DTR up and no call setup to
-follow, so it needs DTR ignored and carrier detect held on. `--dip-preset
-dedicated-line` closes `result-codes`, `dtr-override`, and
-`carrier-detect-override`, and leaves `no-auto-answer` open so S0 keeps its
-flash default of 1 and the modem answers on the first ring:
+On a dedicated line, no DTE holds DTR high and no call setup occurs. Thus, the
+modem must ignore DTR and keep carrier detect on. `--dip-preset
+dedicated-line` closes `result-codes`, `dtr-override` and
+`carrier-detect-override`. It leaves `no-auto-answer` open. Thus, S0 keeps its
+flash default of 1, and the modem answers on the first ring:
 
 ```sh
 ./courier run main211.xmf --instructions 12000000 \
   --dip-preset dedicated-line --at ATI4
 ```
 
-The firmware confirms all three in its own profile dump: `&C0`, `S14=000`, and
-`S00=001`.
+The firmware confirms all three settings in its own profile dump: `&C0`,
+`S14=000` and `S00=001`.
 
 ### Ring detection
 
