@@ -827,153 +827,152 @@ changes the visible code/data mapping before it gets to the resident body.
 
 ## Emulation feasibility
 
-**Feasible, but scope-dependent.**
+**Emulation is possible, but the work depends on the scope.**
 
-- **Recovery SDL loader emulation is the best first target.** It is compact,
-  has a confirmed bootstrap at flash `0x7DBC0`, has a known command token
-  (`~X!`), and only needs serial/XMODEM, flash-write, CRC/checksum, and a small
-  80188 I/O-register model. This should be tractable with Unicorn or a small
-  8086/80188 interpreter once the bank switch after the setup writes is modeled.
-- **AT-command-surface emulation is feasible after the resident image is
-  reconstructed.** We already have the `A`/`T` input-state anchors and the result
-  code table, but the real post-`AT` dispatcher appears to run through
-  `[0x50]`/`[0x54]` scheduler slots in resident RAM or a banked overlay. The first
-  useful emulator would feed bytes through the input interrupt path, stub
-  `SS:[0xFF76]` / `SS:[0xFF78]` / `SS:[0xFF02]`, and trap output-result routines.
-- **Full modem emulation is a larger project.** That means 80188 + TMS320C5x,
+- **Emulation of the recovery SDL loader is the best first target.** It is compact,
+  it has a confirmed bootstrap at flash `0x7DBC0`, and it has a known command token
+  (`~X!`). It needs only serial/XMODEM, flash-write, CRC/checksum, and a small
+  model of the 80188 I/O registers. This is probably possible with Unicorn or a small
+  8086/80188 interpreter, after we model the bank switch that follows the setup writes.
+- **Emulation of the AT command surface is possible after we reconstruct the resident
+  image.** We already have the `A`/`T` input-state anchors and the result
+  code table. But the real dispatcher after `AT` probably goes through the
+  `[0x50]`/`[0x54]` scheduler slots in resident RAM or in a banked overlay. The first
+  useful emulator must send bytes through the input interrupt path, stub
+  `SS:[0xFF76]` / `SS:[0xFF78]` / `SS:[0xFF02]`, and trap the output-result routines.
+- **Full modem emulation is a larger project.** It includes 80188 + TMS320C5x,
   banked flash/RAM, DSP program/data overlays, serial/UART, DAA/line-side
-  hardware, and timing-sensitive mailbox behavior. It is possible, but it is not
+  hardware, and mailbox behavior that is sensitive to timing. It is possible, but it is not
   the shortest path to interop diagnostics.
 
-Practical next step for emulation: build a focused loader harness, not a full
-machine. Hook `IN`/`OUT`, log the 80188 setup writes, implement enough bank aliases
-to get past the bootstrap, and stop on serial-output calls. If that reaches the
-`SDL Xmodem file transfer` prompt, the same harness can be extended to the AT
+Recommended next step for emulation: build a loader harness with a narrow scope, not a full
+machine. Hook `IN`/`OUT`, log the 80188 setup writes, implement sufficient bank aliases
+to go past the bootstrap, and stop on serial-output calls. If the harness gets to the
+`SDL Xmodem file transfer` prompt, extend the same harness to the AT
 parser.
 
 ## Recovered C52 line-audio interface
 
-Instruction- and data-flow tracing corrects the initial on-chip-serial
-hypothesis. The modem/DAA waveform is carried by a Courier ASIC external-I/O
-frame:
+A trace of the instruction flow and the data flow corrects the initial on-chip-serial
+hypothesis. A Courier ASIC external-I/O frame carries the modem/DAA waveform:
 
-- external I/O `0x54` is read at program `0xb300` and `0xb304`, then copied to
+- the code reads external I/O `0x54` at program `0xb300` and `0xb304`. Then it copies the value to
   active input cell `0x007f`;
-- program `0x8c24` performs the matching per-frame `OUT` to external I/O
-  `0xb2e5`, sourced from output cell `0x00cb`;
-- `TRCV` reads at `0x8c1a`/`0x8c1e` are framing drains, while `DRR` is loaded
-  into `AR3` and participates in address/bookkeeping state. Neither is the
+- program `0x8c24` does the matching `OUT` for each frame to external I/O
+  `0xb2e5`. The source is output cell `0x00cb`;
+- the `TRCV` reads at `0x8c1a`/`0x8c1e` are framing drains. The code loads `DRR`
+  into `AR3`, where it is part of the address/bookkeeping state. Neither is the
   linear PCM endpoint.
 
-The resident service slot is 172 instructions / 258 modeled C52 cycles. Later
-call-overlay tracing shows this is an internal TDM slot cadence, not a direct
-25 MHz / 9.6 kHz codec period; the ASIC performs the line-rate selection. The
-emulator queues signed-16 idle input at `0x54`, captures the resident `OUT`
-words, and models the missing board dial-command handoff.
-An end-to-end `ATDT123` run emits three verified DTMF pairs through the actual
-firmware `OUT` instruction. This handoff is still a board-side model rather than
-the unrecovered internal datapump mailbox.
+The resident service slot is 172 instructions / 258 modeled C52 cycles. A later
+trace of the call overlay shows that this is an internal TDM slot cadence, not a direct
+25 MHz / 9.6 kHz codec period. The ASIC does the line-rate selection. The
+emulator puts signed-16 idle input in a queue at `0x54`, captures the resident `OUT`
+words, and models the board dial-command handoff that is not in the firmware.
+An end-to-end `ATDT123` run sends three verified DTMF pairs through the real
+firmware `OUT` instruction. This handoff is still a board-side model. It is not
+the internal datapump mailbox, which we did not recover.
 
 ### The missing C52 TDM vector now reaches downloaded firmware
 
-The C52's final `IMR=0x0080` enables interrupt index 7, whose vector slot is
-program `0x0010`. That slot is hidden in the unavailable customer mask ROM,
-which is why raising the interrupt previously executed downloaded reset code.
-The branch target can now be recovered without inventing any negotiation: low
-program `0x0228..0x024c` is a complete frame ISR ending in `RETE`. Its opening
+The final `IMR=0x0080` of the C52 enables interrupt index 7. The vector slot of this interrupt is
+program `0x0010`. That slot is in the customer mask ROM, which we do not have.
+This is the reason that the interrupt executed downloaded reset code before.
+We can now recover the branch target without an invented negotiation: low
+program `0x0228..0x024c` is a complete frame ISR that ends in `RETE`. Its first
 words (`bdff 0852 bfb0 0003 bf90 ...`) are the build-specific successor of the
-older C51 interrupt-side routine, and its frame arithmetic has the same shape.
+older C51 interrupt-side routine. Its frame arithmetic has the same shape.
 
-The core can now supply that one recovered mask-vector branch. Every completed
-C52 DAC `OUT` at `0xb2e5` raises interrupt 7; when `IMR` and `INTM` admit it,
-execution enters `0x0228`, runs the downloaded ISR, and returns to the interrupted
-sample loop. This is ASIC/frame scheduling only—the V.8 signal remains entirely
-DSP-generated. A 30,000-instruction run accepts 133 frame interrupts and records
-1,060 data writes from PCs `0x0228..0x024c`. Low-bank `OUT 0x006a` traffic is
-kept as a TDM control slot instead of being incorrectly appended to line PCM.
+The core can now supply that one recovered mask-vector branch. Each completed
+C52 DAC `OUT` at `0xb2e5` raises interrupt 7. When `IMR` and `INTM` accept it,
+execution enters `0x0228`, runs the downloaded ISR, and goes back to the interrupted
+sample loop. This is only ASIC/frame scheduling. The DSP still generates all of the V.8 signal.
+A run of 30,000 instructions accepts 133 frame interrupts and records
+1,060 data writes from PCs `0x0228..0x024c`. The core keeps low-bank `OUT 0x006a` traffic
+as a TDM control slot. It does not add it to line PCM, which would be incorrect.
 
-Driving the fuller call entry at `0x2285` with this scheduler exposed the next
-real opcode gap, `CPL dma` against `DBMR` at `0xa05a`. The documented compare is
-now implemented and the path runs on instead of aborting. It still leaves the
-native DAC essentially silent and `[0x00cc]` clear, so the next task is the
-control/state publication performed around this frame ISR—not synthesized V.8
+When we ran the fuller call entry at `0x2285` with this scheduler, we found the next
+real opcode gap: `CPL dma` against `DBMR` at `0xa05a`. We implemented the documented compare,
+and the path now continues and does not stop. But the
+native DAC is still almost silent and `[0x00cc]` is still clear. Thus the next task is the
+control/state publication that occurs around this frame ISR. It is not synthesized V.8
 menus.
 
 ## Recovered DAA originate contract
 
-Dynamic execution of `ATD1` identifies the supervisor-side dial-tone contract:
+Dynamic execution of `ATD1` identifies the dial-tone contract on the supervisor side:
 
-- the originate routine at physical `0x5db51` performs an off-hook settle wait,
-  then loads call-progress timeout `0x2580` into timer word `0x0289`;
-- it waits at `0x5dbe7` until detector byte `0x0649` reaches five;
-- timeout branches through `0x5dc4a`, sets call-progress flag `0x08d9.4`, and
-  ultimately selects result code 6, `NO DIAL TONE`;
-- qualification continues into the dialer overlay, whose hardware-timer waits
+- the originate routine at physical `0x5db51` does an off-hook settle wait.
+  Then it loads call-progress timeout `0x2580` into timer word `0x0289`;
+- it waits at `0x5dbe7` until detector byte `0x0649` becomes five;
+- a timeout branches through `0x5dc4a` and sets call-progress flag `0x08d9.4`. Then it
+  selects result code 6, `NO DIAL TONE`;
+- qualification continues into the dialer overlay. The hardware-timer waits of that overlay
   use `0x08d6` and `0x0161` for pre-dial and make/break cadence.
 
-The emulator's behavioral DAA supplies a North American 350+440 Hz dial tone
-through the confirmed C52 line ADC, debounces five 100 ms frames, publishes the
-recovered `0x0649 = 5` event, removes dial tone, and starts DTMF at the active
-C52 DAC boundary. This advances the original supervisor to `OK`; a quiet or disconnected
-modeled line retains the original `NO DIAL TONE` path. The part is now
-identified from the board and its register semantics are known (below);
-what remains unconfirmed is the mapping from those fields onto the ASIC
-ports the firmware actually reads.
+The behavioral DAA of the emulator supplies a North American 350+440 Hz dial tone
+through the confirmed C52 line ADC. It debounces five 100 ms frames, publishes the
+recovered `0x0649 = 5` event, removes the dial tone, and starts DTMF at the active
+C52 DAC boundary. With this, the original supervisor gets to `OK`. A quiet or disconnected
+modeled line keeps the original `NO DIAL TONE` path. We now know the part
+from the board, and we know its register semantics (refer to the text below).
+We did not confirm the mapping of those fields onto the ASIC
+ports that the firmware reads.
 
 ## DAA chipset identity — Si3021 + Si3014
 
-The parts are read off the board: an **Si3014** on the line side at the phone
-jack, and an **Si3021** on the digital side near the CPU. That is a Silicon
-Laboratories two-chip silicon DAA, the serial-interface member of the family
-the Si3034/35/44/56 chipsets belong to. `docs/` carries the Si3038 datasheet
+We read the part numbers on the board: an **Si3014** on the line side at the phone
+jack, and an **Si3021** on the digital side near the CPU. This is a Silicon
+Laboratories two-chip silicon DAA. It is the serial-interface member of the family
+of the Si3034/35/44/56 chipsets. `docs/` contains the Si3038 datasheet
 (the AC'97 sibling, Si3024 + Si3014), AN16 (multiple-device support for the
 serial parts), and AN19 (layout).
 
-The topology matters more than the part number. AN16 section 1.3 is
-"ASIC Master with single Si3021/56 Slave": the Si3021 sits in slave mode while
-something other than a DSP supplies SCLK and FSYNC. Every measurement here
-agrees that this is the Courier's arrangement, with the ASIC as that master:
+The topology is more important than the part number. AN16 section 1.3 is
+"ASIC Master with single Si3021/56 Slave". In that topology, the Si3021 is in slave mode, and
+a device that is not a DSP supplies SCLK and FSYNC. All measurements here
+agree that the Courier uses this topology, with the ASIC as the master:
 
-- the C52 configures its own serial port as a **slave** and then switches it
-  off (below), so it never drives the bus;
-- the C52's entire view of the outside world is four ASIC external-I/O ports;
-- AN16 figure 1 routes the DAA's `FC/RGDT` ring-detect output to the DSP's
-  `INT0` pin, while the recovered ring detector on this board is an 80186
-  input latch bit (port `0x14`, bit `0x02`) — a board-level indication, not
-  the DSP pin, which is what an interposed ASIC implies.
+- the C52 configures its serial port as a **slave** and then disables
+  it (refer to the text below). Thus it never drives the bus;
+- the C52 has access to the outside world only through four ASIC external-I/O ports;
+- AN16 figure 1 connects the `FC/RGDT` ring-detect output of the DAA to the
+  `INT0` pin of the DSP. But the recovered ring detector on this board is an 80186
+  input latch bit (port `0x14`, bit `0x02`). This is a board-level indication, not
+  the DSP pin. This agrees with an ASIC between the two.
 
-So a faithful DAA model does not answer on the C52 serial port. It has to
-answer where the firmware actually reads, which is the ASIC boundary:
+Thus an accurate DAA model does not answer on the C52 serial port. It must
+answer where the firmware reads, which is the ASIC boundary:
 
 | surface | rate | state today |
 |---|---|---|
 | C52 external I/O `0x50` | 201,524 reads in a 30 M-instruction `ATDT` run, once per service frame, program `0x8c1f` | the host mailbox window's low word |
-| C52 external I/O `0x54` | twice per frame, program `0xb300`/`0xb304` — the line ADC | fed by the behavioral DAA |
+| C52 external I/O `0x54` | two times for each frame, program `0xb300`/`0xb304`: the line ADC | the behavioral DAA supplies it |
 | C52 external I/O `0x56`/`0x57` | one write each at program `0x2b`/`0x02`, both `0xffff` | unmodelled |
-| 80186 ports `0x40`..`0x4e` | eight latches, ~7,550 writes each per `ATDT` run, never read | the host mailbox window |
+| 80186 ports `0x40`..`0x4e` | eight latches, about 7,550 writes each for each `ATDT` run, never read | the host mailbox window |
 
-Port `0x50` was listed here as an open question — read once per frame and
-floating high because nothing drove it. It is not floating. The harness
-publishes the eight-byte host window into C52 I/O `0x50`..`0x53`, and both
-mailbox commands of an `ATDT` run carry `ffffffffffffffff`, so the `0xffff` the
-program reads is a value the host wrote. There is no spare port on the C52
-side: its only external reads are this window and the line ADC.
+Before, this document listed port `0x50` as an open question. The code read it once for each frame,
+and it floated high because nothing drove it. It does not float. The harness
+publishes the eight-byte host window into C52 I/O `0x50`..`0x53`. Both
+mailbox commands of an `ATDT` run contain `ffffffffffffffff`. Thus the `0xffff` that the
+program reads is a value that the host wrote. There is no spare port on the C52
+side. Its only external reads are this window and the line ADC.
 
-The 80186 side has no register read path either. Ports `0x40`..`0x4e` take
-~7,550 writes each in the same run and **zero reads**, so the supervisor cannot
-poll a status byte out of the DAA even in principle.
+The 80186 side also has no register read path. In the same run, ports `0x40`..`0x4e` get
+about 7,550 writes each and **zero reads**. Thus, in principle, the supervisor cannot
+poll a status byte from the DAA.
 
-What it does have is the mailbox, and one of its messages is the DAA's
-identity. See "The DAA identity arrives as mailbox tag 0x7b" below: the
-supervisor is not blind to the part, it is told about it once.
+But the supervisor has the mailbox, and one of the mailbox messages is the
+identity of the DAA. Refer to "The DAA identity arrives as mailbox tag 0x7b" below. The
+supervisor gets information about the part one time.
 
 ### What the datasheet says the status should carry
 
-The Si3038 register map is AC'97-addressed and the serial parts number their
-registers differently, so these are the *fields* rather than addresses. They
-line up with what this project listed as unmodelled — ring qualification,
-loop-current loss, and billing tone — and are what `courier_emu/codec.py` now
-carries:
+The Si3038 register map uses AC'97 addresses, and the serial parts use different register
+numbers. Thus these are the *fields*, not addresses. They
+agree with the items that this project listed as unmodelled: ring qualification,
+loop-current loss, and billing tone. `courier_emu/codec.py` now
+contains them:
 
 | field | register | meaning |
 |---|---|---|
@@ -990,10 +989,10 @@ carries:
 
 ### The bring-up nobody on this board performs
 
-The datasheet's initialization procedure is a sequence with a handshake in the
-middle of it:
+The initialization procedure of the datasheet is a sequence with a handshake in the
+middle:
 
-1. write any value to `3Ch` — a register reset;
+1. write a value to `3Ch` (a register reset);
 2. program the sample rate in `40h`/`42h`;
 3. write `0x0000` to `3Eh` to power the part up;
 4. **poll `3Eh[7:0]`** until it reads `0x0f` (line 1) or `0x33` (line 2);
@@ -1001,54 +1000,54 @@ middle of it:
 6. program the DAC/ADC levels in `46h`/`48h`;
 7. program the country-specific line parameters in `5Ch` and `62h`.
 
-Step 4 is the discriminator. It requires a controller that can *read* the
-codec, and neither processor on this board has one: the 80186 only writes
-`0x40`..`0x4e`, and the C52's two external reads are the host window and the
-line ADC. Whatever runs this sequence is on the far side of the ASIC, which is
-exactly the arrangement AN16 section 1.3 describes and which the ring detector
-landing on an 80186 latch bit already implied.
+Step 4 is the discriminator. It must have a controller that can *read* the
+codec, and neither processor on this board has one. The 80186 only writes
+`0x40`..`0x4e`, and the two external reads of the C52 are the host window and the
+line ADC. Thus the device that runs this sequence is on the far side of the ASIC. This is
+exactly the topology of AN16 section 1.3. The ring detector
+on an 80186 latch bit already showed this.
 
-`courier_emu/codec.py` models that. `SiliconDaa` is the register file — reset
-defaults, the PLL's supported rate table, the readiness byte recomputed rather
-than latched, and register `5Eh` assembled from the line rather than stored —
-and `CodecBringUp` is the ASIC-side master that runs the seven steps against
-it. The ordering constraints are the model's, not decoration:
+`courier_emu/codec.py` models this topology. `SiliconDaa` is the register file. It contains the reset
+defaults and the supported rate table of the PLL. It calculates the readiness byte again each time and does not
+latch it. It assembles register `5Eh` from the line and does not store it.
+`CodecBringUp` is the ASIC-side master that runs the seven steps on
+it. The model has real ordering constraints:
 
-- with the PLL left at zero the readiness poll never completes, because no
-  line-side communication happens at all, which is why step 2 precedes step 3;
-- the reference and GPIO come up a frame before the converters, so step 4's
-  poll reads `0x03` before it reads `0x0f`;
-- reaching a line-side register before the ISOcap barrier is up latches `CLE`
-  and drops the write, so an out-of-order bring-up leaves a trace.
+- if the PLL stays at zero, the readiness poll never completes, because no
+  line-side communication occurs. This is the reason that step 2 comes before step 3;
+- the reference and GPIO start one frame before the converters. Thus the poll of step 4
+  reads `0x03` before it reads `0x0f`;
+- an access to a line-side register before the ISOcap barrier is up latches `CLE`
+  and discards the write. Thus a bring-up in the incorrect order leaves a trace.
 
-The register addresses are the Si3038's. The board's Si3021 reaches the same
-line-side fields through its own control frames and numbers them differently,
-so an address in that module means "the register carrying this field", never a
-value the Courier's firmware emits.
+The register addresses are those of the Si3038. The Si3021 on the board gets access to the same
+line-side fields through its own control frames, and it uses different numbers for them.
+Thus an address in that module means "the register that contains this field". It is never a
+value that the Courier firmware sends.
 
-Since no register read path exists, the model is driven rather than polled: the
-bridge hands it one ASIC service frame per 100 ms, feeds it hook state and line
-state from the behavioral DAA and the ring cadence from the ring source, and
-reports it under `dsp_bridge.codec`. It is where loop-current sense, ring
-qualification, frame lock, and the country settings now live; a read path to
-those fields, if one is ever found, plugs into the same object.
+There is no register read path. Thus the bridge drives the model, and nothing polls it. The
+bridge gives it one ASIC service frame for each 100 ms. It supplies the hook state and the line
+state from the behavioral DAA, and the ring cadence from the ring source. It
+reports the model under `dsp_bridge.codec`. The model now contains loop-current sense, ring
+qualification, frame lock, and the country settings. If we find a read path to
+those fields, it will connect to the same object.
 
 ### The DAA identity arrives as mailbox tag 0x7b
 
-> **This section is `main211.xmf`, not `SV25.XMD`. Corrected 2026-09-19.**
-> Every address here is a physical address in the Courier 3453B v2.1.1 supervisor (analog: the image contains no "ISDN" string),
-> which loads at **file + `0x40000`** - `0x5c6b6` is file `0x1c6b6`, `0x6ad5b`
-> is file `0x2ad5b`, `0x82b64` is file `0x42b64`. All of them are **zero** in
-> `SV25.XMD`, which contains no reference to `[0x281]`, `[0x283]`, `[0x285]`
-> or `[0x287]` in any addressing form. The section is right about the image it
-> was read from and mis-filed under this document's header; see
+> **This section is about `main211.xmf`, not `SV25.XMD`. Corrected on 2026-09-19.**
+> Each address here is a physical address in the Courier 3453B v2.1.1 supervisor (analog: the image contains no "ISDN" string).
+> This image loads at **file + `0x40000`** - `0x5c6b6` is file `0x1c6b6`, `0x6ad5b`
+> is file `0x2ad5b`, `0x82b64` is file `0x42b64`. All of these locations are **zero** in
+> `SV25.XMD`. `SV25.XMD` contains no reference to `[0x281]`, `[0x283]`, `[0x285]`
+> or `[0x287]` in any addressing form. The section is correct for the image that we
+> read it from, but it is in the incorrect document. Refer to
 > [the RAM-map collision](docs/datapump-dispatch-gate.md).
 
 
-One thing the supervisor *is* told about the DAA is its revision, and `ATI7`
+The supervisor *does* get one item of information about the DAA: its revision. `ATI7`
 prints it. The receive handler at `0x6ad5b` reads a tag from the mailbox
-header ports `0x58`/`0x5a`, rejects anything at or above `0x80`, and dispatches
-four DAA tags, each taking its data word from `0x5e`/`0x5c`:
+header ports `0x58`/`0x5a`. It rejects all values at or above `0x80`. It dispatches
+four DAA tags, and each tag gets its data word from `0x5e`/`0x5c`:
 
 | tag | destination | carries | requested by |
 |---|---|---|---|
@@ -1057,23 +1056,23 @@ four DAA tags, each taking its data word from `0x5e`/`0x5c`:
 | `0x7d` | `[0x27f]` | unidentified | unidentified |
 | `0x7e` | `[0x281]` | a line-side register read | `0x8000` |
 
-`0x7e` is the one that names itself. An AT diagnostic at `0x82b64` matches the
-literal `"SI"`: with no argument it sends request `0x8000`, waits, and prints
-`[0x281]` under `"\r\nta_report_si_read="`; with a four-hex-digit argument it
-parses that into `BX` and sends command `0x0084`, the register **write**. The
-consumer at `0x5e576` then tests only bits 0 and 1 of `[0x281]`, each against
-its own four-hit debounce in `[0x647]`/`[0x648]`, and clears the word — which
-is `RDTN` and `RDTP`, the two ring-detect half-cycles of register `5Eh`,
-reported separately exactly as the datasheet describes. Both the read and the
-write are gated on `test byte [0x287], 0x10`, so the line-side revision decides
-whether the path is live at all.
+The code itself shows the function of `0x7e`. An AT diagnostic at `0x82b64` matches the
+literal `"SI"`. With no argument, it sends request `0x8000`, waits, and prints
+`[0x281]` under `"\r\nta_report_si_read="`. With an argument of four hex digits, it
+parses the argument into `BX` and sends command `0x0084`, the register **write**. Then the
+consumer at `0x5e576` tests only bits 0 and 1 of `[0x281]`. Each bit has
+its own four-hit debounce in `[0x647]`/`[0x648]`. Then the consumer clears the word. These bits
+are `RDTN` and `RDTP`, the two ring-detect half-cycles of register `5Eh`.
+They are reported separately, as the datasheet describes. `test byte [0x287], 0x10` gates both the read and the
+write. Thus the line-side revision decides
+if the path is active.
 
-The supervisor already issues `0x0084` writes during an ordinary boot —
-`0084:1468` and `0084:1408`, plus `0084:0100` on a call — so this is not a
-diagnostic-only path. None of it runs in the harness today; see "The mask is
-set at boot and never cleared" below for why.
+The supervisor already sends `0x0084` writes during a normal boot:
+`0084:1468` and `0084:1408`, and `0084:0100` on a call. Thus this path is not only for
+diagnostics. None of it runs in the harness now. For the reason, refer to "The mask is
+set at boot and never cleared" below.
 
-Three sites read `[0x287]` back:
+Three sites read `[0x287]`:
 
 ```
 0x77edb   mov ax, [0x287]          ; ATI7's "DAA rev", printed as four hex digits
@@ -1084,59 +1083,59 @@ Three sites read `[0x287]` back:
 0x836a2   jne  ...                 ; 4 prints "00345302", anything else "XX345302"
 ```
 
-So the firmware carries its own verdict on this word: zero is a failed DAA, and
-4 is the revision this build expects, because that is the value that turns the
-product ID from the placeholder `XX345302` into `00345302`. Nothing in the
-harness produced the message, so every run reported a DAA the firmware itself
+Thus the firmware has its own decision about this word. Zero is a failed DAA, and
+4 is the revision that this build expects. The reason is that 4 is the value that changes the
+product ID from the placeholder `XX345302` to `00345302`. Nothing in the
+harness sent the message. Thus each run reported a DAA that the firmware
 considered invalid:
 
 ```
 Product ID             XX345302        DAA rev  0000
 ```
 
-The bridge now queues tag `0x7b` carrying the modelled part's revision, and it
-does so on the **first** DSP download rather than the second.
-The coprocessor-ready pair `0x02`/`0x03` belongs to the dial/answer boundary; a
-part identifies itself at power up, before any call, and the identity has to be
-in place before the first `ATI7`. That run reports:
+The bridge now puts tag `0x7b` in the queue with the revision of the modelled part. It
+does this on the **first** DSP download, not the second.
+The coprocessor-ready pair `0x02`/`0x03` is part of the dial/answer boundary. A
+part identifies itself at power-up, before a call. The identity must be
+available before the first `ATI7`. That run reports:
 
 ```
 Product ID             00345302        DAA rev  0004
 ```
 
-The revision itself is still a guess. 4 is read out of the product-ID branch,
-not off a part, and it does **not** have bit `0x10` set — so the value that
-gives the tidier product ID is also the one that leaves the `si` register path
-switched off. Register `5Ah` in the datasheet packs two chips' revisions into
+The revision is still a guess. We got 4 from the product-ID branch,
+not from a part. It does **not** have bit `0x10` set. Thus the value that
+gives the better product ID is also the value that keeps the `si` register path
+disabled. In the datasheet, register `5Ah` contains the revisions of two chips in
 one word (`REVA[3:0]` system side, `REVB[3:0]` line side, `CBID` at bit 8, with
-`0010` = Rev B and `0011` = Rev C), which reads the two firmware tests as two
-different fields rather than a contradiction: `== 4` matches the whole word,
-`& 0x10` is `REVB` bit 0, separating a Rev C line side from a Rev B one. If
+`0010` = Rev B and `0011` = Rev C). With this register, the two firmware tests are two
+different fields, not a contradiction. `== 4` matches the full word.
+`& 0x10` is `REVB` bit 0, which separates a Rev C line side from a Rev B line side. If
 `[0x287]` is that register, then a real board with a Rev C line side prints
-`XX345302`, and the placeholder is correct. Settling it needs the `si` path to
-run, which it cannot yet.
+`XX345302`, and the placeholder is correct. To find the answer, the `si` path must
+run, and it cannot run yet.
 
-> **Measured 2026-10-03 on a real 3453C** (stock 2.3.33 / DSP 2.1.41, CTR21):
+> **Measured on 2026-10-03 on a real 3453C** (stock 2.3.33 / DSP 2.1.41, CTR21):
 > `ATI7` prints `DAA rev 0013` and `ATGR0000:0280` shows `[0x287]` = `0x0013`.
-> Bit `0x10` is set, so on hardware the `si` path is live. 2.3.33 has the same
-> `== 4` test (`0x830e2`, strings `00345303`/`XX345303`); `0x13` takes the `XX`
-> branch, and the board prints `99345303`, so the `XX` is a placeholder that
-> later code fills in (with `99` on this CTR21 unit), not a failure marker.
-> Against the board's own part (`docs/SI3034.PDF`, Si3021 + Si3014), the `0x0084`
-> data word is the Si3021 control word itself (`D13` = read, `D12:8` = register),
-> so `0084:3100` is a read of register 17, not a write. On the Si3021 the ring
-> bits are register 5 bits 6/5, not bits 0/1, so `[0x281]` is not a raw register.
-> Decode in `artifacts/3453c-board-identity-20261003/atg-monitor-2.3.33.md`.
-> See `artifacts/3453c-board-identity-20261003/`.
+> Bit `0x10` is set. Thus on the hardware, the `si` path is active. 2.3.33 has the same
+> `== 4` test (`0x830e2`, strings `00345303`/`XX345303`). `0x13` goes to the `XX`
+> branch, and the board prints `99345303`. Thus `XX` is a placeholder that
+> later code fills (with `99` on this CTR21 unit). It is not a failure marker.
+> We compared with the part on the board (`docs/SI3034.PDF`, Si3021 + Si3014). The `0x0084`
+> data word is the Si3021 control word (`D13` = read, `D12:8` = register).
+> Thus `0084:3100` is a read of register 17, not a write. On the Si3021, the ring
+> bits are register 5 bits 6/5, not bits 0/1. Thus `[0x281]` is not a raw register.
+> The decode is in `artifacts/3453c-board-identity-20261003/atg-monitor-2.3.33.md`.
+> Refer to `artifacts/3453c-board-identity-20261003/`.
 
-`0x7d` is the one tag with no consumer found anywhere. Its only other
-appearance is a printer at `0x794de` that renders `[0x283]` `:` `[0x27f]` `:`
-byte `[0x64c]` as a colon triple; injecting marker values for all three tags
-and confirming delivery in the trace surfaced them on no reachable page.
+`0x7d` is the only tag for which we found no consumer. The only other
+location that uses it is a printer at `0x794de`. The printer shows `[0x283]` `:` `[0x27f]` `:`
+byte `[0x64c]` as a colon triple. We injected marker values for all three tags
+and confirmed delivery in the trace. The values did not occur on a page that we can get to.
 
 ### The C52 serial port is configured once and disabled
 
-Tracing the C52's own writes to its memory-mapped registers gives the whole
+A trace of the writes of the C52 to its memory-mapped registers shows the full
 serial life of the program:
 
 ```
@@ -1149,49 +1148,49 @@ program 0x00cb   IMR <- 0x002a    unmask INT2, TINT and XINT
 program 0x8189   SPC <- 0x0000    shut the port down
 ```
 
-`SPC = 0x40c8` is the slave configuration AN16 describes, and priming `DXR`
-twice with `XINT` unmasked is an interrupt-driven transmitter. The shutdown at
-`0x8189` is reached by an unconditional jump out of the boot block into the
-high bank — there is no condition to satisfy — and the enable word `0x40c8`
-occurs exactly **once** in the whole DSP image. Across every reachable path,
+`SPC = 0x40c8` is the slave configuration of AN16. Two primes of `DXR`
+with `XINT` unmasked show an interrupt-driven transmitter. An unconditional jump from the boot block into the
+high bank goes to the shutdown at
+`0x8189`. There is no condition. The enable word `0x40c8`
+occurs exactly **once** in the full DSP image. On all paths that the code can get to,
 including a full `ATDT123` on a dial-tone line, `SPC` stays zero and `DXR`
-keeps its three boot writes while `DRR` is read tens of thousands of times.
+keeps its three boot writes. During this time, the code reads `DRR` tens of thousands of times.
 
-This program therefore never opens the serial link. That is not the datapump
-mailbox gating it; nothing in the reachable image turns it back on.
+Thus this program never opens the serial link. The datapump
+mailbox does not gate it. No code that can run in the image enables it again.
 
 ## SIP line adapter
 
-The behavioral DAA can now terminate on a minimal SIP/SDP/RTP client. The
-recovered `ATD` number is used to form an INVITE URI only after the firmware's
-`0x0649 = 5` dial-tone transition. SIP trying/ringing/connected/failed states
-update the DAA operation state, while PCMU RTP is converted between 8 kHz and
-the ASIC's confirmed 9.6 kHz line cadence. The current DTMF assist is inserted
-at the recovered C52 line-output write and is carried in-band rather than sent
-as SIP events; the datapump itself has not yet accepted the originate command.
+The behavioral DAA can now terminate on a minimal SIP/SDP/RTP client. The adapter
+uses the recovered `ATD` number to make an INVITE URI. It does this only after the
+`0x0649 = 5` dial-tone transition of the firmware. The SIP trying/ringing/connected/failed states
+update the DAA operation state. PCMU RTP is converted between 8 kHz and
+the confirmed 9.6 kHz line cadence of the ASIC. The current DTMF assist goes in
+at the recovered C52 line-output write. It is carried in-band. It is not sent
+as SIP events. The datapump did not accept the originate command yet.
 
-A loopback PBX validation of `ATD123` produced `INVITE sip:123@127.0.0.1`,
+A loopback PBX validation of `ATD123` gave `INVITE sip:123@127.0.0.1`,
 completed `200 OK`/ACK, sent 250 RTP packets, and decoded the first packet burst
-as 697+1209 Hz. This proves firmware command → DAA qualification → SIP signaling
-→ C52 audio → PCMU RTP. A subsequent live 6000-to-7800 call received `200 OK`
-and exchanged 1,152 inbound / 507 outbound RTP packets, but the firmware still
+as 697+1209 Hz. This proves the chain firmware command → DAA qualification → SIP signaling
+→ C52 audio → PCMU RTP. A subsequent live call from 6000 to 7800 received `200 OK`
+and exchanged 1,152 inbound / 507 outbound RTP packets. But the firmware still
 returned `NO CARRIER`.
 
-The failure is now localized below SIP. During that call the supervisor sent
-30 two-word runtime messages through ports `0x58..0x5e`, and none of them
-reached the datapump. Incoming supervisor event tags `0x02`, `0x03`, `0x09`,
-and `0x4d` execute their recovered handlers, yet cannot compensate.
+We now know that the failure is below SIP. During that call, the supervisor sent
+30 two-word runtime messages through ports `0x58..0x5e`. None of them
+got to the datapump. The incoming supervisor event tags `0x02`, `0x03`, `0x09`,
+and `0x4d` execute their recovered handlers, but this does not correct the problem.
 
-An earlier revision of this section called the read at C52 program `0x8c1f` the
-datapump's command poll and named "recover the `0x58..0x5e` to C52 `0x50/0x51`
-valid/ack timing" as the next required step. That lead is closed; see below.
+An earlier revision of this section said that the read at C52 program `0x8c1f` was the
+command poll of the datapump. It gave "recover the `0x58..0x5e` to C52 `0x50/0x51`
+valid/ack timing" as the next necessary step. That lead is closed. Refer to the text below.
 
 ### The window word `0x50` is not a command port
 
-There is no `IN` for port `0x50` anywhere in the C52 image. Data addresses
-`0x50..0x5f` are reserved on a C5x and this core decodes them as external I/O,
-which is what makes them appear in the I/O event log at all. The site is a
-single instruction:
+The C52 image has no `IN` for port `0x50`. On a C5x, data addresses
+`0x50..0x5f` are reserved. This core decodes them as external I/O.
+This is the only reason that they occur in the I/O event log. The site is one
+instruction:
 
 ```
 8c19  0100  LAR   AR1, @00
@@ -1205,23 +1204,23 @@ single instruction:
 8c3e  7980  B     0xb2e9
 ```
 
-`BIT` writes only `TC`, and nothing between `0x8c1f` and the `CLRC TC` at
-`0x8c3d` reads it. The word is read once per sample and thrown away. Three
-checks against the running core agree:
+`BIT` writes only `TC`. No instruction between `0x8c1f` and the `CLRC TC` at
+`0x8c3d` reads it. The code reads the word once for each sample and discards it. Three
+checks on the running core agree:
 
 | check | result |
 |---|---|
-| each of the 12 header values the supervisor sends, placed at window words `0x50`/`0x51`, over a 3.4 M-instruction run | byte-identical in every counter, including the stop PC |
-| `IMR` after boot | `0x0000` — no host interrupt can be taken |
-| all 2,274 runtime messages of a run applied as `host_write(header, data)` into C52 data space | no change |
+| each of the 12 header values that the supervisor sends, put at window words `0x50`/`0x51`, over a run of 3.4 M instructions | byte-identical in each counter, including the stop PC |
+| `IMR` after boot | `0x0000`. The core cannot accept a host interrupt |
+| all 2,274 runtime messages of a run, applied as `host_write(header, data)` into C52 data space | no change |
 
-So the resident program has no host-to-datapump command path of any shape.
+Thus the resident program has no host-to-datapump command path of any type.
 
-A differential `AT`/`ATDT123` capture now narrows the board-side protocol much
-further.  The bridge reports a complete histogram plus the first 80186
-instruction and PC for each distinct message.  Plain command mode sends only
-12 words.  Dialling adds a one-time `0082:0060` transition and then repeatedly
-queues this 12-message block:
+A differential `AT`/`ATDT123` capture now gives much more information about the board-side protocol.
+The bridge reports a complete histogram, and the first 80186
+instruction and PC for each different message.  Plain command mode sends only
+12 words.  Dialling adds a one-time `0082:0060` transition. Then it puts
+this block of 12 messages in the queue again and again:
 
 ```
 0082:0020  0082:0000  0015:0000  001f:0000
@@ -1229,17 +1228,17 @@ queues this 12-message block:
 001a:3000  001b:0c08  0013:0001  001f:8000
 ```
 
-The apparent send PCs identify two real transmit paths rather than C52 data
-writes.  `0x6ad47..0x6ad5f` emits the single pending word at `[0x02ca]`, while
-`0x6ae81..0x6aec3` walks a circular queue at `[0x02e0..0x030f]` using pointer
-`[0x02dc]`.  Thus the values below `0x80` are board/ASIC register commands;
-treating their headers as C52 data addresses was categorically the wrong
-model.  `0082:0060` is the first originate-mode transition.
+The apparent send PCs identify two real transmit paths, not C52 data
+writes.  `0x6ad47..0x6ad5f` sends the single pending word at `[0x02ca]`.
+`0x6ae81..0x6aec3` reads a circular queue at `[0x02e0..0x030f]` with pointer
+`[0x02dc]`.  Thus the values below `0x80` are board/ASIC register commands.
+The model that used their headers as C52 data addresses was completely
+incorrect.  `0082:0060` is the first originate-mode transition.
 
-The producer is now recovered too.  The generic immediate sender is
-`0x5d76b`; if `[0x02cb]` is free it stores `AX` at `[0x02ca]`, otherwise it
-queues it.  The call at `0x5dc03`, immediately after the five-hit detector wait
-succeeds, enters ASIC routine `0x6ae51`:
+We also recovered the producer.  The generic immediate sender is
+`0x5d76b`. If `[0x02cb]` is free, it stores `AX` at `[0x02ca]`. If not, it
+puts `AX` in the queue.  The call at `0x5dc03` occurs immediately after the five-hit detector wait
+is successful. It enters ASIC routine `0x6ae51`:
 
 ```
 6ae51  mov ah,82h
@@ -1254,21 +1253,21 @@ succeeds, enters ASIC routine `0x6ae51`:
 6ae6b  call update-shadow
 ```
 
-The later `82:20` and `82:00` messages are therefore successive writes to the
-same ASIC control register, not arbitrary event tags.  The neighbouring init
-routine at `0x6adff` similarly publishes shadow bytes `[0x1faa..0x1fac]` as
-registers `0x7d`, `0x82`, and `0x83`, followed by two `0x84` words.  This pins
-`[0x1fab]` as register 0x82's software shadow and the call-progress routine at
-`0x5dbb0..0x5dc63` as the source of its originate transition.
+Thus the later `82:20` and `82:00` messages are successive writes to the
+same ASIC control register. They are not random event tags.  The adjacent init
+routine at `0x6adff` also publishes shadow bytes `[0x1faa..0x1fac]` as
+registers `0x7d`, `0x82`, and `0x83`, and then two `0x84` words.  This shows that
+`[0x1fab]` is the software shadow of register 0x82. It also shows that the call-progress routine at
+`0x5dbb0..0x5dc63` is the source of its originate transition.
 
-An `ATA` differential run takes the same `82:60 -> 82:20 -> 82:00` path, so
-these bits select common line-operation phases rather than originate versus
-answer modulation.  The emulator now exposes the shadowed block under
-`dsp_bridge.asic`: register values and write counts, decoded register `0x82`
-phase, and register `0x83` ring-indicate bit.
+An `ATA` differential run uses the same `82:60 -> 82:20 -> 82:00` path. Thus
+these bits select common line-operation phases. They do not select originate or
+answer modulation.  The emulator now shows the shadowed block under
+`dsp_bridge.asic`: register values and write counts, the decoded phase of register `0x82`,
+and the ring-indicate bit of register `0x83`.
 
-The read/modify/write masks give the high bits of `0x82` useful individual
-semantics, rather than merely four opaque states:
+The read/modify/write masks give a useful individual meaning to each high bit of `0x82`.
+They are not only four opaque states:
 
 | bit | observed sequencing | inferred ASIC output |
 |---:|---|---|
@@ -1277,30 +1276,30 @@ semantics, rather than merely four opaque states:
 | `0x20` | present in `a0`, `60`, and `20`; cleared on shutdown | line/datapump enable |
 | `0x04` | explicitly cleared by both transition masks | unknown interlock |
 
-That makes the sequence `a0 -> 60 -> 20 -> 00` read as **engine held while
-enabled -> release hold plus start strobe -> enabled/run -> disabled**.  This
-is the first interpretation that explains every mask operation, the pulse-like
-lifetime of bit 6, and the common originate/answer path.  The emulator reports
+Thus the sequence `a0 -> 60 -> 20 -> 00` means **engine held while
+enabled -> release hold and start strobe -> enabled/run -> disabled**.  This
+is the first interpretation that explains each mask operation, the short pulse
+of bit 6, and the common originate/answer path.  The emulator reports
 these as `engine_hold`, `start_strobe`, and `line_enable`.
 
-The supervisor code rules out two tempting interpretations.  C52 reset is a
-separate path at `0x69bf1..0x69c84`: it manipulates 80186 peripheral register
-`0xff56`, floats ports `0x1c/0x1e`, waits for both words to read `0xffff`, and
+The supervisor code excludes two possible interpretations.  C52 reset is a
+separate path at `0x69bf1..0x69c84`. It changes 80186 peripheral register
+`0xff56`, floats ports `0x1c/0x1e`, waits until both words read `0xffff`, and
 then enters downloader `0x69cd2..0x69deb`.  Dynamic `ATD` and `ATA` runs execute
-that bootstrap once only; the `0x82` transition does not reset or redownload
-the C52.  Program loading/bank placement is likewise performed by the explicit
-eight-byte downloader using `[0x1fb2]/[0x1fb3]` and ports `0x40..0x4e`; no
-`0x82` shadow value is consulted anywhere in that path.
+that bootstrap only one time. The `0x82` transition does not reset the C52 or download it again.
+Also, the explicit eight-byte downloader does the program loading/bank placement with
+`[0x1fb2]/[0x1fb3]` and ports `0x40..0x4e`. That path does not read a
+`0x82` shadow value.
 
-Consequently `0x82` is not the C52 reset control and there is no code evidence
-that it selects a downloaded program bank.  Its placement after line-detector
-qualification, identical use by `ATD` and `ATA`, and shutdown at `0x5e5e8`
-identify it more narrowly as the ASIC's **line/call engine enable and start
-strobe**.  The initial `0xa0` is the engine's held/initialised state, not the
-C52's reset state.  The code and a feature differential settle an important naming point: there is
-no separate supervisor-side "enter V.92" command.  Two otherwise identical
-`ATDT123` runs, one with the full `hst,fax,terbo,v34,v90` parameter sector and
-one with only `hst`, emit the same call-engine stream value-for-value:
+Thus `0x82` is not the C52 reset control. Also, there is no code evidence
+that it selects a downloaded program bank.  It comes after line-detector
+qualification, `ATD` and `ATA` use it identically, and it is shut down at `0x5e5e8`.
+These facts identify it more precisely as the **line/call engine enable and start
+strobe** of the ASIC.  The initial `0xa0` is the held/initialised state of the engine, not the
+reset state of the C52.  The code and a feature differential answer an important naming question. There is
+no separate "enter V.92" command on the supervisor side.  We did two `ATDT123` runs that were
+identical except for one item. One run had the full `hst,fax,terbo,v34,v90` parameter sector, and
+the other had only `hst`. Both runs sent the same call-engine stream, value for value:
 
 ```
 82:60 -> 82:20 -> 82:00
@@ -1308,25 +1307,25 @@ one with only `hst`, emit the same call-engine stream value-for-value:
 1a:3000, 1b:0c08, 13:01, 1f:8000
 ```
 
-The V.90 feature bit changes product reporting and capability policy, while
-V.92 is printed unconditionally by this build; neither changes the ASIC call
-start.  The textual V.92 references elsewhere in the supervisor are reporting,
-configuration, and post-call diagnostics.  None feeds a distinct value into
+The V.90 feature bit changes product reporting and capability policy. This build
+always prints V.92. Neither changes the ASIC call
+start.  The other V.92 text references in the supervisor are for reporting,
+configuration, and post-call diagnostics.  None of them sends a different value into
 `[0x1fab]`, the queue helper, or the C52 downloader.
 
-Therefore what the supervisor code activates is the **generic automatic
-negotiation datapump**, at `0x5dc03 -> 0x6ae51 -> 82:60`.  V.92 must be selected
-later by that datapump from the V.8/V.8bis and training exchange with the far
-end, falling back through V.90/V.34 as appropriate.  There is no V.92-only
-entry point to call from the 80186.  The missing implementation is the ASIC
-consumer of the repeated `0x13/0x15/0x16/0x19/0x1a/0x1b/0x1f` block and the
-resulting DSP-side start/frame state; recovering that generic consumer is what
-will make the existing V.92 code reachable.
+Thus the supervisor code activates the **generic automatic
+negotiation datapump**, at `0x5dc03 -> 0x6ae51 -> 82:60`.  Later, that datapump must select
+V.92 from the V.8/V.8bis and training exchange with the far
+end. If necessary, it falls back to V.90/V.34.  The 80186 has no entry point
+that is only for V.92.  The missing implementation is the ASIC
+consumer of the repeated `0x13/0x15/0x16/0x19/0x1a/0x1b/0x1f` block, and the
+DSP-side start/frame state that it causes. When we recover that generic consumer,
+the code can get to the existing V.92 code.
 
 ### Where the command stream is consumed
 
-This can be bounded completely from the executable code even though the
-consumer's implementation is not present in the XMF.  The 80186 producer ends
+The executable code shows the full limits of this, although
+the implementation of the consumer is not in the XMF.  The 80186 producer ends
 at four byte-wide output latches:
 
 ```
