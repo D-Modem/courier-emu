@@ -734,86 +734,90 @@ supervisor mode/config command
 ```
 ### Decompiling the `c90e` / `c922` script bodies
 
-Loading the Quad's `c800` mode image at its real DSP destination removes an
-important ambiguity: these regions are not opaque encoded bit fields. They
-are descriptor streams containing native callback addresses interleaved with
-counts and parameters. The conspicuous callback words include resident
-`c434`, `c4a6` and `c423`, plus mode-local `c9ec`, `ca00`, `c52e` and `cba0`.
-Following those addresses produces ordinary C5x code for filter setup, mapper
-setup, table construction and terminal mailbox notification.
+We loaded the `c800` mode image of the Quad at its real DSP destination.
+This removes an important ambiguity: these regions are not opaque encoded bit
+fields.  They are descriptor streams.  They contain native callback addresses
+between counts and parameters.  The callback words that are easy to see
+include resident `c434`, `c4a6` and `c423`, and mode-local `c9ec`, `ca00`,
+`c52e` and `cba0`.  If we follow those addresses, we get usual C5x code for
+filter setup, mapper setup, table construction and terminal mailbox
+notification.
 
-The raw streams contain the following count-sized values:
+The raw streams contain these count-sized values:
 
 | script | values present | value at 8000 symbols/s |
 |---|---|---|
 | enclosing `c90e` | `0180`, `0080`, `0018`, `0012`, `000c`, `00c0` | 384, 128, 24, 18, 12, 192 symbols |
 | finite detour `c922` | `0080`, `0018`, `0bb8`, `000c`, `01ff`, `0120`, `05dc` | 128, 24, 3000, 12, 511, 288, 1500 symbols |
 
-`0180` is especially diagnostic: **384 symbols is exactly the length of
-V.90 Sd**, specified as 64 repetitions of a six-symbol sequence. It occurs
-in the enclosing digital-server script, alongside a call to the same resident
-`c434` waveform setup used by the detour. This is the first direct numerical
-placement of an Sd-sized interval in the recovered server phase program.
+`0180` is a very good indicator.  **384 symbols is exactly the length of
+V.90 Sd**, which the standard specifies as 64 repetitions of a six-symbol
+sequence.  It occurs in the enclosing digital-server script, together with a
+call to the same resident `c434` waveform setup that the detour uses.  This is
+the first direct numerical location of an Sd-sized interval in the recovered
+server phase program.
 
 The large `0bb8` and `05dc` quantities in `c922` are 375 ms and 187.5 ms at
-8000 symbols/s, respectively, which makes the detour training/timing code
-rather than a packed rate message. The final `c423` callback is still the
-terminal status notification identified above.
+8000 symbols/s.  Thus, the detour is training/timing code.  It is not a packed
+rate message.  The final `c423` callback is still the terminal status
+notification that we identified above.
 
 ### The V.90 interpretation, not yet an x2 result
 
-The following signal names and ordering come specifically from V.90.  V.90
-9.3.1.3 through 9.3.1.6 requires the digital transmitter to send, in order:
+These signal names and this order come specifically from V.90.  V.90
+9.3.1.3 through 9.3.1.6 requires the digital transmitter to send, in this
+order:
 
 ```text
 Sd 384T -> Sd-bar 48T -> TRN1d >= 2040T -> repeated Jd -> Jd' 12T
           -> optional DIL -> enter Phase 4
 ```
 
-The beginning of `c90e` has those distinguishing constants in that same
-order.  Its `0180` is the 384-symbol `Sd`.  The following `0018` drives the
-packed two-codeword output path for 24 iterations, hence 48 transmitted
-symbols and `Sd-bar`.  `TRN1d` and `Jd` do not have useful fixed table-length
-constants: `TRN1d` is only bounded below and `Jd` repeats until the receiver
-detects the analogue modem's S transition.  Their callbacks therefore occupy
-the variable/repeating middle of the script.  The subsequent literal `000c`
-is the fixed 12-symbol `Jd'` terminator.  The descriptor-driven step after it
-is the optional DIL; its length and Ucodes come from the received Ja rather
-than a constant in this table.  In particular, Ja's `N = 0` is the defined
-skip condition: the digital modem does not transmit DIL.  The likely firmware
-implementation is therefore a zero-count completion in the callback rather
-than a branch encoded directly in the linear `c90e` table; the Ja `N` input to
-that callback still needs to be traced.
+The start of `c90e` has those distinguishing constants in the same order.
+Its `0180` is the 384-symbol `Sd`.  The `0018` after it operates the packed
+two-codeword output path for 24 iterations.  This gives 48 transmitted
+symbols, that is `Sd-bar`.  `TRN1d` and `Jd` do not have useful fixed
+table-length constants.  `TRN1d` has only a lower limit, and `Jd` repeats
+until the receiver detects the S transition of the analogue modem.  Thus,
+their callbacks are in the variable/repeating middle of the script.  The
+literal `000c` after them is the fixed 12-symbol `Jd'` terminator.
+
+The descriptor-driven step after it is the optional DIL.  Its length and its
+Ucodes come from the received Ja, not from a constant in this table.
+Specially, `N = 0` in Ja is the defined skip condition: the digital modem does
+not transmit DIL.  Thus, the firmware probably implements this as a
+zero-count completion in the callback.  It is probably not a branch that is
+encoded directly in the linear `c90e` table.  We must still trace the Ja `N`
+input to that callback.
 
 The next fixed value is `00c0`, 192 symbols.  V.90 9.4.1.1 says that the first
-digital-modem signal in Phase 4 is `Ri` for a minimum of exactly 192T.  Thus
+digital-modem signal in Phase 4 is `Ri` for a minimum of exactly 192T.  Thus,
 the constants strongly identify `c90e` as the V.90 digital-transmit programme
-that carries the end of Phase 3 into the start of Phase 4.
+that continues from the end of Phase 3 into the start of Phase 4.
 
-That attribution must not be transferred automatically to x2.  `Qf060003`
-is a dual-protocol x2/V.90 server build, so finding the V.90 sequence in it
-proves that the image contains a V.90D path; it does not prove that x2 uses
-the same training sequence.  A normalized match against a pre-V.90 x2-only
-server image is required before any of these V.90 signal names can be applied
-to x2.
+Do not automatically apply that attribution to x2.  `Qf060003` is a
+dual-protocol x2/V.90 server build.  Thus, the V.90 sequence in it proves that
+the image has a V.90D path.  It does not prove that x2 uses the same training
+sequence.  Before we can apply any of these V.90 signal names to x2, a
+normalized match against a pre-V.90 x2-only server image is necessary.
 
-Within that V.90 interpretation, the DSP installs `c922` at
-`c8b7..c8bb` only after the framed receive path has:
+In that V.90 interpretation, the DSP installs `c922` at `c8b7..c8bb` only
+after the framed receive path has done these steps:
 
-1. accepted a CRC-valid MP-family frame;
-2. copied its first two received MP words unchanged to `0340`/`0341`; and
-3. expanded the negotiated mapper parameters.
+1. It accepted a CRC-valid MP-family frame.
+2. It copied its first two received MP words without change to
+   `0340`/`0341`.
+3. It expanded the negotiated mapper parameters.
 
 In V.90, MP is a Phase 4 exchange, after `Ri`, `Ri-bar` and `TRN2d`.
-Consequently none
-of `c922` can be `Sd`, `Sd-bar`, `TRN1d`, `Jd`, `Jd'`, or DIL.  It is the
-post-MP Phase 4 tail: MP/MP' acknowledgement completion, `Ed`, `B1d`, and the
-mapper hand-off toward data mode.  Its `0bb8` and `05dc` values are therefore
-timeouts/guard intervals in that tail, not Phase 3 training lengths.  When its
-terminal `c423` record fires, `c8ce` restores `c90e`, which is the enclosing
-programme it interrupted.
+Thus, no part of `c922` can be `Sd`, `Sd-bar`, `TRN1d`, `Jd`, `Jd'`, or DIL.
+It is the post-MP Phase 4 tail: MP/MP' acknowledgement completion, `Ed`,
+`B1d`, and the mapper hand-off to data mode.  Thus, its `0bb8` and `05dc`
+values are timeouts/guard intervals in that tail.  They are not Phase 3
+training lengths.  When its terminal `c423` record runs, `c8ce` puts back
+`c90e`, which is the enclosing programme that it interrupted.
 
-The V.90 waveform labels supported for this path are therefore:
+Thus, the evidence supports these V.90 waveform labels for this path:
 
 | signal | recovered location | basis |
 |---|---|---|
@@ -826,24 +830,24 @@ The V.90 waveform labels supported for this path are therefore:
 | `Ri` | `c90e` literal `00c0` stage | exact Phase 4 opening minimum of 192T |
 | post-MP Phase 4 tail | `c922` | installed only after valid received MP and mapper expansion |
 
-For the V.90 path, the remaining callback-level task is narrower: attach the individual
-variable middle callbacks to the `TRN1d` generator versus the repeating `Jd`
-serializer, and split the `c922` tail precisely into MP', `Ed`, and `B1d`.
-The phase placement and the fixed-duration signals no longer depend on that
-last naming step.  The separate x2 task is to determine whether an x2-only
-server build contains an equivalent script or a proprietary alternative.
+For the V.90 path, the remaining task at the callback level is narrower.
+Attach each variable middle callback to the `TRN1d` generator or to the
+repeating `Jd` serializer.  Also, divide the `c922` tail precisely into MP',
+`Ed`, and `B1d`.  The phase location and the fixed-duration signals do not
+depend on that last naming step.  The separate x2 task is to find if an
+x2-only server build has an equivalent script or a proprietary alternative.
 
-This changes the remaining reverse-engineering task from "find a hidden
-scalar wire field" to "label each descriptor callback and its duration".
-There must still be a decodable rate representation: the peer has to recover
-the same mapper configuration.  The likely representation is structural—the
-six interval constellation/cardinality choices—so its inverse is the number
-of payload bits assigned across one six-symbol frame, `K`, followed by
-`rate = K * 8000 / 6`.  In particular,
-the entry points at `c9ec` and `ca00` lead into the server-specific mapper and
-training constructors; their inputs derived from `0340`/`0341` are the likely
-location where the selected codeword set—and therefore the effective PCM
-rate—is encoded.
+This changes the remaining reverse-engineering task.  It is not "find a
+hidden scalar wire field".  It is "label each descriptor callback and its
+duration".  But there must still be a rate representation that can be
+decoded, because the peer must recover the same mapper configuration.  The
+representation is probably structural: the six interval
+constellation/cardinality choices.  Thus, its inverse is the number of
+payload bits assigned across one six-symbol frame, `K`, followed by
+`rate = K * 8000 / 6`.  Specially, the entry points at `c9ec` and `ca00` go
+into the server-specific mapper and training constructors.  Their inputs come
+from `0340`/`0341`.  These inputs are probably the location that encodes the
+selected codeword set, and thus the effective PCM rate.
 
 ### The compact descriptor is received MP, not a five-bit x2 rate
 
@@ -856,14 +860,14 @@ bsar  2
 and   #001f
 ```
 
-It was tempting to call `0340[2:6]` the compact x2 PCM-rate code.  A
-cross-generation check disproves that identification: the same receive copy
-and the same consumers occur in the 1995 `SDL_CS3` V.34-only overlay.
-Moreover, `a4fc..a504` in the x2-only image establishes the provenance
-directly: after a valid MP CRC, the DSP copies the first two words of the MP
-receive buffer `ff48` unchanged to `0340` and `0341`.
+It was easy to call `0340[2:6]` the compact x2 PCM-rate code.  But a
+cross-generation check shows that this identification is not correct.  The
+same receive copy and the same consumers occur in the 1995 `SDL_CS3`
+V.34-only overlay.  Also, `a4fc..a504` in the x2-only image shows the origin
+directly.  After a valid MP CRC, the DSP copies the first two words of the MP
+receive buffer `ff48` without change to `0340` and `0341`.
 
-The MP writer in the V.34-only image masks `03fc`, and its standard field
+The MP writer in the V.34-only image masks `03fc`.  Its standard field
 construction identifies the layout.  In the first DSP word:
 
 | DSP bits | transmitted MP bits | field |
@@ -871,15 +875,15 @@ construction identifies the layout.  In the first DSP word:
 | `9:6` | `20:23` (bit order reversed in the word) | maximum rate, call-to-answer |
 | `5:2` | `24:27` (bit order reversed in the word) | maximum rate, answer-to-call |
 
-So the five-bit read crosses the boundary between two ordinary four-bit V.34
-fields; it is not one wire field.  x2's added routine at `a340..a356` performs
-a direction-selected minimum and writes back into this same eight-bit MP
-region.  This proves that the x2 negotiation reuses the two directional MP
-rate nibbles.
+Thus, the five-bit read crosses the boundary between two usual four-bit V.34
+fields.  It is not one wire field.  The routine at `a340..a356` that x2 added
+calculates a minimum for the selected direction.  It writes the result back
+into this same eight-bit MP region.  This proves that the x2 negotiation uses
+the two directional MP rate nibbles again.
 
-The proprietary value mapping is forced by the complete x2 result ladder.
-There are exactly sixteen entries, including the digital-only endpoint, so
-they fill a four-bit ordinal without a hole:
+The complete x2 result ladder forces the proprietary value mapping.  There
+are exactly sixteen entries, which include the digital-only endpoint.  Thus,
+they fill a four-bit ordinal without a gap:
 
 | code | nominal rate | six-symbol `K` |
 |---:|---:|---:|
@@ -889,52 +893,56 @@ they fill a four-bit ordinal without a hole:
 | 3..14 | 42666..57333 | 32..43 |
 | 15 | 64000 | 48 |
 
-For the measured analogue range, therefore, the conversion is
-`MP_code = measurement_index - 7`: local indices `10..21` become codes
-`3..14`.  Code 15 naturally names the all-digital 64 kbit/s case, while codes
-0..2 name the three fixed fallback rates that the measurement clamp cannot
-produce.  This mapping is structurally unique given the ordered sixteen-entry
-firmware table; a captured MP exchange would still be the ideal independent
-wire-level confirmation.
+Thus, for the measured analogue range, the conversion is
+`MP_code = measurement_index - 7`.  Local indices `10..21` become codes
+`3..14`.  Code 15 is the natural name for the all-digital 64 kbit/s case.
+Codes 0..2 are the three fixed fallback rates that the measurement clamp
+cannot make.  With the ordered sixteen-entry firmware table, this mapping is
+structurally unique.  But a captured MP exchange is still the ideal
+independent confirmation at the wire level.
 
-Separately, the receiver-side measurement produces local indices 10 through
-21, which decode without another table as
+Separately, the measurement on the receiver side makes local indices 10
+through 21.  These decode without another table as:
 
 ```text
 K = index + 22
 rate = K * 8000 / 6
 ```
 
-giving 42,666 2/3 through 57,333 1/3 bit/s.  This is the reversible rate
-representation that the earlier field search was missing.
+This gives 42,666 2/3 through 57,333 1/3 bit/s.  This is the reversible rate
+representation that the earlier field search did not find.
 
-That local index must not be inserted directly into MP: values 16 through 21
-do not fit either four-bit wire field.  A translation or ordinal selection
-therefore lies between the measurement result and the MP writer.
+Do not put that local index directly into MP.  Values 16 through 21 do not
+fit in either four-bit wire field.  Thus, there is a translation or an
+ordinal selection between the measurement result and the MP writer.
 
-The surrounding routine expands six records of eight words each from a table
-of six source pointers.  Consequently the compact rate/geometry descriptor
-does not directly list all six mapper constellations; it selects parameters
-from which the DSP builds six interval-specific records.  V.90 CP makes that
-same result explicit with six four-bit constellation-index fields.
+The routine around it expands six records of eight words each from a table
+of six source pointers.  Thus, the compact rate/geometry descriptor does not
+directly list all six mapper constellations.  It selects parameters, and the
+DSP uses them to make six interval-specific records.  V.90 CP gives that same
+result explicitly with six four-bit constellation-index fields.
 
-The other proven fields are `0340[13:14]`, transformed into a geometry/count
-parameter, `0341[14:15]`, transformed into a second parameter, and `0341[0]`,
-which controls a mode-dependent branch.  Their exact x2 wire names remain to
-be assigned, but they are independent of the five-bit rate index.
+These are the other fields that we proved:
 
-What is still missing is now narrow: identify the resident mailbox handlers
-that set `039f` bits 0 and 7, map their controller commands back to S76/S81,
-and follow the enable edge into the `c93e` mapper.  For V.90, `c922` is now
-placed in the post-MP Phase 4 path.  For x2, the remaining protocol-attribution
-problem is to compare these scripts with an x2-only server build rather than
-assign V.90's `Sd`, `Sd-bar`, `TRN1d`, `Jd`, `Jd'` and DIL names by analogy.
+* `0340[13:14]`, which is changed into a geometry/count parameter.
+* `0341[14:15]`, which is changed into a second parameter.
+* `0341[0]`, which controls a mode-dependent branch.
 
+We must still give them their exact x2 wire names.  But they are independent
+of the five-bit rate index.
+
+Now, the missing part is narrow.  Identify the resident mailbox handlers that
+set `039f` bits 0 and 7.  Map their controller commands back to S76/S81.
+Then follow the enable edge into the `c93e` mapper.  For V.90, `c922` is now
+in the post-MP Phase 4 path.  For x2, the remaining problem of protocol
+attribution is to compare these scripts with an x2-only server build.  Do not
+assign the V.90 names `Sd`, `Sd-bar`, `TRN1d`, `Jd`, `Jd'` and DIL to x2 by
+analogy.
 ## The x2-only phase path: do not start from `c90e`
 
-For reconstructing x2 itself, the decisive image is the pre-V.90
-`sdl6-x2.exe`.  Its PCM overlay has its own phase callback cell `@2f`; direct
-installers select this sequence of handlers:
+To reconstruct x2 itself, the decisive image is the pre-V.90
+`sdl6-x2.exe`.  Its PCM overlay has its own phase callback cell `@2f`.
+Direct installers select this sequence of handlers:
 
 | installer | handler installed in `@2f` |
 |---|---|
@@ -945,25 +953,26 @@ installers select this sequence of handlers:
 | `eb84` | `ed8f` |
 | `eda5` | `eecd` |
 
-This is an x2-only state machine and therefore needs no inference from V.90
-signal names.  Two parts are already concrete.  `eceb` conditionally calls
-the six-bit fixed-GPC generator `ed2e`; `ed0b` consumes the associated stream
-through the x2-only build's resident descrambler `8c94`.  `ed40` performs a
-six-entry cyclic update (`ed7d..ed82` is the interval pattern `0,2,1,1,2,0`),
-and `ed83`/`ed8f` share the later `ef0f`, `ef3f`, `eedf` processing path.
-Finally, `eecd` repeatedly processes received state until a threshold test
-passes, then calls the common transition routines at `b4b3` and `831e`.
+This is an x2-only state machine.  Thus, we do not need an inference from
+V.90 signal names.  We already know two parts.  `eceb` calls the six-bit
+fixed-GPC generator `ed2e` if a condition is true.  `ed0b` uses the related
+stream through `8c94`, which is the resident descrambler of the x2-only build.
+`ed40` does a six-entry cyclic update (`ed7d..ed82` is the interval pattern
+`0,2,1,1,2,0`).  `ed83`/`ed8f` share the later `ef0f`, `ef3f`, `eedf`
+processing path.  At the end, `eecd` processes received state again and again
+until a threshold test passes.  Then it calls the common transition routines
+at `b4b3` and `831e`.
 
 The next x2-only task is to map the writes that install these six handlers to
-the INFO/modulation-parameter events and to determine which transitions are
-used for ordinary asymmetric x2 versus S58 symmetric mode.  The QF `c90e`
-table is retained only as a later V.90 comparison and is not the starting
-point for naming x2 phases.
+the INFO/modulation-parameter events.  Also, we must find which transitions
+the usual asymmetric x2 uses and which transitions S58 symmetric mode uses.
+We keep the QF `c90e` table only as a later V.90 comparison.  It is not the
+start point to name x2 phases.
 
 ### False lead: `032a` and `cbb4` predate x2
 
-The March 1997 `IM020104` DSP routine at `cbb4` begins with the same structural
-fixed-GPC recurrence as the client's `ed2e`:
+The March 1997 `IM020104` DSP routine at `cbb4` starts with the same
+structural fixed-GPC recurrence as `ed2e` of the client:
 
 ```text
 cbb4  lacc   @7a
@@ -979,35 +988,39 @@ cbbf  lt     @22       ; caller-supplied width
 cbc0  satl
 ```
 
-Unlike the small client generator, this routine then immediately uses the
-generated value to select PCM tables (`0460` and subsequent tables), combine
-the selected codeword with interval/mapping state, and produce the transmit
-sample.
+The small client generator is different.  This routine then immediately uses
+the generated value to select PCM tables (`0460` and the tables after it).
+It combines the selected codeword with interval/mapping state, and makes the
+transmit sample.
 
 The installer at `bbe0..bbf0` selects it through the transmit callback cell
-`@2f`.  State `@2a = 0` goes to `caca`, which installs `cb66`; states 1 or 2
-install `cbb4`, then dispatch through a state table at `cabd + @2a`.  Other
-table cases install `cc02`, `cc26`, or `cb98`.  This supplies a concrete
+`@2f`.  State `@2a = 0` goes to `caca`, which installs `cb66`.  States 1 or 2
+install `cbb4`, and then dispatch through a state table at `cabd + @2a`.
+Other table cases install `cc02`, `cc26`, or `cb98`.  This gives a known
 transmit sub-state machine:
 
 ```text
 cb66 / cb98 / cbb4 / cc02 / cc26
 ```
 
-But it is **not x2-specific**.  The October 1996 `IM020009` build contains the
-same machinery six months before x2: its handlers `ba99`, `ba9f` and `bc7d`,
-selector table `caa3`, installer `bbd0`, and generator/mapper `cb9a` relocate
-to `bab3`, `bab9`, `bc97`, `cabd`, `bbea`, and `cbb4` respectively in
-`IM020104`, almost uniformly by `+001ah` words.  The command semantics and
-state ranges are unchanged.  Consequently this is inherited resident
-transmit/mapping infrastructure and cannot by itself be called the x2 server
-transmitter.
+But it is **not specific to x2**.  The October 1996 `IM020009` build has the
+same machinery six months before x2.  In `IM020104`, these items move almost
+uniformly by `+001ah` words:
+
+* Handlers `ba99`, `ba9f` and `bc7d` move to `bab3`, `bab9` and `bc97`.
+* Selector table `caa3` moves to `cabd`.
+* Installer `bbd0` moves to `bbea`.
+* Generator/mapper `cb9a` moves to `cbb4`.
+
+The command semantics and the state ranges do not change.  Thus, this is
+inherited resident transmit/mapping infrastructure.  It alone is not
+sufficient to call it the x2 server transmitter.
 
 ### Inherited working-state glossary
 
-The `@xx` notation in the C5x disassembly is a **direct-page offset**, not an
-absolute data address.  In the server PCM routines discussed here DP is 6, so
-the relevant names expand as follows:
+The `@xx` notation in the C5x disassembly is a **direct-page offset**.  It is
+not an absolute data address.  In the server PCM routines in this section, DP
+is 6.  Thus, the related names expand as follows:
 
 | shorthand | absolute cell | recovered use |
 |---|---:|---|
@@ -1019,23 +1032,23 @@ the relevant names expand as follows:
 | `@7a` | `037a` | low part of the 23-bit GPC history/state |
 | `@7d` | `037d` | newly generated, masked GPC value |
 
-This page qualification matters: an apparent `sacl @2a` after `ldp #007`
-writes `03aa`, not this `032a` state.  An unqualified cross-reference search
-mixes unrelated cells from several data pages.
+This page qualification is important.  A `sacl @2a` after `ldp #007` writes
+`03aa`.  It does not write this `032a` state.  A cross-reference search
+without the page qualification mixes unrelated cells from several data pages.
 
-`032a` is demonstrably a selector rather than a duration.  At `bbe0` it is
-tested to choose `cb66` versus `cbb4`; at `bbec` it indexes the table beginning
-at `cabd`.  The table's cases install `cb66`, `cb98`, `cbb4`, `cc02`, or
-`cc26` in `032f` and select associated mapper tables and parameters.
-Supervisor/DSP dispatch code at `bab3..babe` accepts an input index below 6,
-adds 6, and stores values 6 through 11 into `032a`, showing that the same cell
-also names later externally selected PCM submodes.  The semantic names of all
-cases still need to be obtained from their producers; calling `032a` a rate,
-phase number, or Ja field would not yet be justified.
+We can show that `032a` is a selector and not a duration.  At `bbe0`, the code
+tests it to select `cb66` or `cbb4`.  At `bbec`, it is the index into the
+table that starts at `cabd`.  The cases of the table install `cb66`, `cb98`,
+`cbb4`, `cc02`, or `cc26` in `032f`, and select related mapper tables and
+parameters.  Supervisor/DSP dispatch code at `bab3..babe` accepts an input
+index below 6, adds 6, and stores values 6 through 11 into `032a`.  This shows
+that the same cell also identifies later PCM submodes that an external source
+selects.  We must still get the semantic names of all cases from their
+producers.  We do not yet have evidence to call `032a` a rate, a phase number,
+or a Ja field.
 
-`032a` is not advanced by a local incrementing phase counter.  It is replaced
-by three DSP mailbox-command handlers from the resident dispatch table at
-`8817`:
+A local phase counter does not increase `032a`.  Three DSP mailbox-command
+handlers from the resident dispatch table at `8817` replace its value:
 
 | mailbox tag | handler | accepted argument | value written to `032a` |
 |---:|---:|---:|---:|
@@ -1045,39 +1058,43 @@ by three DSP mailbox-command handlers from the resident dispatch table at
 
 The table addresses prove the tags: `8862 - 8817 = 4b`, `8864 - 8817 = 4d`,
 and `886c - 8817 = 55`.  Handlers `bab3` and `bab9` validate the incoming DSP
-argument in `@7a`, then use an absolute `smmr ...,#032a` or DP-6 store.
-Handler `bc97` likewise rejects arguments 13 and above before copying the
-argument to `032a` and scheduling its continuation.  The same commands are
-already present in `IM020009`: its dispatch table begins at `8911`, where
-tags `4b`, `4d`, and `55` select `ba9f`, `ba99`, and `bc7d`.  A scan of the
-I-modem supervisor's 56 literal calls to its normal DSP-mailbox sender finds
-no literal `4b`, `4d`, or `55`; their active producer, if any, is indirect or
-table-driven.  More importantly, none of this is the x2-era addition.
+argument in `@7a`.  Then they use an absolute `smmr ...,#032a` or a DP-6
+store.  Handler `bc97` also rejects arguments 13 and higher.  Then it copies
+the argument to `032a` and schedules its continuation.
 
-The x2 trace must instead stay on code absent from `IM020009`: the new
-`e185..e4cc` callback engine selected by combined mode bit 8, plus its new
-initializers and supervisor inputs.  `032a/cbb4` may be reused downstream by
-x2, but it cannot identify or order x2's proprietary training stages.
+The same commands are already in `IM020009`.  Its dispatch table starts at
+`8911`, where tags `4b`, `4d`, and `55` select `ba9f`, `ba99`, and `bc7d`.
+The I-modem supervisor has 56 literal calls to its usual DSP-mailbox sender.
+A scan of these calls finds no literal `4b`, `4d`, or `55`.  Thus, if they
+have an active producer, it is indirect or it uses a table.  More
+importantly, none of this is the addition of the x2 era.
+
+Thus, the x2 trace must stay on code that is not in `IM020009`.  This code is
+the new `e185..e4cc` callback engine that combined mode bit 8 selects, and
+its new initializers and supervisor inputs.  x2 can use `032a/cbb4` again
+downstream.  But `032a/cbb4` cannot identify the proprietary training stages
+of x2 or give their order.
 
 ### The proved supervisor-to-x2-DSP bit bridge
 
-> **Superseded in part.** The dispatch-table base and the bit-numbering
-> convention used below are both wrong; see *The dispatch base is `882b`*
-> at the end of this document for what survives and what does not.
+> **Superseded in part.** The base of the dispatch table and the
+> bit-numbering convention below are both incorrect.  See *The dispatch base
+> is `882b`* at the end of this document for the parts that are correct and
+> the parts that are not.
 
-The shared machinery does have an x2-specific use, but the discriminator is
-the mode word passed through tag `70`, not `032a`.  The supervisor builder at
-`addca..ade10` edits the active S58-derived capability word before sending
-tag `70`:
+The shared machinery does have a use that is specific to x2.  But the
+discriminator is the mode word that tag `70` carries, not `032a`.  The
+supervisor builder at `addca..ade10` edits the active capability word, which
+comes from S58, before it sends tag `70`:
 
 ```text
 S58 server bit 02h set     -> clear payload bit 12 (`and bh,efh`)
 S58 symmetric bit 08h set  -> clear payload bit 11 (`and bh,f7h`)
 ```
 
-DSP tag-`70` handler `e11e` contributes bit 8, then common handler `e120`
-merges the received word and copies it to both working mode words `@60` and
-`@6d`.  This establishes the requested executable relationship:
+DSP tag-`70` handler `e11e` adds bit 8.  Then common handler `e120` merges
+the received word and copies it to the two working mode words `@60` and
+`@6d`.  This gives the executable relationship that we wanted:
 
 ```text
 supervisor x2/server/symmetric configuration
@@ -1086,16 +1103,17 @@ supervisor x2/server/symmetric configuration
     -> branches inside the new x2-era engine
 ```
 
-The consumers are direct.  True bit 12 is tested as C5x `bit 3` at `e556`
-and `e56f`.  With bit 12 set the engine enters `e574`, reports status `8058`,
-and installs a legacy callback pair into `039a/039b`; with server mode clearing
-bit 12 it bypasses that path at `e585`.  True bit 11 is tested as C5x `bit 4`
-at `e14f` and `e61f`.  Symmetric mode clears bit 11, causing `e14f` to branch
-directly to the alternative setup at `e172` instead of installing the
-`e2b1/e438/e4bc` asymmetric callback chain at `e152..e170`.  The later `e61f`
-test applies the same bit again at the common completion/transition point.
+The consumers are direct.  The code tests true bit 12 as C5x `bit 3` at `e556`
+and `e56f`.  When bit 12 is set, the engine goes to `e574`, reports status
+`8058`, and installs a legacy callback pair into `039a/039b`.  Server mode
+clears bit 12, and then the engine bypasses that path at `e585`.  The code
+tests true bit 11 as C5x `bit 4` at `e14f` and `e61f`.  Symmetric mode clears
+bit 11.  This causes `e14f` to branch directly to the alternative setup at
+`e172`.  Thus, it does not install the `e2b1/e438/e4bc` asymmetric callback
+chain at `e152..e170`.  The later `e61f` test applies the same bit again at
+the common completion/transition point.
 
-Thus the first role split is now proved from code alone:
+Thus, the code alone now proves the first role split:
 
 | configuration | DSP mode bit | immediate engine effect |
 |---|---:|---|
@@ -1104,11 +1122,10 @@ Thus the first role split is now proved from code alone:
 | ordinary asymmetric | bit 11 remains set | install `e2b1/e438/e4bc` chain |
 | x2 symmetric | bit 11 cleared | skip that chain and enter `e172` alternative setup |
 
-The remaining work is to name the signal operations performed by the two
-callback chains and determine where they converge on the inherited sample
-mapper.  That trace, rather than the inherited `032a` values, will yield the
-x2 training sequence.
-
+The remaining work is to name the signal operations that the two callback
+chains do.  Also, we must find where they join on the inherited sample
+mapper.  That trace, and not the inherited `032a` values, will give the x2
+training sequence.
 ### `e172` is a mode-family initializer, not a transmitted signal
 
 `e172` is the entry reached when mode bit 11 is clear, including the symmetric
