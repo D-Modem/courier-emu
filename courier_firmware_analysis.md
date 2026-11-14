@@ -1,8 +1,8 @@
 # Courier V.Everything Firmware Analysis — `SV25.XMD`
 
-Analysis of the USRobotics Courier firmware image we've been testing against, to
-support the V.90 interop effort (esp. the "Courier retrains to Tone A right after
-our DIL, never sends CPt" blocker — see `courier-retrains-after-dil` memory).
+This is an analysis of the USRobotics Courier firmware image that we use for tests.
+It supports the V.90 interop work. It applies especially to the blocker "Courier retrains
+to Tone A right after our DIL, never sends CPt". Refer to the `courier-retrains-after-dil` memory.
 
 ## File facts
 
@@ -17,8 +17,8 @@ our DIL, never sends CPt" blocker — see `courier-retrains-after-dil` memory).
 
 ## Processors
 
-Supervisor CPU confirmed by the modem's own `ATUSR` easter egg; the DSP part
-number is corrected from the code, not the string — see below.
+The `ATUSR` easter egg of the modem confirms the supervisor CPU. We corrected the DSP part
+number from the code, not from the string. Refer to the text below.
 
 ```
 INT80188 Modem Functions      -> supervisor CPU = Intel 80188 (16-bit x86)
@@ -26,39 +26,39 @@ TMS32025 DSP Functions         -> datapump DSP  = TI TMS320C5x (16-bit fixed-poi
 Copyright (c) 1988..1992 USRobotics
 ```
 
-The `TMS32025` credit string is **not** the part number of the fitted DSP — it is
-a 1988–1992 copyright banner that outlived the hardware it was written for. The
-code in flash is **C5x**, not C25. Corrected 2026-09-05; before that this file
-took the string at face value. Evidence: the DSP init at flash `0x29080` is
-`SPLK #ffff,@57`, and `SPLK` does not exist on a C25 — it is a C5x addition. It
-is not a one-off: a little-endian sweep of the whole datapump decodes 1,824
-`SPLK`, 913 `XC`, 884 `RETCD`, 761 `LAMM`, 639 `SAMM`, 406 `BSAR`, 307 `SACB`
-and the delayed-branch forms `BD`/`CALLD`/`CCD`/`BCNDD` — none of which a C25 can
-encode. This matches the independent conclusion in
-[the DSP ROM probe notes](docs/dsp-rom-probe.md), which reached C5x from the same
-init sequence. It does not pin the exact C5x variant (C50/C51/C52).
+The `TMS32025` credit string is **not** the part number of the installed DSP. It is
+a 1988–1992 copyright banner. The banner stayed in the firmware after the hardware changed.
+The code in flash is **C5x**, not C25. We corrected this on 2026-09-05. Before that date,
+this file accepted the string as correct. Evidence: the DSP init at flash `0x29080` is
+`SPLK #ffff,@57`. `SPLK` does not exist on a C25. It is a C5x addition. This is not
+the only example. A little-endian sweep of the full datapump decodes 1,824
+`SPLK`, 913 `XC`, 884 `RETCD`, 761 `LAMM`, 639 `SAMM`, 406 `BSAR` and 307 `SACB`.
+It also decodes the delayed-branch forms `BD`/`CALLD`/`CCD`/`BCNDD`. A C25 cannot
+encode any of these instructions. This agrees with the independent conclusion in
+[the DSP ROM probe notes](docs/dsp-rom-probe.md). Those notes found C5x from the same
+init sequence. The evidence does not identify the exact C5x variant (C50/C51/C52).
 
-So `SV25.XMD` (minus the 0x80 header) is **exactly 0x80000 = 512 KB**, the size of
-the full flash, and it contains BOTH the 80188 supervisor AND the TMS320C5x
+Thus `SV25.XMD` (without the 0x80 header) is **exactly 0x80000 = 512 KB**. This is the size of
+the full flash. The file contains BOTH the 80188 supervisor AND the TMS320C5x
 datapump.
 
-**But an `.XMD` payload is not a byte-aligned copy of flash**, and this file
-previously assumed it was (corrected 2026-09-05). Measured: the code regions of
-`IDSDL302.XMD` and `IDSDL302.ROM` — same firmware name — are neither equal (6.5%)
-nor complements (3.8%). `.XMD` code entropy is 7.84–7.85 against 7.13 for the
-ROM, and a byte scan finds 303–353 printable strings in the first `0x29000`
-against 851 in the ROM, so the `.XMD` code payload is **transformed in some way
-not yet identified**. The x86/DSP boundary detector puts `SV25.XMD` at `0x2a2c0`
-(decoding to nothing resembling the init sequence) and finds no boundary at all
-in `IDSDL302.XMD`. Only the fill regions line up, as a straight complement:
+**But an `.XMD` payload is not a byte-aligned copy of flash**. Before 2026-09-05, this file
+assumed that it was. Measurement: the code regions of
+`IDSDL302.XMD` and `IDSDL302.ROM` have the same firmware name. But they are not equal (6.5%)
+and they are not complements (3.8%). The `.XMD` code entropy is 7.84–7.85. The entropy of the
+ROM is 7.13. A byte scan finds 303–353 printable strings in the first `0x29000` of the `.XMD`,
+and 851 in the ROM. Thus a **transform that we did not identify yet** changes the `.XMD`
+code payload. The x86/DSP boundary detector puts the boundary of `SV25.XMD` at `0x2a2c0`.
+That location does not decode to the init sequence. The detector finds no boundary
+in `IDSDL302.XMD`. Only the fill regions align, as a direct complement:
 `0x44000–0x7C000` is 97.9% `ROM_byte == XMD_byte ^ 0xFF`. **Do not read `.XMD`
-offsets as flash offsets** until that transform is worked out.
+offsets as flash offsets** until we know the transform.
 
 ## Image map
 
-Offsets below describe **flash as read from the device** (`IDSDL302.ROM` and the
-board captures in `artifacts/`), not `.XMD` offsets — see the caveat under
-[Processors](#processors) about why the two do not align.
+The offsets below describe **flash as read from the device** (`IDSDL302.ROM` and the
+board captures in `artifacts/`). They are not `.XMD` offsets. Refer to the caveat under
+[Processors](#processors) for the reason that the two do not align.
 
 | file range | ~size | contents |
 |---|---|---|
@@ -69,49 +69,49 @@ board captures in `artifacts/`), not `.XMD` offsets — see the caveat under
 | `0x44000–0x7C000` | ~224 KB | **`0xFF` fill** (unused, erased flash) |
 | `0x7C000–0x7E000` | ~8 KB | DSP coefficient table (int32, ~-774 default taps) |
 
-Boundary is sharp: even/odd byte-distribution divergence (a word-vs-byte-code
-discriminator) is ~0.4 in the 80188 region and jumps sharply at the boundary. That
-boundary is at **`0x29080`**, not `0x29800` as this file said before 2026-09-05 —
-an error of 0x780 bytes (960 words). Measured by C5x opcode-byte density in 64-byte
-steps, it sits at `0x29080` in both `IDSDL302.ROM` and the 7.3.14 board capture,
-and at `0x29140` in the 7.4.16 capture (the supervisor grew 0xC0 bytes and pushed
-the datapump later), so it is **per-image and must be re-measured, not assumed**.
-`0x29080` is also where the documented `LDP #0; SPLK #ffff,@57; SETC INTM` init
-sequence begins; `0x29800` lands mid-stream, 960 words into the datapump.
+The boundary is sharp. The even/odd byte-distribution divergence is a discriminator
+between word code and byte code. It is about 0.4 in the 80188 region, and it increases
+sharply at the boundary. The boundary is at **`0x29080`**. Before 2026-09-05, this file
+gave `0x29800`. That was an error of 0x780 bytes (960 words). We measured C5x opcode-byte
+density in 64-byte steps. The boundary is at `0x29080` in `IDSDL302.ROM` and in the 7.3.14
+board capture. It is at `0x29140` in the 7.4.16 capture, because the supervisor became 0xC0 bytes
+larger and moved the datapump. Thus the boundary is **different for each image. Measure it again for each image. Do not assume it**.
+The documented `LDP #0; SPLK #ffff,@57; SETC INTM` init sequence also starts at `0x29080`.
+`0x29800` is in the middle of the stream, 960 words into the datapump.
 
-The DSP words are **little-endian** (low byte first) — corrected
-2026-09-05; this file previously claimed big-endian, and every conclusion that
-rested on that reading is retracted below. Decisive evidence: the DSP
+The DSP words are **little-endian** (low byte first). We corrected this on
+2026-09-05. Before that date, this file said big-endian. We retract below each conclusion
+that used that reading. Decisive evidence: the DSP
 initialization at flash `0x29080` reads, as little-endian C5x,
-`bc00 / ae57 ffff / be41` = `LDP #0; SPLK #ffff,@57; SETC INTM`, matching the
-sequence recorded in [the DSP ROM probe notes](docs/dsp-rom-probe.md). Big-endian
-yields `lar ar0, @3c` and garbage after. The old supporting claim — that
-big-endian `B`/`CALL` (`FF80`/`FE80`) targets looked like sane code addresses —
-does not survive counting: across the whole `0x29080–0x43700` region the aligned
-byte pair `ff 80` occurs **once** and `fe 80` **never**, so it was never evidence
-either way. The **multiple overlays** conclusion does stand, on independent
-grounds: the datapump is far larger than the 64K word program space, and a
+`bc00 / ae57 ffff / be41` = `LDP #0; SPLK #ffff,@57; SETC INTM`. This agrees with the
+sequence in [the DSP ROM probe notes](docs/dsp-rom-probe.md). Big-endian
+gives `lar ar0, @3c` and then garbage. The old supporting claim was that
+big-endian `B`/`CALL` (`FF80`/`FE80`) targets looked like correct code addresses.
+A count shows that this claim is false. In the full `0x29080–0x43700` region, the aligned
+byte pair `ff 80` occurs **once** and `fe 80` occurs **never**. Thus it was never evidence
+for either order. The **multiple overlays** conclusion is still correct, for independent
+reasons. The datapump is much larger than the 64K word program space. Also, a
 little-endian C5x disassembly of the DSP 3.1.2 tail at `0x41280` branches
 internally around a base near `0xdf70`, not linearly from the `0x8000` kernel.
 
-**The DIL-analysis and constellation-design code — the logic that decides to
-send CP vs. abort to retrain — is DSP code in `0x29080–0x43700`.**
+**The DIL-analysis and constellation-design code is DSP code in `0x29080–0x43700`. This
+code decides to send CP or to stop and retrain.**
 
 ## Format — NOT encrypted, NOT compressed
 
-Initial entropy (~7.8) and poor gzip ratio (~83%) *looked* like compression, but
-that's a red herring for the flash image: it is **plaintext, uncompressed** code.
-(Note the ~7.8 figure is an `.XMD` measurement; flash itself measures 7.13 over
-the same x86 window. The conclusion in this section is established by the
-disassembly below, on flash, and stands — but it says nothing about `.XMD`, whose
-higher entropy is now believed to be a real transform. See above.) The 80188
-half is 16-bit x86; the high entropy comes from dense 5-byte far-calls
-(`9A seg:off`) interleaved with tables, not a transform. Disassembly heuristics
-(branch coherence) can't tell x86 code from data — 16-bit x86 is so dense that
-even random bytes score as "coherent" — so region typing relied on the even/odd
-word-structure metric above, not on disassembly.
+The initial entropy (about 7.8) and the poor gzip ratio (about 83%) *looked* like compression.
+For the flash image, this was incorrect. The flash image is **plaintext, uncompressed** code.
+(Note: the 7.8 value is an `.XMD` measurement. Flash measures 7.13 in
+the same x86 window. The disassembly below, on flash, proves the conclusion of this section,
+and the conclusion is still correct. But it gives no information about `.XMD`. We now think that the
+higher entropy of `.XMD` comes from a real transform. Refer to the text above.) The 80188
+half is 16-bit x86. The high entropy comes from many 5-byte far-calls
+(`9A seg:off`) between tables, not from a transform. Disassembly heuristics
+(branch coherence) cannot tell x86 code from data. 16-bit x86 is so dense that
+random bytes also score as "coherent". Thus, to find the type of each region, we used the even/odd
+word-structure metric above, not disassembly.
 
-Proof — disassembly at the banner-print site (file `0x263AF`):
+Proof: the disassembly at the banner-print site (file `0x263AF`):
 
 ```
 0263af: 9a 41 9e 00 80   lcall 0x8000:0x9e41     ; far call into bank at seg 0x8000
@@ -129,21 +129,21 @@ Proof — disassembly at the banner-print site (file `0x263AF`):
 - `0x7C000–0x7E000` — DSP coefficient table (see below)
 - tail — mostly `0xFF`
 
-The fill byte was recorded as `0x00` here before 2026-09-05. That reading came
-from the `.XMD` files, where it is correct; **flash as read from the device is
-`0xFF`** — 100.0% of `0x44000–0x7C000` in the 7.3.14 board capture, 97.9% in
-`IDSDL302.ROM`. The distinction matters: `0xFF` is erased flash that was never
-programmed, `0x00` would be deliberately written zeros.
+Before 2026-09-05, this file gave the fill byte as `0x00`. That value came
+from the `.XMD` files, and it is correct for them. **Flash as read from the device is
+`0xFF`**: 100.0% of `0x44000–0x7C000` in the 7.3.14 board capture, and 97.9% in
+`IDSDL302.ROM`. The difference is important. `0xFF` is erased flash that was never
+programmed. `0x00` would be zeros that the firmware wrote intentionally.
 
 ### Quirks
-- **Bank switching**: a 512 KB ROM can't fit one 64 KB segment. Near calls (`E8`)
-  stay in-bank and disassemble linearly; far calls (`9A 8000:xxxx`) page into
-  another bank. The bank→file mapping is **not yet solved** (naive `seg*16` and
-  `+0x80` header offsets both fail), so cross-bank call resolution needs work.
-- **String obfuscation**: some UI strings are stored **case-toggled** (XOR `0x20`
-  on letters only) — e.g. credits at `0x100` read `jOHN wIERSEMA`. Others (the
-  banner, diagnostics) are stored normal-case. To read reliably, per-run pick
-  whichever of {identity, case-toggled} has more lowercase letters.
+- **Bank switching**: a 512 KB ROM cannot fit in one 64 KB segment. Near calls (`E8`)
+  stay in the bank and disassemble linearly. Far calls (`9A 8000:xxxx`) page into
+  another bank. We did **not solve the bank→file mapping yet**. The simple `seg*16` and
+  `+0x80` header offsets both fail. Thus more work is necessary to resolve cross-bank calls.
+- **String obfuscation**: the firmware stores some UI strings **case-toggled** (XOR `0x20`
+  on letters only). For example, the credits at `0x100` read `jOHN wIERSEMA`. The firmware stores other strings (the
+  banner, diagnostics) in normal case. To read them correctly, for each run of text, select
+  the form ({identity, case-toggled}) that has more lowercase letters.
 
 ## Extracted content (confirmed)
 
@@ -154,13 +154,13 @@ programmed, `0x00` would be deliberately written zeros.
 34 → 50666 bps   38 → 56000 bps
 35 → 52000 bps   39 → 57333 bps
 ```
-1333 bps grid — the exact rate codes the Courier maps for V.90 downstream.
+This is the 1333 bps grid. It gives the exact rate codes that the Courier maps for V.90 downstream.
 
 ### V.34 trellis code set (file `0x018D84`)
 `8S-2D`, `16S-4D`, `32S-2D`, `64S-4D` trellis codes.
 
 ### x2 connect-result vocabulary (file `0x00AB80..0x00ADB0`)
-The firmware has explicit USR x2 connect-rate strings, split across XOR-encoded
+The firmware has explicit USR x2 connect-rate strings. They are divided across XOR-encoded
 sub-blocks:
 
 ```
@@ -178,18 +178,17 @@ x2
 64000, 64000/ARQ, 64000/x2, 64000/ARQ/x2
 ```
 
-This confirms that the supervisor can report x2 as a distinct modulation/rate
-label. Later disassembly corrected the original string-scan conclusion: the
+This confirms that the supervisor can report x2 as a different modulation/rate
+label. Later disassembly corrected the initial conclusion from the string scan. The
 capture has separate `x2 Status` and `V.90 Status` formatter headers at flash
-`0x1bff0` and `0x1c0a0`, respectively. The nearby diagnostic enum contains
-x2-specific outcomes (remote not x2/server, multiple codecs, incompatible
-versions, and 3200-baud restrictions). The normal link diagnostics may still
-be shared, but x2 is not merely a result-code label.
+`0x1bff0` and `0x1c0a0`. The diagnostic enum near them contains
+outcomes that are specific to x2 (remote not x2/server, multiple codecs, incompatible
+versions, and 3200-baud restrictions). Possibly x2 and V.90 share the normal link diagnostics.
+But x2 is more than a result-code label.
 
 ### x2 / V.90 feature-gate and NVRAM evidence
 
-There is static evidence for an installed-feature gate, not just unconditional
-datapump support:
+There is static evidence for an installed-feature gate. Thus the datapump support is not only unconditional:
 
 - XOR key `0x32` at file `0x1879D` decodes an S-register help entry:
   `S30` bit `1` = **`Enable feature upgrades`**.
@@ -203,18 +202,18 @@ datapump support:
   `Channel is x2-capable but feature not installed.`
 - XOR key `0x26` at file `0x07939..0x07953` decodes self-test vocabulary:
   `ram`, `nvram`, `dsp`, `testing`, `leds and speaker`, `ok`, `no communicate`.
-- XOR key `0x26` at file `0x1C84D` decodes `NVRAM Sett.s`, confirming a
-  user-visible NVRAM settings/report surface in the diagnostic text.
+- XOR key `0x26` at file `0x1C84D` decodes `NVRAM Sett.s`. This confirms that the
+  diagnostic text has an NVRAM settings/report surface that the user can see.
 
 ### Recovered `ATY14` source and feature decode
 
 The `ATY14` handler is at `0x85250`. It prints `[0x0a0c]` down to `[0x0a07]`,
-one byte per field, separated by commas, and falls back to the bare `,,,,,`
-literal at `0x8525a` when `[0x0a06]` reads `0xff`.
+one byte for each field, with commas between them. When `[0x0a06]` reads `0xff`, it prints the
+`,,,,,` literal at `0x8525a` instead.
 
-Those seven bytes are written by the parameter-block unpack at `0x7e007`, which
-copies bytes 0..6 of the accepted configuration record to `0x0a06..0x0a0c`. So
-the printed fields are record bytes 6, 5, 4, 3, 2, 1, matching the field names
+The parameter-block unpack at `0x7e007` writes those seven bytes. It
+copies bytes 0..6 of the accepted configuration record to `0x0a06..0x0a0c`. Thus
+the printed fields are record bytes 6, 5, 4, 3, 2, 1. This agrees with the field names
 from the archived post:
 
 | `ATY14` field | name | RAM | record byte |
@@ -226,13 +225,13 @@ from the archived post:
 | 5 | **features** | `0x0a08` | 2 |
 | 6 | country | `0x0a07` | 1 |
 
-This corrects the guess above: on this firmware the configuration register dump
-comes from the **memory-mapped parameter sector searched at `0xf8000`**, not from
-the Microwire serial EEPROM bit-banged on port `0x10`. The unpack also feeds
+This corrects the guess above. On this firmware, the configuration register dump
+comes from the **memory-mapped parameter sector that the firmware searches at `0xf8000`**. It does not come from
+the Microwire serial EEPROM that the firmware bit-bangs on port `0x10`. The unpack also copies
 `[0x0a07]` to `[0x0173]` (country), `[0x0a09]` to `[0x0a04]`, and `[0x0a0a]` to
-`[0x0a03]`, each gated by a bit in the `[0x0a06]` flags byte.
+`[0x0a03]`. A bit in the `[0x0a06]` flags byte gates each of these copies.
 
-Field 5 is decoded at `0x7e024` through a five-entry table at `0x7e072`:
+The code at `0x7e024` decodes field 5 through a table of five entries at `0x7e072`:
 
 | features bit | value | label | sets `[0x19d7]` |
 |---:|---:|---|---|
@@ -242,25 +241,25 @@ Field 5 is decoded at `0x7e024` through a five-entry table at `0x7e072`:
 | 3 | 8 | V.FC / V.34 | `0xca` |
 | 4 | 16 | **V.90 on this firmware** | `0x6a` |
 
-The table has exactly five entries, so this firmware recognises exactly five
-feature bits. Bit 4 is real and decoded, and it is the only entry that
-contributes `[0x19d7]` bit `0x20`.
+The table has exactly five entries. Thus this firmware recognises exactly five
+feature bits. Bit 4 is real and the firmware decodes it. It is the only entry that
+sets `[0x19d7]` bit `0x20`.
 
-**Bit 4 is not x2 here.** The archived post describing `ATY14` covers an older
-Courier, and the label does not carry over to this 2002 build (the banner reads
-`Copyright (c) 1988 - 2002 by USRobotics`). Two pieces of evidence:
+**Bit 4 is not x2 here.** The archived post about `ATY14` is about an older
+Courier. Its label is not correct for this 2002 build (the banner reads
+`Copyright (c) 1988 - 2002 by USRobotics`). There are two items of evidence:
 
-- `0x77d47` tests `[0x19d7]` bit `0x20` to decide whether to append `,V90` to the
-  `ATI7` options list. Building a sector with bit 4 set yields
-  `HST,V32bis,Terbo,VFC,V34+,V90,V92`; clearing it yields
-  `HST,V32bis,Terbo,VFC,V34+,V92`. `,V92` is emitted unconditionally.
-- The options table at `733c:49c4` does contain an `x2` entry at `733c:49d6`,
-  but `mov si, 0x49d6` does not appear anywhere in the image. Nothing can ever
-  select it, so this firmware cannot report x2 at all. The x2 connect-rate
-  vocabulary catalogued above is dead weight carried forward from older builds.
+- `0x77d47` tests `[0x19d7]` bit `0x20`. The result decides if the firmware adds `,V90` to the
+  `ATI7` options list. A sector with bit 4 set gives
+  `HST,V32bis,Terbo,VFC,V34+,V90,V92`. A sector with bit 4 clear gives
+  `HST,V32bis,Terbo,VFC,V34+,V92`. The firmware always sends `,V92`.
+- The options table at `733c:49c4` contains an `x2` entry at `733c:49d6`.
+  But `mov si, 0x49d6` does not occur in the image. No code can
+  select the entry. Thus this firmware cannot report x2. The x2 connect-rate
+  vocabulary in the list above is unused data that stayed from older builds.
 
 `0x82e7d` tests the same `[0x19d7]` bit `0x20` to select the product code
-reported by `ATI`/`ATI0`, so that code tracks V.90, not x2:
+that `ATI`/`ATI0` reports. Thus that code follows V.90, not x2:
 
 | `[0x19d7]` bit `0x20` | EEPROM fitted | `ATI` |
 |---|---|---|
@@ -269,21 +268,21 @@ reported by `ATI`/`ATI0`, so that code tracks V.90, not x2:
 | clear | yes | `3368` |
 | clear | no | `3368A` |
 
-Confirmed in the emulator with a synthesised parameter sector: features `031`
-gives `ATI` = `5608` and an options list including `V90`, while features `015`
-gives `3368` and drops `V90`.
+We confirmed this in the emulator with a synthesised parameter sector. Features `031`
+gives `ATI` = `5608` and an options list that includes `V90`. Features `015`
+gives `3368` and an options list without `V90`.
 
 ### Parameter sector layout beyond the first seven bytes
 
-The whole accepted record is copied to `0x0a06` one-for-one, so record byte *i*
-lands at `0x0a06 + i`. Only bytes 0..6 are unpacked into the named fields above;
-the rest is a packed configuration image.
+The firmware copies the full accepted record to `0x0a06`, one byte to one byte. Thus record byte *i*
+goes to `0x0a06 + i`. The firmware unpacks only bytes 0..6 into the named fields above.
+The remaining bytes are a packed configuration image.
 
-Bytes `0x1d..0x2f` (RAM `0x0a23..0x0a35`) are expanded at `0x64044` into the
-profile bytes `0x0932..0x0955`. The unpacker walks a `(shift, mask)` control
-table at `0x63f8d`, storing `(source >> shift) & mask` per field and advancing to
-the next source byte whenever `shift` is zero. That is 36 fields across 19 source
-bytes. Notably:
+The code at `0x64044` expands bytes `0x1d..0x2f` (RAM `0x0a23..0x0a35`) into the
+profile bytes `0x0932..0x0955`. The unpacker reads a `(shift, mask)` control
+table at `0x63f8d` in sequence. For each field, it stores `(source >> shift) & mask`. When `shift` is zero, it moves to
+the next source byte. That gives 36 fields from 19 source
+bytes. Important entries:
 
 ```text
 src+5 >> 4 & 0x0f -> [0x0940]
@@ -291,47 +290,47 @@ src+5 >> 0 & 0x0f -> [0x0941]
 ```
 
 `[0x0941]` is a **test-mode selector**. `0x5bc57` and `0x5bc8d` compare it
-against 6, and anything `>= 6` takes `ljmp 0x7a59:0000` into a diagnostic
-dispatcher that selects a handler by `([0x0941] - 6) * 2` and then loops on
-`call [0x1fbc]` forever. It never returns to the normal boot path.
+with 6. For each value `>= 6`, the code does `ljmp 0x7a59:0000` into a diagnostic
+dispatcher. The dispatcher selects a handler by `([0x0941] - 6) * 2`. Then it does
+`call [0x1fbc]` in an endless loop. It never goes back to the normal boot path.
 
-This explains an easy trap when synthesising a parameter sector: filling the
-record with `0xff` makes `[0x0941]` unpack to 15, so the firmware enters test
-mode 9 and appears to hang in the rate module at `0x7abaa`. The two spin loops
-there wait on `[0x1fe7]` (which mirrors port `0x14` bit `0x01`, inverted) and
-`[0x1fe8]` (set by events 3 and 9 at `0x7a64e`), and they have complementary exit
-conditions, so no static input frees both. The firmware is behaving correctly;
-the record is wrong. A sector whose packed config decodes to sane values boots
-straight through to the main loop.
+This explains an error that is easy to make when you synthesise a parameter sector. If you fill the
+record with `0xff`, `[0x0941]` unpacks to 15. Then the firmware enters test
+mode 9 and seems to stop in the rate module at `0x7abaa`. The two spin loops
+there wait on `[0x1fe7]` and `[0x1fe8]`. `[0x1fe7]` is an inverted copy of port `0x14` bit `0x01`.
+Events 3 and 9 at `0x7a64e` set `[0x1fe8]`. The two loops have complementary exit
+conditions. Thus no static input releases both. The firmware operates correctly.
+The record is incorrect. If the packed config of a sector decodes to correct values, the firmware boots
+directly to the main loop.
 
-Interpretation: x2 is controlled by a persistent settings/feature path. `S58`
-looks like the runtime modulation mask, while `S30` looks like the bit that
-allows feature-upgrade handling. The message "x2-capable but feature not
-installed" is the strongest sign that some Courier hardware/line state can be
-recognized as capable but held back by an installed-feature flag, loaded from the
-parameter sector into the supervisor's settings block at boot as traced above. A literal unlock-key
-string or key-entry prompt has **not** been found in the firmware image yet.
+Interpretation: a persistent settings/feature path controls x2. `S58`
+is possibly the runtime modulation mask. `S30` is possibly the bit that
+permits feature-upgrade handling. The message "x2-capable but feature not
+installed" is the strongest sign of this behavior: the firmware can recognize some Courier hardware/line state as capable,
+but an installed-feature flag stops x2. At boot, the firmware loads this flag from the
+parameter sector into the settings block of the supervisor, as the trace above shows. We did **not find** a literal unlock-key
+string or key-entry prompt in the firmware image yet.
 
-Live-command evidence: `ATY14` returns a compact six-field configuration-register
-dump:
+Live-command evidence: `ATY14` returns a compact configuration-register
+dump of six fields:
 
 ```text
 unused1,unused2,type1,type2,features,country
 ```
 
-This fits the static evidence above better than treating `ATY14` as a last-call
-counter report. On a 03/13/98 US/Canada external unit with `ATI7` options
+This agrees with the static evidence above better than the theory that `ATY14` is a last-call
+counter report. On a 03/13/98 US/Canada external unit with the `ATI7` options
 `HST,V32bis,Terbo,VFC,V34+,x2,V90`, `ATY14` reports:
 
 ```text
 000,000,030,007,031,000
 ```
 
-Fields 3 and 4 (`030,007`) are the product type, matching the `ATI7` product
+Fields 3 and 4 (`030,007`) are the product type. They agree with the `ATI7` product
 profile. Field 5 is the `ATC8` protocol-availability byte. On this unit it is
-`031` decimal (`0x1F`), meaning HST, fax, Terbo, V.FC/V.34, and x2 are enabled.
-V.90 is reported by `ATI7` on this firmware but is not a separate documented
-`ATC8` bit in this older mapping. Confirmed `ATC8` feature bits:
+`031` decimal (`0x1F`). Thus HST, fax, Terbo, V.FC/V.34, and x2 are enabled.
+On this firmware, `ATI7` reports V.90. But in this older mapping, V.90 is not a separate documented
+`ATC8` bit. Confirmed `ATC8` feature bits:
 
 | bit | value | meaning |
 |---:|---:|---|
@@ -341,9 +340,9 @@ V.90 is reported by `ATI7` on this firmware but is not a separate documented
 | 3 | 8 | V.FC / V.34 |
 | 4 | 16 | x2 |
 
-Field 6 is the country code. On this unit it is `000`, matching US/Canada.
+Field 6 is the country code. On this unit it is `000`, which agrees with US/Canada.
 
-Archived field-upgrade notes found by Scott give this sequence for older Courier
+Scott found archived field-upgrade notes. They give this sequence for older Courier
 firmware:
 
 ```text
@@ -354,31 +353,33 @@ ATC8=31      ; enable x2
 ATNX         ; save changes
 ```
 
-Later captured-403 disassembly identifies `ATNX` as a supervisor restart,
-not a demonstrated NVRAM-save operation. The same investigation resolves
-numeric `ATN` as a state-dependent manual rate-change event rather than an
-arbitrary DSP procedure call. See [the command analysis](docs/undocumented-atn-commands.md).
+A later disassembly of the 403 capture identifies `ATNX` as a supervisor restart.
+It is not a demonstrated NVRAM-save operation. The same investigation identifies
+numeric `ATN` as a manual rate-change event that depends on the state. It is not
+a random DSP procedure call. Refer to [the command analysis](docs/undocumented-atn-commands.md).
 
-This maps very cleanly onto the observed `ATY14` string, even though the write
-commands themselves have not been confirmed on the 03/13/98 image:
+This sequence agrees closely with the observed `ATY14` string. But we did not confirm the write
+commands on the 03/13/98 image:
 
-- `ATC10=0` matches field 6 (`000`) and the decoded country table, whose first
-  entry is `US/Canada` at approximately flash `0x20480..0x20520`.
-- `ATC8=31` matches field 5 (`031`). The same post says `ATC8=15` disables x2,
-  confirming bit `0x10` as the x2 bit in that config word. This does not have to
-  be the same bit numbering as the runtime
+- `ATC10=0` agrees with field 6 (`000`) and with the decoded country table. The first
+  entry of that table is `US/Canada` at about flash `0x20480..0x20520`.
+- `ATC8=31` agrees with field 5 (`031`). The same post says that `ATC8=15` disables x2.
+  This confirms that bit `0x10` is the x2 bit in that config word. This bit numbering can be
+  different from the runtime
   `S58` modulation mask, where the help text labels bit `1` as `x2`.
 - Literal scans found no clean `ATGN`, `ATNX`, `ATC8`, or `ATC10` strings. That
-  is consistent with the tokenized command parser, but it also means these
-  write/config verbs may be absent or differently gated on this firmware.
+  agrees with the tokenized command parser. But it also means that these
+  write/config verbs are possibly not in this firmware, or that a different gate controls them.
 
-Safety: treat `ATGN`, `ATC8=...`, `ATC10=...`, and `ATNX` as NVRAM/country
-write commands. Do not run them on a known-good interop unit without a sacrificial
-modem or a full NVRAM/flash recovery plan. Read-only captures of `ATY14`,
-`ATI7`, `ATS30?`, `ATS57?`, and `ATS58?` are safe and should be enough to compare
-installed-feature state across units.
+> **CAUTION: DO NOT SEND `ATGN`, `ATC8=...`, `ATC10=...` OR `ATNX` TO A KNOWN-GOOD INTEROP UNIT.**
+> Treat these commands as NVRAM/country write commands. Use them only on a modem that you can lose,
+> or when you have a full NVRAM/flash recovery plan.
 
-Capture `ATY14` with `ATS30?`, `ATS57?`, and `ATS58?` on every unit:
+Read-only captures of `ATY14`,
+`ATI7`, `ATS30?`, `ATS57?`, and `ATS58?` are safe. They are sufficient to compare the
+installed-feature state of different units.
+
+Capture `ATY14` with `ATS30?`, `ATS57?`, and `ATS58?` on each unit:
 
 ```text
 ATS30?   ; feature-upgrade enable bit lives here in help text
@@ -387,25 +388,25 @@ ATS58?   ; bit 1 = x2, bit 2 = BLER monitor in help text
 ATY14    ; compare field 5 with the feature/modulation state
 ```
 
-If the 5th `ATY14` field changes across units or NVRAM profiles while the firmware
-image is the same, it is the confirmed protocol-availability byte that gates
+Possibly the 5th `ATY14` field is different on different units or NVRAM profiles with the same firmware
+image. In that case, it is the confirmed protocol-availability byte that gates
 HST/fax/Terbo/V.FC/V.34/x2 availability. The diagnostic bundle now records these
 S-registers before `ATY14`.
 
-Formatter/handler hunt:
-- `ATY14` is not stored as a literal command string (`Y14`, `y14`, and `ATY14`
-  do not appear in the image), matching the tokenized `AT` parser model.
-- The visible accepted-Y command set from live probing
-  (`0..6,8,9,11,12,14,15,16,17`) does not appear as a simple bitmap
+Search for the formatter/handler:
+- The image does not store `ATY14` as a literal command string (`Y14`, `y14`, and `ATY14`
+  do not occur in the image). This agrees with the tokenized `AT` parser model.
+- Live probes show the accepted Y commands
+  (`0..6,8,9,11,12,14,15,16,17`). This set does not occur as a simple bitmap
   (`0x03DB7F`) or byte sequence in raw flash.
-- A direct search for a static comma-separated formatter (`mov al,','` followed
-  by the known resident character-output far call) did not find a candidate in
-  the visible supervisor body. The two direct calls to resident output helpers
-  found so far are in the banner/version formatter.
-- Current interpretation: the `ATY14` producer exists in code, but it is probably
-  selected by the resident/banked command dispatcher or by an encoded diagnostic
-  table interpreter. To pin the exact routine, the next dynamic watchpoints are
-  the resident character-output helper and the bytes/words whose decimal values
+- We searched for a static comma-separated formatter (`mov al,','` and then
+  the known resident far call for character output). The search found no candidate in
+  the visible supervisor body. The only two direct calls to resident output helpers
+  that we found are in the banner/version formatter.
+- Current interpretation: the `ATY14` producer is in the code. But probably
+  the resident/banked command dispatcher or an encoded diagnostic
+  table interpreter selects it. To find the exact routine, put the next dynamic watchpoints on
+  the resident character-output helper and on the bytes/words whose decimal values
   become `000,000,030,007,031,000`.
 
 ### Link-diagnostic vocabulary — the ATI6/ATI11-style readouts (file `~0x01CC00`)
@@ -418,11 +419,11 @@ Carrier Offset ... ppm
 RX Upshifts / RX Downshifts
 Constant Carrier / Carrier Usage
 ```
-**This is the most immediately useful find** — see "How this helps the blocker".
+**This is the find that is most useful now**. Refer to "How this helps the blocker".
 
 ### DSP coefficient table (file `0x7C080`)
-Little-endian int32, mostly `-774` repeated, then `-781, -1087, -915, -901, ...` —
-fixed-point constants loaded into the datapump DSP (default/init taps).
+Little-endian int32. Most values are `-774`, and then `-781, -1087, -915, -901, ...` follow.
+These are fixed-point constants that the firmware loads into the datapump DSP (default/init taps).
 
 ### Other
 - Country/config list: US/Canada, Japan, Finland, Sweden, UK, Norway,
@@ -431,28 +432,28 @@ fixed-point constants loaded into the datapump DSP (default/init taps).
 - "Lowest Speed Limit", "SDL Xmodem file transfer — (Y)es (N)o (T)est", reset/dial UI
 - Developer credits (`0x100`): John Wiersema, Glenn Bushey, Kevin Lacey,
   Brinn Gilbert, Doug Blatt, Art Johnson, Pete Jankus, Bill Pierce, Ken Starkey, Joe F…
-- Version is printed at runtime from RAM `[0x127..0x129]` as an X:Y:Z triplet
-  (not a literal string in-image; set during init).
+- The firmware prints the version at runtime from RAM `[0x127..0x129]` as an X:Y:Z triplet.
+  (It is not a literal string in the image. The init code sets it.)
 
 ## Architecture summary
 
-- **Supervisor**: Intel 80188 (16-bit x86). Uncompressed, plaintext, disassemblable
-  as x86-16 — handles AT/S-registers, protocol sequencing, status/diagnostic
-  displays, and DSP overlay loading. Occupies `0x0–0x29080` (`0x29140` in 7.4.16).
+- **Supervisor**: Intel 80188 (16-bit x86). Uncompressed and plaintext. You can disassemble it
+  as x86-16. It controls AT/S-registers, protocol sequencing, status/diagnostic
+  displays, and DSP overlay loading. It occupies `0x0–0x29080` (`0x29140` in 7.4.16).
 - **DSP datapump**: TI TMS320C5x, **little-endian** 16-bit words, at `0x29080–0x43700`
-  (~106 KB) plus tables at `0x08000–0x0C000` and `0x7C000`. Confirmed executable
-  (the init block decodes cleanly and 95% of its branch targets land in
-  `0x8000–0x8400`), organized as multiple overlays. **This is where DIL /
-  constellation / retrain logic lives.** capstone has no C5x support — use
-  [`tools/c5x_disasm.py`](tools/c5x_disasm.py) (in-repo, MAME-derived), or IDA's
-  TMS320C5x processor module.
+  (about 106 KB), and tables at `0x08000–0x0C000` and `0x7C000`. We confirmed that it is executable
+  (the init block decodes cleanly and 95% of its branch targets are in
+  `0x8000–0x8400`). It has multiple overlays. **The DIL /
+  constellation / retrain logic is here.** capstone has no C5x support. Use
+  [`tools/c5x_disasm.py`](tools/c5x_disasm.py) (in this repo, derived from MAME), or the
+  TMS320C5x processor module of IDA.
 
 ### DSP-supervisor mailbox/status handoff
 
-The strongest concrete handoff found so far is a supervisor x86 reader block at
-file `0x13D00` (payload/flash `0x13C80`). It reads 16-bit words from the DSP with
-the high byte on I/O port `0x5E` and the low byte on I/O port `0x5C`, then stores
-them into a small RAM status cluster:
+The strongest concrete handoff that we found is a supervisor x86 reader block at
+file `0x13D00` (payload/flash `0x13C80`). It reads 16-bit words from the DSP.
+The high byte comes on I/O port `0x5E` and the low byte comes on I/O port `0x5C`. Then the block stores
+the words in a small RAM status cluster:
 
 ```asm
 13d00: in   al,0x5e   ; high byte
@@ -483,102 +484,102 @@ them into a small RAM status cluster:
 13d6a: ... -> [0x030c], sets [0x0b27]=1, [0x0b28]=0
 ```
 
-`[0x0B2F]` is confirmed as the raw V.90 status word used by `ATI11`: the formatter
-at file `0x1C3B0` takes `([0x0B2F] >> 8) & 7`, special-cases value `1` to value
-`8` when `[0x089D] & 0x20` is clear, and indexes the V.90-status string pointer
+We confirmed that `[0x0B2F]` is the raw V.90 status word that `ATI11` uses. The formatter
+at file `0x1C3B0` takes `([0x0B2F] >> 8) & 7`. When `[0x089D] & 0x20` is clear, it changes value `1` to value
+`8`. Then it uses the result as an index into the V.90-status string pointer
 table at logical `CS:0x517E` (physical file `0x1C3DE`).
 
-The likely rate/shift bucket is the DSP word stored at `[0x0304]`, because the
-supervisor derives `[0x0B26] = 6 - (([0x0304] >> 10) & 7)` when `[0x033F] & 4` is
-set. A direct raw-flash xref search found only this write/derivation path; no
-simple `mov al,[0x0B26]` or direct read of `[0x0304]` by a formatter was found.
-So `[0x0304]/[0x0B26]` is a strong candidate for the DSP's speed/rate-status
-handoff, but the final consumer probably runs through the encoded diagnostic
-table interpreter or a banked overlay, not a trivial inline formatter.
+The DSP word at `[0x0304]` is probably the rate/shift bucket. The reason is that the
+supervisor calculates `[0x0B26] = 6 - (([0x0304] >> 10) & 7)` when `[0x033F] & 4` is
+set. A direct xref search of raw flash found only this write/derivation path. We found no
+simple `mov al,[0x0B26]` and no direct read of `[0x0304]` by a formatter.
+Thus `[0x0304]/[0x0B26]` is a strong candidate for the speed/rate-status handoff of the DSP.
+But the final consumer probably goes through the encoded diagnostic
+table interpreter or a banked overlay, not a simple inline formatter.
 
 ## How this helps the "retrain after DIL" blocker
 
-The retrain-vs-send-CP decision is split:
-- **Protocol sequencing / status** → supervisor (disassemblable, reachable).
-- **DIL analysis + constellation design** (the part likely *rejecting* our DIL)
-  → DSP datapump (harder to reach).
+The decision to retrain or to send CP has two parts:
+- **Protocol sequencing / status** → supervisor (you can disassemble it and get access to it).
+- **DIL analysis + constellation design** (probably the part that *rejects* our DIL)
+  → DSP datapump (access to it is more difficult).
 
-**Immediate, no-further-RE win:** the diagnostic vocabulary above means the
+**Immediate result, with no more RE:** the diagnostic vocabulary above shows that the
 Courier reports its *own* measurement of our downstream signal. During a live
-attempt, `ATI6` / `ATI11` (and the "V.90 Status" display) expose **Timing Offset
+attempt, `ATI6` / `ATI11` (and the "V.90 Status" display) show **Timing Offset
 (ppm)**, **Carrier Offset (ppm)**, **Roundtrip Delay**, **Far Echo Loss**, and
-**Up/Downshift** counts right up to the moment it bails. That distinguishes:
-- a **timing/carrier-offset** problem → points back at our clock recovery / DPLL
-  (`clock_recovery.c`) and RTP sample-rate accuracy, vs.
-- a genuine **constellation/impairment** rejection of our DIL.
+**Up/Downshift** counts until the moment that the Courier stops. This lets us tell the difference between:
+- a **timing/carrier-offset** problem → this points to our clock recovery / DPLL
+  (`clock_recovery.c`) and RTP sample-rate accuracy, and
+- a real **constellation/impairment** rejection of our DIL.
 
 ### Confirmed useful AT diagnostics on our 03/13/98 Courier units
 
-Probe run, 2026-07-26, against `/dev/cu.usbserial-21210`:
+Probe run on 2026-07-26, on `/dev/cu.usbserial-21210`:
 
 | Command | Result on 03/13/98 US/Canada Courier | Interop value |
 |---|---|---|
 | `ATI6` | supported | Last-call counters, retrain/BLER/link timeout counts, disconnect reason. |
 | `ATI7` | supported | Firmware identity: 03/13/98 supervisor `7.3.14`, DSP `3.0.13`, 20.16/25 MHz split. |
 | `ATI11` | supported | Extended physical diagnostics: modulation, carrier/symbol rate, levels, SNR, echo loss, round-trip delay, timing/carrier offset, V.90 status. |
-| `ATY8` | supported, hidden from `AT$` | Verbose `00:`..`FF:` diagnostic table. Empty while idle; likely a byte-indexed datapump/stat table worth capturing after failed V.90 training. |
-| `ATY11` | supported | Frequency/level curve from the last call. Empty until a call has populated channel-probe state. |
-| `ATY12` | supported | 16-row `Recv`/`Xmit` table. Meaning is undocumented here; capture it for correlation with speed-shift and V.90 status changes. |
-| `ATY14` | supported | Six-field config-register dump: `unused1,unused2,type1,type2,features,country`. Field 5 is the `ATC8` protocol-availability byte (`031` on x2-enabled unit); field 6 is country (`000` = US/Canada). |
-| `ATY15` | supported, hidden from `AT$` | Current physical DIP-switch state. Not per-call, but useful provenance when comparing units. |
-| `ATY17` | supported, hidden from `AT$` | Verbose 16-bit diagnostic matrix. Empty while idle; likely datapump/state memory worth capturing after failed V.90 training. |
-| `ATY4DT<number>` | supported | Diagnostic dial form. Prefixing `Y4` to `DT<number>` emits call-progress dumps during dialing/training. Use `tools/cx_at.py usry4dial <number>`. |
-| `ATY0`..`ATY6`, `ATY9`, `ATY16` | `OK` with no report body | Accepted by the Y dispatcher but mostly not useful while idle; `ATY4` becomes useful when appended to a dial command as `ATY4DT<number>`. |
-| `ATY7`, `ATY10`, `ATY13`, `ATY18`..`ATY20` | `ERROR` | Not implemented on this firmware. |
-| `ATI16`, `ATI17` | `ERROR` | Newer Courier 56K Business docs alias these to support connection reports, but this 1998 V.Everything firmware does not implement them. |
-| `AT+MS=?`, `AT+MS?`, `AT+GMM`, `AT+GMR`, `AT&V`, `ATI8`, `ATI9`, `ATI12`..`ATI14`, `ATI18`..`ATI20` | `ERROR` | Do not rely on generic later-Hayes diagnostics for these units. |
-| `ATUSR` | `ERROR` on `/dev/cu.usbserial-21210` | The credits/proc strings are present in the image, but this unit did not expose the previously reported easter-egg command in command mode. |
+| `ATY8` | supported, hidden from `AT$` | Verbose `00:`..`FF:` diagnostic table. Empty when idle. Probably a byte-indexed datapump/stat table. Capture it after a failed V.90 training. |
+| `ATY11` | supported | Frequency/level curve from the last call. Empty until a call fills the channel-probe state. |
+| `ATY12` | supported | `Recv`/`Xmit` table with 16 rows. This document does not give its meaning. Capture it to compare with speed-shift and V.90 status changes. |
+| `ATY14` | supported | Config-register dump with six fields: `unused1,unused2,type1,type2,features,country`. Field 5 is the `ATC8` protocol-availability byte (`031` on a unit with x2 enabled). Field 6 is the country (`000` = US/Canada). |
+| `ATY15` | supported, hidden from `AT$` | Current physical DIP-switch state. Not for each call, but useful as provenance when you compare units. |
+| `ATY17` | supported, hidden from `AT$` | Verbose 16-bit diagnostic matrix. Empty when idle. Probably datapump/state memory. Capture it after a failed V.90 training. |
+| `ATY4DT<number>` | supported | Diagnostic dial form. If you put `Y4` before `DT<number>`, the modem sends call-progress dumps during dialing/training. Use `tools/cx_at.py usry4dial <number>`. |
+| `ATY0`..`ATY6`, `ATY9`, `ATY16` | `OK` with no report body | The Y dispatcher accepts them, but most are not useful when idle. `ATY4` is useful when you add it to a dial command as `ATY4DT<number>`. |
+| `ATY7`, `ATY10`, `ATY13`, `ATY18`..`ATY20` | `ERROR` | This firmware does not implement them. |
+| `ATI16`, `ATI17` | `ERROR` | Newer Courier 56K Business documents use these as aliases for support connection reports. This 1998 V.Everything firmware does not implement them. |
+| `AT+MS=?`, `AT+MS?`, `AT+GMM`, `AT+GMR`, `AT&V`, `ATI8`, `ATI9`, `ATI12`..`ATI14`, `ATI18`..`ATI20` | `ERROR` | Do not use generic later-Hayes diagnostics for these units. |
+| `ATUSR` | `ERROR` on `/dev/cu.usbserial-21210` | The credits/proc strings are in the image. But in command mode, this unit did not accept the easter-egg command that other people reported. |
 
-Run the post-call bundle before `ATZ` or power-cycling the analogue modem:
+Run the post-call bundle before you send `ATZ` or power-cycle the analogue modem:
 
 ```bash
 ./.venv/bin/python tools/cx_at.py --dev /dev/cu.usbserial-21210 usrdiag
 ```
 
-For one-off deeper captures, especially immediately after the Courier retrains
-instead of sending CPt, also run:
+For a single deeper capture, also run this command. This is especially important immediately after the Courier retrains
+and does not send CPt:
 
 ```bash
 ./.venv/bin/python tools/cx_at.py --dev /dev/cu.usbserial-21210 usrdeepdiag
 ```
 
-To capture the Courier's call-progress diagnostic dump during the dial/training
-itself, use the `ATY4DT<number>` form:
+To capture the call-progress diagnostic dump of the Courier during the dial/training,
+use the `ATY4DT<number>` form:
 
 ```bash
 ./.venv/bin/python tools/cx_at.py --dev /dev/cu.usbserial-21210 usry4dial 6001 --wait 120
 ```
 
-For a failing V.90 attempt, the minimum evidence to preserve is:
+For a failed V.90 attempt, keep this minimum evidence:
 
-- `ATI6` disconnect reason plus `Retrains Requested/Granted`, `Blers`, and
+- `ATI6` disconnect reason, and `Retrains Requested/Granted`, `Blers`, and
   `Link Timeouts`.
 - `ATI11` `Timing Offset`, `Carrier Offset`, `Roundtrip Delay`,
   `Recv/Xmit Level`, `SNR`, `Near/Far Echo Loss`, and raw `V.90 Status`.
 - `ATY11` frequency-level slope/notches.
-- `ATY12` raw table and `ATY14` config string. Compare `ATY14` field 5 across
-  units because it is the confirmed `ATC8` protocol-availability byte.
-- `ATY8`/`ATY17` raw tables when running a deep capture; if they become non-zero
-  only after a failed call, diffing idle vs. post-call output may identify the
-  datapump reject reason path.
+- `ATY12` raw table and `ATY14` config string. Compare `ATY14` field 5 on different
+  units, because it is the confirmed `ATC8` protocol-availability byte.
+- `ATY8`/`ATY17` raw tables when you do a deep capture. If they change from zero
+  only after a failed call, a diff of the idle output and the post-call output can possibly identify the
+  path for the datapump reject reason.
 
 External cross-checks:
-- Official USRobotics Courier command reference documents `ATI11` as the
-  extended link screen and newer `ATI16`/`ATI17` as connection reports, but our
-  firmware predates those aliases.
+- The official USRobotics Courier command reference documents `ATI11` as the
+  extended link screen, and the newer `ATI16`/`ATI17` as connection reports. But our
+  firmware is older than those aliases.
 - Archived USR support discussions use `ATY11` after failed V.90 calls as the
-  frequency-curve display, matching the command's output on our unit.
+  frequency-curve display. This agrees with the output of the command on our unit.
 
 Firmware/string-scan evidence:
-- Help/S-register vocabulary is concentrated around flash `0x18000..0x1A200`,
-  including the V.34/V.90 control bits in `S54`..`S58`.
-- The `ATY14` country-code table is visible around flash `0x20480..0x20D00`.
-  Known order from Courier command references and static confirmation:
+- Most of the help/S-register vocabulary is near flash `0x18000..0x1A200`.
+  This includes the V.34/V.90 control bits in `S54`..`S58`.
+- The `ATY14` country-code table is near flash `0x20480..0x20D00`.
+  The order, from Courier command references and static confirmation, is:
   `0=US/Canada`, `1=Japan`, `2=Finland`, `3=Sweden`, `4=UK`, `5=Norway`,
   `6=Switzerland`, `7=Netherlands`, `8=South Africa`, `9=Italy`,
   `10=New Zealand`, `11=Czechoslovakia`, `12=Belgium`, `13=Denmark`,
@@ -589,98 +590,98 @@ Firmware/string-scan evidence:
   `Carrier Offset`, `RX Upshifts`).
 - The V.90 downstream rate grid is at flash `0x19A82`.
 - The firmware-loader prompt `SDL Xmodem file transfer - (Y)es (N)o (T)est` is
-  at flash `0x27CBB`, confirming a hidden firmware-update path entered with
-  `AT~X!`. Treat that command as dangerous; do not invoke it during diagnostics.
-- The visible `AT$` help does not list a plain `Y` command family, but live
-  probing shows a numeric `ATY<n>` dispatcher. `ATY8`, `ATY15`, and `ATY17`
+  at flash `0x27CBB`. This confirms a hidden firmware-update path that
+  `AT~X!` starts. That command is dangerous. Do not send it during diagnostics.
+- The visible `AT$` help does not list a plain `Y` command family. But live
+  probes show a numeric `ATY<n>` dispatcher. `ATY8`, `ATY15`, and `ATY17`
   are the new useful hidden surfaces from this pass.
 
 ## Container format (SDL/XMODEM download)
 
-`524416 = 4097 × 128` — exactly 4097 XMODEM blocks. Block 0 (`0x00–0x80`) is the
+`524416 = 4097 × 128`. This is exactly 4097 XMODEM blocks. Block 0 (`0x00–0x80`) is the
 SDL download header (checksum bytes + `NHCFG` tag + `0x4A` fill). The remaining
 4096 blocks are the 512 KB flash image. **flash offset = file offset − 0x80.**
-Send this file only after entering the Courier SDL loader with `AT~X!`.
+Send this file only after you start the Courier SDL loader with `AT~X!`.
 
 ## SDL/XMODEM firmware loader reversal
 
 **Command entry:** public update instructions and firmware strings identify the
-loader command as **`AT~X!`**. Do not use plain `ATXMODEM`; that was earlier
-shorthand in these notes, not the command accepted by the Courier update path.
-The command is destructive after confirmation.
+loader command as **`AT~X!`**. Do not use plain `ATXMODEM`. That was a short form in earlier
+versions of these notes. The Courier update path does not accept it.
+After confirmation, the command causes permanent changes.
 
-**Other `AT~` commands:** none found so far. A full payload scan finds exactly
+**Other `AT~` commands:** we found none. A full payload scan finds exactly
 one clean, NUL-terminated tilde command token, `~X!`, at flash `0x7C14D`
-(file offset `0x7C1CD`). Other raw `0x7E` occurrences that look superficially
-command-like, such as `~N`, `~0H`, and `^~!U`, are embedded in dense code/table
-regions and do not have the surrounding loader-command structure. No literal
-`AT~` strings are present, which is normal because the parser stores only the
-post-`AT` command token.
+(file offset `0x7C1CD`). Other raw `0x7E` occurrences look a little like commands,
+for example `~N`, `~0H`, and `^~!U`. But they are in dense code/table
+regions, and they do not have the loader-command structure around them. There are no literal
+`AT~` strings. This is normal, because the parser stores only the
+command token after `AT`.
 
 **AT parser / ERROR path anchors:**
 
 - The normal command processor does not store commands as literal `AT...`
-  strings. It appears to tokenize after `AT` and dispatch by command family.
-- A likely `AT` entry recognizer is at flash `0x29380`:
-  - `cmp al,0x41` checks for `A`; on match it writes `0x1864` to runtime word
-    `[0x50]`, probably selecting the next parser state.
-  - The following state at flash `0x293B8` reads the current input byte from
-    `SS:[0xFF76]` / `SS:[0xFF78]`, uppercases it with `and al,0x5F`, then
+  strings. It seems to tokenize the input after `AT` and dispatch by command family.
+- A probable `AT` entry recognizer is at flash `0x29380`:
+  - `cmp al,0x41` checks for `A`. On a match, it writes `0x1864` to runtime word
+    `[0x50]`. This probably selects the next parser state.
+  - The next state at flash `0x293B8` reads the current input byte from
+    `SS:[0xFF76]` / `SS:[0xFF78]` and changes it to uppercase with `and al,0x5F`. Then
     `cmp al,0x54` checks for `T`.
-  - On `T`, it writes runtime words `[0x50]=0x1967` and `[0x54]=0x0385`,
-    consistent with entering the post-`AT` command parser. On non-`T`, it writes
-    `[0x50]=0x190B`, consistent with rejecting the `A...` prefix or returning to
-    non-command input handling.
-  - Both paths finish by writing `0x8000` to `SS:[0xFF02]` and `iret`, so this
-    looks like an interrupt/state-machine input path rather than a linear
+  - On `T`, it writes runtime words `[0x50]=0x1967` and `[0x54]=0x0385`.
+    This agrees with an entry into the command parser after `AT`. On a character that is not `T`, it writes
+    `[0x50]=0x190B`. This agrees with a rejection of the `A...` prefix, or a return to
+    the handling of non-command input.
+  - Both paths end with a write of `0x8000` to `SS:[0xFF02]` and `iret`. Thus this
+    is probably an interrupt/state-machine input path, not a linear
     subroutine.
-- The result-code text table is XOR-encoded with key `0xB0` at flash
-  `0x0A490`: `OK`, `CONNECT`, `RING`, `NO CARRIER`, `ERROR`, `1200`,
-  `NO DIAL TONE`, `BUSY`, `NO ANSWER`, etc. `ERROR` starts at flash `0x0A4AB`.
-  This is the likely final output table used when a command handler rejects a
-  token or falls through.
-- The `AT$` help/category vocabulary is separately encoded. One decoded anchor
-  is flash `0x1773E` with XOR key `0x3D`, which includes:
+- The result-code text table at flash `0x0A490` is XOR-encoded with key `0xB0`:
+  `OK`, `CONNECT`, `RING`, `NO CARRIER`, `ERROR`, `1200`,
+  `NO DIAL TONE`, `BUSY`, `NO ANSWER`, and other items. `ERROR` starts at flash `0x0A4AB`.
+  This is probably the final output table. The firmware uses it when a command handler rejects a
+  token or has no match.
+- The `AT$` help/category vocabulary has a separate encoding. One decoded anchor
+  is flash `0x1773E` with XOR key `0x3D`. It includes:
   `Result Codes`, `Speaker`, `Responses`, `Register`, `Command`, `Time`,
-  `Dial`, `Wait`, `Tone`, and `Test`. This looks like help text, not the parser
-  table itself.
-- A raw-code search for `cmp al,0x7E` found one real-looking routine at flash
-  `0x16345`, but that path treats `0x7E` as a protocol flag byte and returns
+  `Dial`, `Wait`, `Tone`, and `Test`. This is probably help text, not the parser
+  table.
+- A raw-code search for `cmp al,0x7E` found one routine that looks real, at flash
+  `0x16345`. But that path uses `0x7E` as a protocol flag byte and returns
   carry/clear. It is probably V.42/HDLC flag handling, not an `AT~` dispatcher.
-- The parser state writes are real, but the consumer is not a trivial direct
-  indirect call in the raw flash image. Searches for `call/jmp [0x50]`,
+- The parser state writes are real. But in the raw flash image, the consumer is not a simple
+  indirect call. Searches for `call/jmp [0x50]`,
   `call/jmp far [0x50]`, and the same forms for `[0x44]`/`[0x54]` found no
-  hits. Additional direct state-slot writes seen in nearby supervisor code:
+  hits. There are more direct state-slot writes in supervisor code near this location:
   `[0x50]=0x1892` / `[0x54]=0x19CE`, `[0x50]=0x0F23` / `[0x54]=0x0F1C`, and
-  `[0x50]=0x08A7` / `[0x52]=0x9EB0`. That pattern makes `[0x50]`/`[0x54]`
-  look like scheduler/parser-state slots rather than a single static command
-  jump table. The dispatcher is probably in resident RAM or a banked overlay.
-- The recovery loader uses its own internal address model. Its bootstrap begins
+  `[0x50]=0x08A7` / `[0x52]=0x9EB0`. This pattern shows that `[0x50]`/`[0x54]`
+  are probably scheduler/parser-state slots, not one static command
+  jump table. The dispatcher is probably in resident RAM or in a banked overlay.
+- The recovery loader has its own internal address model. Its bootstrap starts
   at flash `0x7DBC0` and refers to internal offsets such as `0x1B14` and
-  `0x1BA4`; when reversing that copy, use `internal offset = flash - 0x7C000`.
+  `0x1BA4`. When you reverse that copy, use `internal offset = flash - 0x7C000`.
 
-**User-visible state machine, reconstructed from strings:**
+**State machine that the user can see, reconstructed from strings:**
 
-1. `AT~X!` enters the loader and prints:
+1. `AT~X!` starts the loader. The loader prints:
    `SDL Xmodem file transfer - (Y)es (N)o (T)est >`
 2. `N` cancels.
-3. `T` enters a non-flashing verification path and prints:
+3. `T` starts a verification path that does not flash, and prints:
    `* Test mode - Flash ROM will not be modified *`
-4. `Y` or `T` then prints:
+4. After `Y` or `T`, the loader prints:
    `Begin Xmodem file transfer now.`
-5. The modem receives a 128-byte-block XMODEM stream.
-6. On transfer completion it prints:
+5. The modem receives an XMODEM stream of 128-byte blocks.
+6. When the transfer is complete, it prints:
    `SDL Xmodem file transfer completed.`
-7. It prints `Resetting modem...`, then `Calculating CRC...`.
-8. If image validation passes it prints `OK` and resets; if validation fails it
+7. It prints `Resetting modem...`, and then `Calculating CRC...`.
+8. If the image validation passes, it prints `OK` and resets. If the validation fails, it
    prints `failed.` or, in the recovery path, `Flash ROM failure.`
 
-**Two loader string/code copies are present:**
+**There are two copies of the loader strings/code:**
 
 | flash offset | evidence | role inference |
 |---|---|---|
-| `0x27CBB` | plain `SDL Xmodem file transfer`; surrounding status strings partly plain and partly XOR-encoded with key `0x69` for transfer/test/CRC text and key `0x72` for corrupted-firmware text | Normal supervisor command-mode loader. |
-| `0x7C14D` | literal `~X!` token, followed by another `SDL Xmodem file transfer` copy at `0x7C1DB`; status strings XOR-encoded with keys `0x29` and `0x65` | Recovery/resident loader copy, probably used when the main firmware checksum fails. |
+| `0x27CBB` | plain `SDL Xmodem file transfer`. The status strings near it are partly plain and partly XOR-encoded: key `0x69` for transfer/test/CRC text and key `0x72` for corrupted-firmware text | Normal supervisor command-mode loader. |
+| `0x7C14D` | literal `~X!` token, and then another `SDL Xmodem file transfer` copy at `0x7C1DB`. Status strings XOR-encoded with keys `0x29` and `0x65` | Recovery/resident loader copy. Probably the firmware uses it when the main firmware checksum fails. |
 
 Decoded normal-loader status strings:
 
@@ -706,123 +707,123 @@ Decoded recovery-loader status strings:
 
 **File/container facts from `SV25.XMD`:**
 
-- File length is exactly `0x80080` bytes: one 128-byte SDL header plus one
+- The file length is exactly `0x80080` bytes: one 128-byte SDL header and one
   512 KiB flash image.
-- XMODEM itself is not embedded in the file; a terminal sends each 128-byte file
-  chunk wrapped in standard XMODEM framing.
-- The first block starts with bytes
+- The file does not contain XMODEM framing. A terminal puts each 128-byte file
+  chunk into standard XMODEM framing.
+- The first block starts with the bytes
   `b7 f0 b2 fd d8 ec bc bd 4b 1f 37 13 ca 4a 4a 4a`, then `NHJ`, `NHCFG\r`,
-  then `0x4A` fill to the end of the 128-byte block.
-- The 512 KiB payload begins immediately at file offset `0x80`.
-- The varying header field is the 16-bit value at header offset `0x0A`. Across
+  and then `0x4A` fill to the end of the 128-byte block.
+- The 512 KiB payload starts immediately at file offset `0x80`.
+- The header field that changes is the 16-bit value at header offset `0x0A`. We compared
   ten `.XMD` images (`ID20_401/402/403`, `ID25_401/402/403`, `SDL0430`,
-  `SDL0430N`, `SV25`, `SV_49`) bytes `0x00..0x04`, `0x06..0x09` and `0x0C` are
-  identical and only `0x05` (two observed values, `0xec`/`0xed`) and `0x0A..0x0B`
-  change. A single sample cannot separate a constant from a checksum, which is
-  why earlier passes tested "the first header words" as a block.
-- The `0x0A` field is a real payload-dependent checksum, not a build serial:
-  `SDL0430.XMD` and `SDL0430N.XMD` differ in only 237 of 524,288 payload bytes
-  (0.05%) yet carry the unrelated values `0x76ea` and `0x8f31`. That avalanche
-  also rules out any additive construction.
-- What the `0x0A` field is **not**, established with init- and xorout-independent
-  tests (the GF(2)-affine property of CRCs and linearity of sums, so these
-  eliminate whole families rather than single configurations):
-  - additive byte and word sums, either endianness, over every prefix length;
-  - CRC-16 with **all 65,536 polynomials**, reflected and non-reflected, either
+  `SDL0430N`, `SV25`, `SV_49`). In all of them, bytes `0x00..0x04`, `0x06..0x09` and `0x0C` are
+  identical. Only `0x05` (two observed values, `0xec`/`0xed`) and `0x0A..0x0B`
+  change. One sample cannot show the difference between a constant and a checksum. This is
+  the reason that earlier passes tested "the first header words" as a block.
+- The `0x0A` field is a real checksum that depends on the payload. It is not a build serial.
+  `SDL0430.XMD` and `SDL0430N.XMD` are different in only 237 of 524,288 payload bytes
+  (0.05%). But they have the unrelated values `0x76ea` and `0x8f31`. That avalanche
+  also excludes all additive constructions.
+- These tests show what the `0x0A` field is **not**. The tests do not depend on init or xorout
+  (they use the GF(2)-affine property of CRCs and the linearity of sums). Thus they
+  exclude full families, not only single configurations:
+  - additive byte and word sums, in each endianness, over each prefix length;
+  - CRC-16 with **all 65,536 polynomials**, reflected and non-reflected, with each
     endian reading, over the full payload;
-  - the firmware's own CRC (see below) over `0x40000..0x77FFE`, `0..0x77FFE`,
+  - the CRC of the firmware (refer to the text below) over `0x40000..0x77FFE`, `0..0x77FFE`,
     `0..0x80000`, `0x40000..0x80000`, `0..0x44000`, `0x40000..0x78000`, and over
-    every prefix length with both init values.
+    each prefix length with both init values.
 - It depends on payload content **below `0x40000`**. `SDL0430`, `SDL0430N` and
-  `SV_49` are byte-identical over flash `0x40000..0x77FFE` (all three checksum to
-  `0xd195` there) yet carry three different `0x0A` values, so the covered region
-  cannot include that range. Consistently, every small pairwise diff between
-  these images lies in `0x002c0..0x26f5c`.
-- The `0x0A` field is still unrecovered. It is a separate quantity from the CRC
-  the modem actually verifies, which *is* recovered — see "The application CRC
-  the loader verifies" below. Whether `0x0A` gates a flash at all, or is only
-  checked by USR's internal build tooling, is not established.
-- `ID_SDL20.EXE` does not contain the algorithm. The DOS downloader holds none of
-  the header magic (`b7f0b2fd`, `bcbd4b1f`), neither tag (`NRJ`, `NHCFG`), not a
-  16-byte run of the `0x4A` fill, and no chunk of the payload; its CRC strings are
-  all of the form `Modem reports bad CRC`. It streams the file and relays status.
+  `SV_49` are byte-identical over flash `0x40000..0x77FFE` (the checksum of all three is
+  `0xd195` there). But they have three different `0x0A` values. Thus the covered region
+  cannot include that range. This agrees with the diffs: each small pairwise diff between
+  these images is in `0x002c0..0x26f5c`.
+- We did not recover the `0x0A` field yet. It is different from the CRC
+  that the modem verifies. We *did* recover that CRC. Refer to "The application CRC
+  the loader verifies" below. We do not know if `0x0A` gates a flash, or if only
+  the internal build tools of USR check it.
+- `ID_SDL20.EXE` does not contain the algorithm. The DOS downloader contains none of
+  the header magic (`b7f0b2fd`, `bcbd4b1f`), neither tag (`NRJ`, `NHCFG`), no
+  16-byte run of the `0x4A` fill, and no chunk of the payload. All its CRC strings have
+  the form `Modem reports bad CRC`. It streams the file and relays the status.
 
-**Safety:** `AT~X!` should never be sent during normal diagnostics. If absolutely
-necessary, `T` appears to be a test/no-flash path, but it still enters the loader
-and waits for an XMODEM transfer, so use it only on a sacrificial unit or when
-actively reversing the loader.
+> **CAUTION: DO NOT SEND `AT~X!` DURING NORMAL DIAGNOSTICS.** If it is
+> absolutely necessary, `T` seems to be a test path that does not flash. But `T` also starts the loader,
+> and the loader waits for an XMODEM transfer. Thus use it only on a unit that you can lose, or when
+> you reverse the loader.
 
 ## 80188 memory architecture (segment `0x8000` resolved — see retraction below)
 
-**Recovery-loader update (2026-09-03):** the apparent setup-table obfuscation
-and post-bootstrap mapping break below are resolved for `SV25.XMD` by a chained
-128-byte XOR decode: initial payload key `0x55`, then the last decoded byte of
+**Recovery-loader update (2026-09-03):** for `SV25.XMD`, a chained
+128-byte XOR decode solves the setup-table obfuscation and the mapping break after the bootstrap
+that the text below describes. The initial payload key is `0x55`. Then the last decoded byte of
 each block becomes the next key. The decoded reset stub supports flash at
-`0x80000`; the recovery bootstrap copies its own `0x1b14` bytes into low RAM
+`0x80000`. The recovery bootstrap copies its own `0x1b14` bytes into low RAM
 and enters through `INT 13h`. `courier recovery-run SV25.XMD` now executes that
-path through the full SDL prompt with emulated serial input. No speculative
-bank switch is needed on this path. See [the recovery harness documentation](docs/sv25-recovery.md)
-for evidence, input/flash-ID assumptions, and the observed CRC mismatch. The
-historical notes below remain relevant to the unresolved normal supervisor
-resident/overlay map, but their recovery decode conclusions are superseded.
+path through the full SDL prompt with emulated serial input. This path does not need a speculative
+bank switch. Refer to [the recovery harness documentation](docs/sv25-recovery.md)
+for the evidence, the input/flash-ID assumptions, and the observed CRC mismatch. The
+historical notes below still apply to the resident/overlay map of the normal supervisor,
+which is not solved. But the recovery decode replaces their conclusions about the recovery loader.
 
-Tooling built and working:
-- **`c25dis.py`** (scratchpad) — faithful port of MAME's TMS320C25 disassembler
-  (Tony La Porta table). **Wrong on two counts: the instruction set is C5x, not
-  C25, and it was fed big-endian words**; the "verified correct" note referred to
-  the table port, not to the instruction set or the byte order. Use [`tools/c5x_disasm.py`](tools/c5x_disasm.py) with little-endian words
-  instead — it decodes the `0x29080` init block with zero undecoded words and 95%
-  of its branch targets inside `0x8000–0x8400`.
-- x86-16 **Capstone** disassembly installed locally under
-  `/private/tmp/capstone-py`, plus recursive-descent from the confirmed banner
-  code — follows only real control flow (avoids the "x86 decodes anything" trap).
+Tools that we built and that operate correctly:
+- **`c25dis.py`** (scratchpad): an accurate port of the TMS320C25 disassembler of MAME
+  (Tony La Porta table). **It is incorrect for two reasons: the instruction set is C5x, not
+  C25, and we gave it big-endian words**. The "verified correct" note was about
+  the table port, not about the instruction set or the byte order. Use [`tools/c5x_disasm.py`](tools/c5x_disasm.py) with little-endian words
+  instead. It decodes the `0x29080` init block with zero undecoded words, and 95%
+  of its branch targets are in `0x8000–0x8400`.
+- x86-16 **Capstone** disassembly, installed locally under
+  `/private/tmp/capstone-py`, and recursive descent from the confirmed banner
+  code. The recursive descent follows only real control flow (this prevents the "x86 decodes anything" error).
 
-What the recursive descent established:
-- The banner code (flash `0x26337`) runs **from flash** and makes far calls to a
-  **resident code segment `0x8000`** (26 distinct target offsets `0x0A2C…0xF42C`,
-  ~47 call sites). There is **no per-call bank-select `OUT`** before them.
-- ~~`segment 0x8000` does **not** map linearly to flash~~ — **retracted
-  2026-09-05. It maps linearly after all: `physical = 0x80000 + offset`, so
-  `8000:xxxx` is simply file offset `xxxx`.** The earlier attempts appear to have
-  searched for a *flash base* to add, when the flash is already sited at physical
-  `0x80000` and the segment offset is the file offset directly. Evidence: of the
-  206 distinct far-call targets in `seg 0x8000` (1053 call sites), **84% begin
-  with three plausible-prologue instructions when read at `file == offset`**,
-  against a 41% noise floor at a deliberately wrong base — and the most-called
-  targets are textbook far-call trampolines, e.g. `0xe951` (211 sites) and
-  `0x8110` (107 sites) both decoding as `call bx ; retf`. The DSP loader block
-  independently corroborates it: `8000:e447` from
-  [the DSP ROM probe notes](docs/dsp-rom-probe.md) lands exactly on the DSP
-  checksum routine at file `0xe447`, and that code's own far call
-  `lcall 8f43:0224` resolves to file `0xf654`, a clean `call 0xf688 ; retf` thunk.
-  The "segment `0x8000` = the 64 KB RAM" model built on the old claim should be
-  treated as unsupported. See
+What the recursive descent found:
+- The banner code (flash `0x26337`) runs **from flash**. It makes far calls to a
+  **resident code segment `0x8000`** (26 different target offsets `0x0A2C…0xF42C`,
+  about 47 call sites). There is **no bank-select `OUT` before each call**.
+- ~~`segment 0x8000` does **not** map linearly to flash~~. **We retracted this on
+  2026-09-05. It does map linearly: `physical = 0x80000 + offset`. Thus
+  `8000:xxxx` is file offset `xxxx`.** Probably the earlier attempts
+  searched for a *flash base* to add. But the flash is already at physical
+  `0x80000`, and the segment offset is directly the file offset. Evidence: the
+  206 different far-call targets in `seg 0x8000` have 1053 call sites. When we read them at `file == offset`, **84% start
+  with three instructions that look like a correct prologue**.
+  At an intentionally incorrect base, the noise floor is 41%. Also, the targets with the most calls
+  are typical far-call trampolines. For example, `0xe951` (211 sites) and
+  `0x8110` (107 sites) both decode as `call bx ; retf`. The DSP loader block
+  gives independent confirmation: `8000:e447` from
+  [the DSP ROM probe notes](docs/dsp-rom-probe.md) is exactly at the DSP
+  checksum routine at file `0xe447`. The far call in that code,
+  `lcall 8f43:0224`, resolves to file `0xf654`, a clean `call 0xf688 ; retf` thunk.
+  The model "segment `0x8000` = the 64 KB RAM" came from the old claim. Do not
+  use it. Refer to
   [How the DSP is loaded and run](#how-the-dsp-is-loaded-and-run).
-- Hardware interface seen in real code: immediate `IN` from ports **`0x19`, `0x3E`**;
-  `OUT` via `DX` at flash `0x26390/0x2D690`. Candidate DSP/UART/mailbox ports.
+- Hardware interface in real code: immediate `IN` from ports **`0x19`, `0x3E`**, and
+  `OUT` through `DX` at flash `0x26390/0x2D690`. These are candidate DSP/UART/mailbox ports.
 
 New bootstrap anchors from the loader pass:
-- Normal/supervisor-looking startup island at flash `0x295DC` (likely logical
-  offset `0x15DC` in a `0x28000` bank): zeroes `DS`/`ES`/`SS`, sets `SP=0x00F8`,
-  writes `[0xFFA8]=0x00FF`, then emits 36 `OUT DX,AX` setup writes from
+- A startup island that looks like normal supervisor code at flash `0x295DC` (probably logical
+  offset `0x15DC` in a `0x28000` bank). It sets `DS`/`ES`/`SS` to zero, sets `SP=0x00F8`,
+  writes `[0xFFA8]=0x00FF`, and then does 36 `OUT DX,AX` setup writes from
   `CS:[0x1A50]`.
 - Recovery-loader startup at flash `0x7DBC0` (logical offset `0x1BC0` in the
-  `0x7C000` recovery bank): same register setup, 36 `OUT DX,AX` writes from
-  `CS:[0x1B14]`, then 9 byte-wide setup writes from `CS:[0x1BA4]`.
-- The recovery setup table has a strong obfuscation/bus-decode hint: XORing the
-  first 27 records with `0xA1` yields plausible 80188-style internal control
-  writes such as `0xFF32=0x007E`, `0xFFA4=0x8000`, `0xFF60=0x801B`,
-  `0xFF64=0x0021`, and `0xFF56=0x00DB`. That does not prove the CPU sees decoded
-  values, but it is a useful bank/alias hypothesis. The raw code falls through
-  into bytes that are not stable x86, so some combination of bank switching, bus
-  decode, and/or copied RAM image is still missing from the static view.
+  `0x7C000` recovery bank): the same register setup, 36 `OUT DX,AX` writes from
+  `CS:[0x1B14]`, and then 9 byte-wide setup writes from `CS:[0x1BA4]`.
+- The recovery setup table gives a strong obfuscation/bus-decode hint. If you XOR the
+  first 27 records with `0xA1`, you get possible internal control writes of the 80188 type,
+  such as `0xFF32=0x007E`, `0xFFA4=0x8000`, `0xFF60=0x801B`,
+  `0xFF64=0x0021`, and `0xFF56=0x00DB`. This does not prove that the CPU sees decoded
+  values. But it is a useful bank/alias hypothesis. The raw code continues
+  into bytes that are not stable x86. Thus the static view does not show some combination of bank switching, bus
+  decode, and/or a copied RAM image.
 
-**Why we're still blocked:** to disassemble the resident routines (`8000:xxxx`) or
-the DSP overlay loader, we need the runtime flash→RAM/overlay address mapping. The
-80188 reset vector is **not** at file `0x80070` (flash `0x7FFF0`, top-mapped) as
-expected — it's not a standard `EA` far jump there. The flash is bank-switched /
-stored in non-linear order at coarse granularity, and the bootstrap setup appears
-to change the visible code/data mapping before it reaches the resident body.
+**Why we are still blocked:** to disassemble the resident routines (`8000:xxxx`) or
+the DSP overlay loader, we must know the runtime flash→RAM/overlay address mapping. The
+80188 reset vector is **not** at file `0x80070` (flash `0x7FFF0`, top-mapped), as we
+expected. There is no standard `EA` far jump at that location. The flash is bank-switched, or
+stored in non-linear order at coarse granularity. The bootstrap setup possibly
+changes the visible code/data mapping before it gets to the resident body.
 
 ## Emulation feasibility
 
