@@ -1,19 +1,19 @@
 # The TLC320AC01 protocol, as this board's DSP actually drives it
 
 The codec next to the DSP is a TI `320AC01CFN` ([board-parts.md](board-parts.md)).
-This decodes the serial protocol between it and the C5x from two sources that
+This file decodes the serial protocol between the codec and the C5x from two sources that
 agree: the datasheet (`tlc320ac01.pdf`, section 2.19 and 2.20) and the DSP
-firmware itself, disassembled out of `IDSDL302.ROM`'s payload and then watched
-executing under the boot ROM.
+firmware itself. We disassembled the firmware from the payload of `IDSDL302.ROM`, and then we monitored it
+while it executed under the boot ROM.
 
-Program addresses are the 20.16 MHz build's, origin `0x8000`. `main211`'s copy
-of the same code sits `0x8000` lower.
+The program addresses are those of the 20.16 MHz build, with origin `0x8000`. The copy of
+the same code in `main211` is `0x8000` lower.
 
 ## The frame
 
-The AC01 exchanges one 16-bit word each way per frame. The word the DSP sends
-is a **14-bit DAC sample in DS15..DS02 plus two control bits in DS01:DS00**;
-the word it receives is the ADC sample. The two LSBs select what happens next:
+The AC01 exchanges one 16-bit word in each direction for each frame. The word that the DSP sends
+is a **14-bit DAC sample in DS15..DS02 plus two control bits in DS01:DS00**.
+The word that it receives is the ADC sample. The two LSBs select what occurs next:
 
 | D01 D00 | effect |
 |---|---|
@@ -21,11 +21,10 @@ the word it receives is the ADC sample. The two LSBs select what happens next:
 | `01` / `10` | phase-shift request (earlier / later) |
 | `11` | **request a secondary frame** |
 
-Datasheet section 2.17.1 and Table 2-3. So a DAC sample is never a full 16 bits,
-which is why `native/c5x_core.cpp` masking the transmitted word with `0xfffc`
-was right.
+Datasheet section 2.17.1 and Table 2-3. Thus, a DAC sample is never a full 16 bits.
+For this reason, it was correct that `native/c5x_core.cpp` masked the transmitted word with `0xfffc`.
 
-A **secondary frame** carries a control-register write instead of a sample
+A **secondary frame** carries a control-register write in place of a sample
 (section 2.19.1):
 
 ```
@@ -50,7 +49,7 @@ control   | R/W  | reg address  | register data
 809a  samm @21               ; DXR = 0001 again
 ```
 
-Then six calls to the blocking control-word sender at `0x8149`:
+Then there are six calls to the blocking control-word sender at `0x8149`:
 
 ```
 80ad  lacc #010a ; call 8149
@@ -72,15 +71,15 @@ Then six calls to the blocking control-word sender at `0x8149`:
 8150  ret
 ```
 
-`@6b` is the pending request code and `@6c` the staged control word. Both are
-DARAM B2 cells, in the same block as the ROM's interrupt dispatch table.
+`@6b` is the pending request code, and `@6c` is the staged control word. The two are
+DARAM B2 cells, in the same block as the interrupt dispatch table of the ROM.
 
 ### The ISR ORs the request into the sample
 
-`@65` is the B2 cell the on-chip ROM dispatches XINT through
+`@65` is the B2 cell through which the on-chip ROM dispatches XINT
 ([dsp-onchip-rom.md](dsp-onchip-rom.md)), and the firmware installs `0x8189`
-in it. RINT's cell `@64` gets the shared do-nothing stub `0x81ae` — **the part
-is driven entirely off the transmit interrupt**, and one handler does both
+in it. The cell of RINT, `@64`, gets the shared stub `0x81ae` that does nothing. Thus, **the
+transmit interrupt alone controls the part**, and one handler does the two
 directions:
 
 ```
@@ -105,7 +104,7 @@ directions:
 81ab  lacc #81af ; samm @65 ; rete    ; revector XINT for exactly one frame
 ```
 
-and the secondary-frame handler restores itself:
+The secondary-frame handler restores itself:
 
 ```
 81af  lamm @6c ; samm @21   ; DXR = the control word
@@ -114,12 +113,12 @@ and the secondary-frame handler restores itself:
 81b6  rete
 ```
 
-**There is no state machine to find: the state is which address is in `@65`.**
-The ISR rewrites its own vector cell for one frame and then undoes it.
+**There is no state machine to find: the state is the address in `@65`.**
+The ISR writes its own vector cell again for one frame, and then it reverses the change.
 
 ### Watched executing
 
-Stepping the boot-ROM run and sampling `@6b`, `@6c` and `@65`:
+We stepped the boot-ROM run and sampled `@6b`, `@6c` and `@65`:
 
 ```
 @6b=0x0000  @6c=0x0000  @65=0x8189
@@ -132,7 +131,7 @@ Stepping the boot-ROM run and sampling `@6b`, `@6c` and `@65`:
 @6b=0x0000  @6c=0x0620  @65=0x8189
 ```
 
-Six words, each with the vector flipping out and back. The disassembly and the
+There are six words, and for each one the vector changes and then changes back. The disassembly and the
 run agree.
 
 ## What the six words program
@@ -146,40 +145,40 @@ run agree.
 | `0505` | 5, analog config | `0x05` | DS02 set: **high-pass filter bypassed**; `IN+`/`IN-` selected (not AUXIN), no loopback |
 | `0620` | 6, digital config | `0x20` | DS05 set: **ADC and DAC conversion free run** |
 
-All six have DS15:DS14 = `00` (no phase shift) and DS13 = 0 (write mode). No
-register is ever read back, and registers 7 and 8 - frame-sync delay and
-frame-sync number, the ones that only matter when slaves are chained - are left
-at their defaults. So this is a single AC01, not a chain.
+All six have DS15:DS14 = `00` (no phase shift) and DS13 = 0 (write mode). The firmware
+never reads a register back. Registers 7 and 8 (frame-sync delay and
+frame-sync number, which are important only when slaves are chained) stay
+at their defaults. Thus, this is a single AC01, not a chain.
 
 ### Free run is the interesting bit
 
-Register 6 DS05 puts the part in free-run mode (datasheet 2.15.4): the external
-shift clock and frame sync **control only the data transfer**, while the ADC
-and DAC conversion timing comes from the A and B registers off MCLK. Combined
-with registers 7 and 8 being untouched, the topology is: something outside the
-codec supplies SCLK and FS and moves words, and the codec clocks its own
+Register 6 DS05 puts the part in free-run mode (datasheet 2.15.4). The external
+shift clock and the frame sync **control only the data transfer**. The ADC
+and DAC conversion timing comes from the A and B registers, from MCLK. Registers 7 and 8
+are not changed. Together, this gives this topology: a device outside the
+codec supplies SCLK and FS and moves the words, and the codec clocks its own
 converters.
 
-> **That "something" is the DSP, not the ASIC.** An earlier revision said the
-> ASIC supplies SCLK and FS. Continuity readings since
-> ([asic-pinout.md](asic-pinout.md)) put the codec's `DOUT`, `DIN` and `FS` -
-> FN pins 11, 10 and 12 - on **DSP pins 43, 106 and 104**, each one pin from
-> its TDM counterpart. The ASIC has exactly one line to the codec and it is
-> `MCLK` (pin 14, from ASIC 112). So the ASIC clocks the converters' timebase
-> and the DSP runs the serial port, which is the same division of labour this
-> section describes with the parts the other way round.
+> **That device is the DSP, not the ASIC.** An earlier revision said that the
+> ASIC supplies SCLK and FS. Continuity readings after that
+> ([asic-pinout.md](asic-pinout.md)) put the `DOUT`, `DIN` and `FS` of the codec
+> (FN pins 11, 10 and 12) on **DSP pins 43, 106 and 104**, each one pin from
+> its TDM equivalent. The ASIC has exactly one line to the codec, and it is
+> `MCLK` (pin 14, from ASIC 112). Thus, the ASIC clocks the timebase of the converters,
+> and the DSP runs the serial port. This is the same division of work that this
+> section describes, but with the two parts in the opposite roles.
 
-That is the concrete version of the claim in
-[board-parts.md](board-parts.md) that "the ASIC fronts the codec" - it is true
+That is the specific version of the claim in
+[board-parts.md](board-parts.md) that "the ASIC fronts the codec". It is true
 of the data path, and false of the conversion clock.
 
 ### The rate: MCLK is 2.880 MHz, and it is over-determined
 
-The datasheet's equations are `FCLK = MCLK/(2 x A)` and `fs = FCLK/B`.
-[codec-sample-rates.md](codec-sample-rates.md) establishes the three sample
-rates independently of any clock - from the dial path's DTMF phase increments
-and from a six-row table indexed by V.34's negotiated symbol rate, which
-reprograms **register 2 only**, with `0214`, `0213` or `0212`. Solving for MCLK
+The equations of the datasheet are `FCLK = MCLK/(2 x A)` and `fs = FCLK/B`.
+[codec-sample-rates.md](codec-sample-rates.md) finds the three sample
+rates independently of a clock. It uses the DTMF phase increments of the dial path,
+and a six-row table indexed by the negotiated symbol rate of V.34. This table
+programs **only register 2** again, with `0214`, `0213` or `0212`. If we solve for MCLK
 with A fixed at 10:
 
 | B | fs | implied MCLK | FCLK |
@@ -188,53 +187,53 @@ with A fixed at 10:
 | 19 | 7578.95 Hz | 2.880001 MHz | 144.000 kHz |
 | 18 | 8000 Hz | 2.880000 MHz | 144.000 kHz |
 
-Three independent rates converge on one value. **MCLK = 2.880 MHz**, and
+Three independent rates give one value. **MCLK = 2.880 MHz**, and
 
 ```
 40.320 MHz / 2.880 MHz = 14.000
 ```
 
-exactly - so the codec clock is an integer division of the board's master
-oscillator, and the second can on the board does not have to be its source.
+exactly. Thus, the codec clock is an integer division of the master
+oscillator of the board, and the second can on the board is not necessarily its source.
 
-Two things fall out that read as design rather than coincidence:
+Two results look like design and not like chance:
 
-* **FCLK = 144.000 kHz is the datasheet's own characterization point.** Every
+* **FCLK = 144.000 kHz is the characterization point of the datasheet itself.** Each
   filter and distortion table in section 3.5 is specified at "FCLK = 144 kHz,
-  fs = 8 kHz", and B = 18 gives exactly 8.000 kHz. The board runs the part where
+  fs = 8 kHz", and B = 18 gives exactly 8.000 kHz. The board operates the part at the point where
   TI characterized it.
-* **A is never reprogrammed, and that is why.** The anti-alias low-pass corner
-  is `FCLK/40`, which depends on A alone - a fixed **3.6 kHz** across all three
-  sample rates, the standard voiceband corner. Only B moves, so changing the
-  sample rate does not disturb the filter.
+* **A is never programmed again, and that is the reason.** The corner of the anti-alias low-pass filter
+  is `FCLK/40`, which depends only on A. It is a fixed **3.6 kHz** for all three
+  sample rates, the standard voiceband corner. Only B changes. Thus, a change of the
+  sample rate does not change the filter.
 
-The part's own high-pass filter is switched **out** (register 5 DS02 = 1), so
-the `fs/200` corner never applies and the DAC and ADC paths are DC-coupled as
-far as the codec is concerned. Whatever removes DC is downstream, in the DSP or
+The high-pass filter of the part is switched **out** (register 5 DS02 = 1). Thus,
+the `fs/200` corner never applies, and for the codec the DAC and ADC paths are DC-coupled.
+The component that removes DC is downstream, in the DSP or
 the ASIC.
 
-An earlier revision of this section said the design point was 9600 Hz and that
-MCLK was therefore 3.840 MHz, an awkward 10.5 division of the 40.320 MHz can.
-That was wrong - it took the harness's `DAA_SAMPLE_RATE` for a measurement. The
-9600 figure appears nowhere in the firmware, the datasheet or the arithmetic.
+An earlier revision of this section said that the design point was 9600 Hz, and that
+thus MCLK was 3.840 MHz, an inconvenient division of 10.5 of the 40.320 MHz can.
+That was wrong. It used the `DAA_SAMPLE_RATE` of the harness as a measurement. The
+value 9600 does not occur in the firmware, the datasheet or the arithmetic.
 
 ## What the emulator does with all of this today: nothing
 
-`native/c5x_core.cpp` stores `DXR`, counts the write, and for two hardcoded PCs
-pushes `value & 0xfffc` into the line-transmit buffer. The two control bits are
-discarded, no secondary frame is ever delivered, and the register file does not
-exist - so input gain, the high-pass filter, the analog input select, free run
-and the A/B rate have no effect anywhere. `SPC` reports `XRDY` set whenever
-`XRST` is set rather than following a frame clock, so the reset spin at `0x8097`
-and the `idle` at `0x814c` both fall straight through.
+`native/c5x_core.cpp` stores `DXR` and counts the write. For two hardcoded PCs, it
+pushes `value & 0xfffc` into the line-transmit buffer. It discards the two control bits.
+It never delivers a secondary frame, and the register file does not
+exist. Thus, the input gain, the high-pass filter, the analog input select, free run
+and the A/B rate have no effect. `SPC` reports `XRDY` set each time
+`XRST` is set, and it does not follow a frame clock. Thus, the reset loop at `0x8097`
+and the `idle` at `0x814c` both continue immediately.
 
-`courier_emu/codec.py` models an Si3038 register map instead, which this board's
-DSP never drives.
+`courier_emu/codec.py` models an Si3038 register map, which the DSP of this board
+never controls.
 
 ### And the sample rate is wrong on the side that generates audio
 
-`configure_rom_codec` sets `m_line_frame_period = 3472`, which is `25e6/7200` -
-the frame *interrupt* already arrives at the 2400-baud rate. But everything that
+`configure_rom_codec` sets `m_line_frame_period = 3472`, which is `25e6/7200`.
+Thus, the frame *interrupt* already arrives at the 2400-baud rate. But each component that
 *fills* the receive queue assumes 9600 Hz:
 
 | site | what assumes 9600 |
@@ -246,48 +245,48 @@ the frame *interrupt* already arrives at the 2400-baud rate. But everything that
 | `native/c5x_core.cpp:419` | the answer-tone cadence |
 | `native/c5x_core.cpp:754` | the line-sample phase accumulator |
 
-So samples are synthesized at 9600 Hz and consumed by firmware that believes
-they arrived at 7200. **Every frequency the firmware sees is scaled by 4/3.**
-Dial tone reaches it as 262/330 Hz instead of 350/440; the 2100 Hz answer tone
-arrives as 1575 Hz; DTMF lands nowhere near its detector's tolerance, which
+Thus, the samples are made at 9600 Hz, and the firmware consumes them as if
+they arrived at 7200. **Each frequency that the firmware sees is scaled by 4/3.**
+Dial tone gets to it as 262/330 Hz and not as 350/440. The 2100 Hz answer tone
+arrives as 1575 Hz. DTMF is far outside the tolerance of its detector, which
 [codec-rate-312.md](codec-rate-312.md) already showed is only ±1.5%.
 
-This is a candidate explanation for `--exchange` hearing silence and for the
-V.8 bootstrap needing a native detector rather than the firmware's own - but it
-is a candidate, not a demonstration. Nothing here has been re-run at 7200 Hz to
-show the tones are then recognised.
+This is a candidate explanation for why `--exchange` hears silence, and for why the
+V.8 bootstrap needs a native detector and not the detector of the firmware. But it
+is a candidate, not a proof. We did not run any of this again at 7200 Hz to
+show that the firmware then recognises the tones.
 
 ## The model (2026-09-07)
 
-`C5xCore::codec_transmit` now decodes every `DXR` write the way the part does.
-Which kind of frame a word belongs to is decided by the *previous* frame's
-control bits, so the model needs no knowledge of where the write came from -
-this replaces a test against two hardcoded ISR addresses, `0x818f` and `0x81a0`,
+`C5xCore::codec_transmit` now decodes each `DXR` write in the same way as the part.
+The control bits of the *previous* frame decide which type of frame a word is part of.
+Thus, the model does not need to know where the write came from.
+This replaces a test against two hardcoded ISR addresses, `0x818f` and `0x81a0`,
 which recognised the samples of two known builds and nothing else.
 
-* Primary word: sample is the top 14 bits; `11` in the LSBs arms a secondary
-  frame, `01`/`10` count as phase-shift requests and are otherwise ignored.
-* Secondary word: parsed into a nine-entry register file. Register 0 is the
-  no-op. `DS13` set is a read, which returns the register in `DRR`'s low byte
-  and programs nothing. Register 6 `DS02` forces every frame secondary;
-  `DS01` is a software reset and restores the power-up defaults.
-* **The sample rate is derived, never assumed.** Writing register 1 or 2
-  recomputes `fs = MCLK/(2 x A x B)` and with it the frame period in C5x
-  cycles. `configure_rom_codec` still starts at 3472 - it has no way to know
-  what the ASIC clocks the port at before the firmware programs anything - but
-  from the firmware's first divider write the rate is the part's own.
+* Primary word: the sample is the top 14 bits. `11` in the LSBs arms a secondary
+  frame. `01`/`10` count as phase-shift requests, and the model ignores them in all other ways.
+* Secondary word: parsed into a register file of nine entries. Register 0 is the
+  no-op. If `DS13` is set, it is a read. The read returns the register in the low byte of `DRR`, and it
+  programs nothing. Register 6 `DS02` forces each frame to be secondary.
+  `DS01` is a software reset, and it restores the power-up defaults.
+* **The sample rate is derived, never assumed.** A write to register 1 or 2
+  calculates `fs = MCLK/(2 x A x B)` again, and with it the frame period in C5x
+  cycles. `configure_rom_codec` still starts at 3472, because it cannot know
+  the clock rate of the port from the ASIC before the firmware programs anything. But
+  from the first divider write of the firmware, the rate is that of the part.
 
-`courier_emu/dsp.py` exposes `codec_state()` and `codec_sample_rate`.
+`courier_emu/dsp.py` gives `codec_state()` and `codec_sample_rate`.
 
-Register 4's analog gains are also part of the modeled signal path. Input
-codes select squelch, 0, +6 or +12 dB before the ADC word reaches `DRR`; output
+The analog gains of register 4 are also part of the modeled signal path. The input
+codes select squelch, 0, +6 or +12 dB before the ADC word gets to `DRR`. The output
 codes select squelch, 0, -6 or -12 dB between the DAC word and the phone line.
-Receive gain is saturated to DOUT's signed 16-bit ADC word; transmit is
-requantized to DIN's 14-bit DAC field after removing its two control bits.
-This matters on the normal `0x09` setup: its +6 dB input gain doubles the peer
-waveform seen by the datapump.
+The receive gain is saturated to the signed 16-bit ADC word of DOUT. The transmit signal is
+quantized again to the 14-bit DAC field of DIN after the model removes its two control bits.
+This is important for the normal `0x09` setup: its +6 dB input gain doubles the peer
+waveform that the datapump sees.
 
-Booting 302 through the ROM and reading the model back:
+We booted 302 through the ROM and read the model back:
 
 ```
 registers      ['0x00', '0x0a', '0x14', '0x00', '0x09', '0x05', '0x20', '0x00', '0x01']
@@ -297,87 +296,86 @@ free_run=True  high_pass=False    loopback=False
 input gain 6 dB   output gain 0 dB
 ```
 
-The six registers are the six words above, the rate falls out of B, and the two
+The six registers are the six words above. The rate comes from B, and the two
 phase shifts are the reset priming writes.
 
 ### Line audio meets the codec at the codec's rate
 
-`bridge.LineToCodec` resamples everything entering the receive queue from the
-harness's line rate to whatever the codec currently converts at, with linear
-interpolation and a carried sample so a batch seam does not click. Every audio
-path in `bridge.py` now goes through `_queue_line_audio`; the boot table, which
-is not audio, still goes straight to `queue_codec_rx`.
+`bridge.LineToCodec` resamples all data that goes into the receive queue from the
+line rate of the harness to the current conversion rate of the codec. It uses linear
+interpolation and a carried sample, so that a batch seam does not click. Each audio
+path in `bridge.py` now goes through `_queue_line_audio`. The boot table, which
+is not audio, still goes directly to `queue_codec_rx`.
 
 A 2100 Hz tone carried at 9600 and delivered to a 7200 Hz codec measures
-2100 Hz after conversion, where handing it over unresampled measured 1575.
+2100 Hz after conversion. Without resampling, it measured 1575.
 
 ### The frame clock, per the datasheet
 
-`C5xCore::codec_frame` runs at every frame sync, and it is what the harness did
-without: `DRR` used to be filled lazily when the firmware happened to read it,
-so a run whose receive queue was empty returned the same stale word every frame
-for the whole run.
+`C5xCore::codec_frame` runs at each frame sync. The harness did not have this before.
+Before, `DRR` was filled only when the firmware read it.
+Thus, in a run with an empty receive queue, the same stale word came back in each frame
+for the full run.
 
-* **One ADC word per primary frame** - "one word for each primary
-  communication interval", section 2.4. The converter runs whether or not the
-  DSP is listening, and an empty queue is silence on the line, so it delivers a
-  zero rather than repeating the last word.
-* **A secondary frame delivers no sample.** Section 2.4 again: DOUT carries the
-  addressed register when a read was requested and is otherwise all zeros. The
-  register value therefore arrives when the secondary frame sync does, not when
+* **One ADC word for each primary frame**: "one word for each primary
+  communication interval", section 2.4. The converter runs also when the
+  DSP does not listen, and an empty queue is silence on the line. Thus, it delivers a
+  zero and does not repeat the last word.
+* **A secondary frame delivers no sample.** Again section 2.4: DOUT carries the
+  addressed register when a read was requested, and all zeros in all other cases. Thus, the
+  register value arrives with the secondary frame sync, and not when
   the host reads `DRR`.
-* **The secondary frame sync arrives half a frame period after the primary that
-  requested it** - Figure 2-1's note gives `(B/2)` FCLK periods, and since
-  `fs = FCLK/B` that is `fs/2`. It is serviced ahead of the next primary rather
-  than replacing it.
-* `RRDY` now follows a word actually having been clocked in, rather than the
-  harness merely having audio queued.
+* **The secondary frame sync arrives half a frame period after the primary frame that
+  requested it.** The note of Figure 2-1 gives `(B/2)` FCLK periods, and because
+  `fs = FCLK/B`, that is `fs/2`. It is serviced before the next primary frame. It does not
+  replace it.
+* `RRDY` now follows a word that was actually clocked in. It does not follow audio in the queue
+  of the harness.
 
-Measured on the 302 boot: 1911 frame syncs, 1911 samples consumed - one word
-each, exactly - with `DRR` holding live audio instead of a stale zero.
+We measured this on the 302 boot: 1911 frame syncs and 1911 samples consumed, exactly one word
+each. `DRR` contains live audio and not a stale zero.
 
 ### The boot table is probably not on this port at all
 
-> **Retracted.** An earlier version of this section argued that the boot table
-> and the codec share the primary serial port, and that the AC01's
-> high-impedance window is what keeps them apart. **The arithmetic does not
-> work**: `DOUT` is tri-stated for eight primary frames, and the download is
+> **Retracted.** An earlier version of this section said that the boot table
+> and the codec share the primary serial port, and that the high-impedance window
+> of the AC01 keeps them apart. **The arithmetic is not correct**: `DOUT` is tri-stated for eight primary frames, and the download is
 > 27,710 words. The window is three orders of magnitude too small.
 >
 > The premise was also wrong. The ROM has **two** boot transports, and the
-> serial one is not the only candidate - see
+> serial transport is not the only candidate. Refer to
 > [the boot transport note](dsp-boot-transport.md). The harness selects the
-> serial path by writing 4 to data `0xffff`, which is a harness choice, not a
+> serial path when it writes 4 to data `0xffff`. This is a choice of the harness. It is not a
 > measurement of what the ASIC presents.
 
-What follows is what is actually established about the port itself.
+The text that follows gives what we actually know about the port itself.
 
 ### The codec is on the primary serial port
 
-The AC01 is on the DSP's **primary serial port**, not a port of its own. TI's
-application guide (`slaa006.pdf`) wires it `DOUT -> DR`, `DIN -> DX`,
-`SCLK -> CLKR/CLKX`, `FS -> FSR/FSX` and `RESET <- XF`, with the second (TDM)
-port's pins pulled to COM through 100 kOhm and unused. The firmware agrees on
-both counts: it drives `DRR`/`DXR`/`SPC` at `0x20`-`0x22`, and it configures
-`TSPC` once at `0x808a` and never touches the TDM port again.
+The AC01 is on the **primary serial port** of the DSP. It does not have its own port. The
+application guide of TI (`slaa006.pdf`) wires it `DOUT -> DR`, `DIN -> DX`,
+`SCLK -> CLKR/CLKX`, `FS -> FSR/FSX` and `RESET <- XF`. The pins of the second (TDM)
+port are pulled to COM through 100 kOhm and are not used. The firmware agrees on
+the two items. It controls `DRR`/`DXR`/`SPC` at `0x20`-`0x22`, and it configures
+`TSPC` one time at `0x808a` and never uses the TDM port again.
 
-> **The board agrees too, on three of the five.** `DOUT`, `DIN` and `FS` are
-> read onto DSP pins 43, 106 and 104 - the app guide's wiring, confirmed by
-> continuity rather than inferred from the firmware. `SCLK` (FN pin 13) has a
-> reading that calls it a reset net, which is almost certainly a mislabel and
-> now has a predicted destination to be checked against.
+> **The board also agrees, on three of the five.** `DOUT`, `DIN` and `FS`
+> go to DSP pins 43, 106 and 104. This is the wiring of the application guide, which continuity
+> confirms. We did not only infer it from the firmware. `SCLK` (FN pin 13) has a
+> reading that calls it a reset net. This is almost certainly a wrong label, and it
+> now has a predicted destination that we must check.
 >
-> **`RESET <- XF` does not hold.** The codec's `RESET` (FN pin 8) is on the
-> **shared reset net** that also reaches DSP `RS` (pin 127) and **CPU pin 58**,
-> `P1.1` - the bit `courier_emu` already drives as `DSP_RESET_PORT`. So the
-> codec is reset by the supervisor along with the DSP, not by the DSP's `XF`.
-> That settles this section's closing speculation - "very likely how the codec
-> is kept quiet during the download, but it has not been established here" - in
-> the negative. Whatever keeps it quiet during a download, it is not `XF`
+> **`RESET <- XF` is not correct.** The `RESET` of the codec (FN pin 8) is on the
+> **shared reset net** that also goes to DSP `RS` (pin 127) and **CPU pin 58**,
+> `P1.1`. `courier_emu` already controls this bit as `DSP_RESET_PORT`. Thus, the
+> supervisor resets the codec together with the DSP. The `XF` of the DSP does not reset it.
+> This answers the closing speculation of this section ("very likely how the codec
+> is kept quiet during the download, but it has not been established here")
+> negatively. The mechanism that keeps the codec quiet during a download is not `XF`
 > holding `RESET`, because `RESET` is not on `XF`.
 
-The ROM boot loader's *serial* path is on that same port - it is receive-only,
-never writing `DXR` or polling `XRDY`:
+The *serial* path of the ROM boot loader is on that same port. It only receives. It
+never writes `DXR` and never polls `XRDY`:
 
 ```
 06e8  1020  lacc @20      ; DRR
@@ -385,25 +383,25 @@ never writing `DXR` or polling `XRDY`:
 06f3  a720  tblw @20      ; ...into program memory
 ```
 
-but that path is only one of two the ROM offers, and the evidence points at the
-other one. See [dsp-boot-transport.md](dsp-boot-transport.md).
+But that path is only one of the two that the ROM gives, and the evidence points to the
+other one. Refer to [dsp-boot-transport.md](dsp-boot-transport.md).
 
-`queue_codec_boot` keeps the harness's boot words in their own queue, drained by
-the loader's polls and never by a frame sync. That was introduced because the
-frame clock otherwise ate the boot table, and it stands whichever transport is
-real - but if the parallel transport is the right one, the split stops being a
-workaround and becomes unnecessary, because the boot never touches this port.
+`queue_codec_boot` keeps the boot words of the harness in their own queue. The polls
+of the loader drain it, and a frame sync never drains it. We added this because
+the frame clock otherwise consumed the boot table. It stays correct for each possible
+transport. But if the parallel transport is the correct one, the split is not
+a workaround and becomes unnecessary, because the boot never uses this port.
 
-The design guide also runs the codec's `RESET` from the DSP's `XF` pin, and both
-the serial ISR and **the parallel boot loader's own fetch routine** drive `XF`.
+The design guide also controls the `RESET` of the codec from the `XF` pin of the DSP. The
+serial ISR and **the fetch routine of the parallel boot loader** both control `XF`.
 That is very likely how the codec is kept quiet during the download, but it has
 not been established here.
 
 ### XRDY follows the frame clock
 
-`XRDY` says `DXR` can accept another word, which becomes true when a frame sync
-moves the last one into the transmit shift register. It was reported set
-whenever `XRST` was set, so the reset handshake at `0x8097` -
+`XRDY` says that `DXR` can accept one more word. This becomes true when a frame sync
+moves the last word into the transmit shift register. Before, the model reported it set
+each time `XRST` was set. Thus, the reset handshake at `0x8097` did not wait a frame:
 
 ```
 8095  lacl #01 ; samm @21   ; DXR = 0001
@@ -412,7 +410,7 @@ whenever `XRST` was set, so the reset handshake at `0x8097` -
 809a  samm @21              ; and again
 ```
 
-\- fell straight through instead of waiting a frame. Now:
+It continued immediately. Now:
 
 | point | XRDY |
 |---|---|
@@ -421,28 +419,28 @@ whenever `XRST` was set, so the reset handshake at `0x8097` -
 | mid-frame | clear |
 | after a frame sync | set |
 
-with a `0 -> 1` edge on `XRST` also releasing it.
+Also, a `0 -> 1` edge on `XRST` releases it.
 
-**One scoping decision:** only the AC01 path has a frame clock to set `XRDY`
-again. The legacy TDM path models no framing on this port, so there a spin
-would never end - four tests on that path hang without this - and it keeps the
-optimistic answer it always had. That is a limit of this model, not something
-the hardware does.
+**One scoping decision:** only the AC01 path has a frame clock that can set `XRDY`
+again. The legacy TDM path models no framing on this port. Thus, a loop there
+would never stop (four tests on that path stop without this), and the path keeps the
+optimistic answer that it always had. That is a limit of this model. It is not a behaviour of
+the hardware.
 
 ### What is still not modelled
 
-The gain, high-pass and loopback settings are decoded and reported but do not
-yet alter the samples. Phase-shift requests are counted and otherwise ignored,
-as is `DOUT`'s high-impedance window - the model lets the boot queue stand in
-for it rather than tri-stating anything. The legacy TDM path (`m_rom_codec`
-false) still decimates at a fixed 9600 Hz and keeps the optimistic `XRDY`; it
-is not the AC01 path and this change deliberately left it alone.
+The gain, high-pass and loopback settings are decoded and reported, but they do not
+yet change the samples. The phase-shift requests are counted, and the model ignores them in all other ways.
+The model also ignores the high-impedance window of `DOUT`. The boot queue
+replaces it, and the model does not tri-state anything. The legacy TDM path (`m_rom_codec`
+false) still decimates at a fixed 9600 Hz and keeps the optimistic `XRDY`. It
+is not the AC01 path, and this change intentionally did not change it.
 
 ## What this does not establish
 
-The register semantics are the datasheet's and the words are the firmware's;
-nothing here was measured against the physical codec. Whether the ASIC's FS rate
-matches the A/B conversion rate on the real board is an inference from the
-datasheet's own constraint that the two must agree within half an FCLK period,
-not an observation. The `0x8189` ISR was read under the boot ROM with an empty
-receive queue, so every `DRR` value it consumed in that run was stale.
+The register semantics come from the datasheet, and the words come from the firmware.
+We did not measure any of this against the physical codec. It is an inference that the FS rate of the ASIC
+agrees with the A/B conversion rate on the real board. The inference comes from the
+constraint of the datasheet that the two must agree within half an FCLK period.
+It is not an observation. We read the `0x8189` ISR under the boot ROM with an empty
+receive queue. Thus, each `DRR` value that it consumed in that run was stale.
