@@ -946,7 +946,7 @@ answer where the firmware reads, which is the ASIC boundary:
 
 | surface | rate | state today |
 |---|---|---|
-| C52 external I/O `0x50` | 201,524 reads in a 30 M-instruction `ATDT` run, once per service frame, program `0x8c1f` | the host mailbox window's low word |
+| C52 external I/O `0x50` | 201,524 reads in a 30 M-instruction `ATDT` run, once per service frame, program `0x8c1f` | the low word of the host mailbox window |
 | C52 external I/O `0x54` | two times for each frame, program `0xb300`/`0xb304`: the line ADC | the behavioral DAA supplies it |
 | C52 external I/O `0x56`/`0x57` | one write each at program `0x2b`/`0x02`, both `0xffff` | unmodelled |
 | 80186 ports `0x40`..`0x4e` | eight latches, about 7,550 writes each for each `ATDT` run, never read | the host mailbox window |
@@ -976,7 +976,7 @@ contains them:
 
 | field | register | meaning |
 |---|---|---|
-| `LCS[3:0]` | 5Eh | loop current in 6 mA steps; 0 is under 0.4 mA, 1111 is over 155 mA |
+| `LCS[3:0]` | 5Eh | loop current in 6 mA steps. 0 is under 0.4 mA, 1111 is over 155 mA |
 | `RDTP` / `RDTN` | 5Eh | ring detected, positive and negative half-cycles reported separately |
 | `BTD` (with `BTE`) | 5Eh / 5Ch | billing tone detected, off-hook held through the tone |
 | `FDT` | 5Eh | line-side to system-side frame lock |
@@ -1273,7 +1273,7 @@ They are not only four opaque states:
 |---:|---|---|
 | `0x80` | set in held state `a0`, explicitly cleared before `60` | call-engine hold |
 | `0x40` | set only for `60`, then immediately removed from the shadow | start strobe |
-| `0x20` | present in `a0`, `60`, and `20`; cleared on shutdown | line/datapump enable |
+| `0x20` | present in `a0`, `60`, and `20`. Cleared on shutdown | line/datapump enable |
 | `0x04` | explicitly cleared by both transition masks | unknown interlock |
 
 Thus the sequence `a0 -> 60 -> 20 -> 00` means **engine held while
@@ -1879,7 +1879,7 @@ We made that error during this analysis, and we found it.
 | field | meaning |
 |---|---|
 | `+0` | source start offset in the segment of the overlay |
-| `+2` | source end offset; word count = `(end - start) / 2` |
+| `+2` | source end offset. Word count = `(end - start) / 2` |
 | `+4` | **DSP destination word address** |
 
 The source segment comes from a hardcoded compare chain immediately before the
@@ -2457,7 +2457,7 @@ a **live** clock, and each run now advances it. Over the same 30 M
 |---|---:|
 | `0x6ade5` `dec word [0x289]` | 6,616 |
 | `0x6adda` `dec word [0x161]` | 0 (never armed on this path) |
-| `0x5dbe7` the detector wait's compare | 15,416 |
+| `0x5dbe7` the compare of the detector wait | 15,416 |
 | `0x5dc4a` that wait timing out | 0 |
 
 `[0x161]` is also a real timer. Eleven sites arm it and fourteen sites
@@ -2918,10 +2918,10 @@ if the modem accepts a downloaded image.
 | Property | Value |
 |---|---|
 | Algorithm | reflected CRC-16/CCITT, poly `0x1021` (reflected `0x8408`), init `0xFFFF`, no final XOR |
-| Catalogue name | CRC-16/MCRF4XX (check `0x6f91` over `"123456789"`; the same routine with init `0x0000` gives KERMIT's `0x2189`) |
-| Region | flash `0x40000..0x77FFD`, i.e. `0x37FFE` bytes |
+| Catalogue name | CRC-16/MCRF4XX (check `0x6f91` over `"123456789"`. The same routine with init `0x0000` gives the KERMIT value `0x2189`) |
+| Region | flash `0x40000..0x77FFD`, that is `0x37FFE` bytes |
 | Stored as | little-endian 16-bit word at flash `0x77FFE` |
-| Verification | `IDSDL302.ROM` computes `0x53bc`; the word stored at `0x77FFE` is `0x53bc` |
+| Verification | `IDSDL302.ROM` computes `0x53bc`. The word stored at `0x77FFE` is `0x53bc` |
 
 Code anchors. All are bank offsets in the recovery loader at flash `0x7C000`. (Add
 `0x80000` to get the physical address that the harness reports, because the reset
@@ -2929,7 +2929,7 @@ stub of the ROM maps it at `0x80000..0xFFFFF`.)
 
 | Bank offset | Role |
 |---|---|
-| `0x03e0` | byte-wise CRC update; state in `cs:[0x104]` |
+| `0x03e0` | byte-wise CRC update. State in `cs:[0x104]` |
 | `0x0a75` | loads and prints the `Calculating CRC` string at `0x0231` |
 | `0x0a83` | `call 0x14ce` |
 | `0x0ab0` | `mov cs:[0x104], 0xffff`: sets the initial value of the accumulator |
