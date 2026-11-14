@@ -1975,13 +1975,13 @@ Thus, this is a change of addressing style in a nine-month rework, not a
 change of function.  It occurs in the x2 era, not at the V.90 boundary.
 ## The four V.90 bits in `ffd9`
 
-Read from `Ie030002` with its own overlay map (`V90_IMAGES` in
-[imodem_x2_map.py](../tools/imodem_x2_map.py)), which the doc's segment table
-already gives: images 5, 6, 7, 8, 9, 10, 11 at `8000`, `a000`, `b800`, `9260`,
-`b000`, `d100`, `9260`.  Loading the trio `5/11/10` the way the first-x2 build
-joins finds only five of the thirty-five `ffd9` references, because **all four
-new bits live in image 6**, the `a000` one, with a single further reader in
-image 11.
+We read this from `Ie030002` with its own overlay map (`V90_IMAGES` in
+[imodem_x2_map.py](../tools/imodem_x2_map.py)).  The segment table of the
+document already gives this map: images 5, 6, 7, 8, 9, 10, 11 at `8000`,
+`a000`, `b800`, `9260`, `b000`, `d100`, `9260`.  If we load the trio
+`5/11/10` as the first-x2 build joins them, we find only five of the
+thirty-five `ffd9` references.  This is because **all four new bits are in
+image 6**, the `a000` image, with one more reader in image 11.
 
 | bit | read at | what the branch does |
 |---:|---|---|
@@ -1990,26 +1990,27 @@ image 11.
 | 6 | `a5ad` | selects the routine pointer written to `@4d`: `c95a` or `c96e`, decided together with a byte at `dcf5` |
 | 7 | `cb62` | gates one extra `call a666` inside the per-frame routine that also calls `cbf8` |
 
-Two of them have identifiable producers, and they are the useful half:
+Two of the bits have producers that we can identify, and they are the useful
+half:
 
-* **bit 5 is set at `a57a` when `039f` bit 7 is set** - the state this document
-  already identifies, from the Quad, as "select the digital-server receive
-  rules".  So bit 5 is the digital-server role arriving in this image, and its
-  reader's self-clearing five-bit capture is a once-per-entry latch of a
-  negotiated field.
-* **bit 6 is cleared at `a0b3`** once a counter at `@68` reaches 4, immediately
-  after a convergence test against `f6c7` - so it marks a phase as finished
-  rather than a configuration.
+* **Bit 5 is set at `a57a` when `039f` bit 7 is set.**  This document already
+  identifies this state, from the Quad, as "select the digital-server receive
+  rules".  Thus, bit 5 is the digital-server role that comes into this image.
+  Its reader clears the bit and captures a five-bit field.  This is a latch
+  of a negotiated field, one time for each entry.
+* **Bit 6 is cleared at `a0b3`** when a counter at `@68` gets to 4,
+  immediately after a convergence test against `f6c7`.  Thus, it identifies
+  the end of a phase, not a configuration.
 
-All four are cleared together at `9a24`, `apl *, #000e`, which keeps only bits
-1--3: a mode reset.
+The code clears all four bits together at `9a24`, `apl *, #000e`, which keeps
+only bits 1--3.  This is a mode reset.
 
 ### The producers, and what they make the four bits mean
 
-The first search for writers missed two of them by only decoding the
-instruction immediately after each `lar ar1, #ffd9`.  Allowing a delay slot or
-a conditional-execute between the pointer load and the operation completes the
-set, and it changes the reading:
+The first search for writers did not find two of them.  It decoded only the
+instruction immediately after each `lar ar1, #ffd9`.  We then also permitted
+a delay slot or a conditional-execute between the pointer load and the
+operation.  This completes the set, and it changes the interpretation:
 
 ```text
 a7c3  lar ar1, #ffd9
@@ -2032,32 +2033,36 @@ a664  opl *, #0008             ; otherwise bit 3 instead
 | 6 | an `opl #0040` present in `IE020706` and `IE020405` | `a0b3`, when the counter at `@68` reaches 4 |
 | 7 | `a660`, from `039f` bit 7 - with `a664` setting **bit 3** in the other case | - |
 
-Three consequences.
+There are three results.
 
-**Bits 5 and 7 are both the digital-server role**, fanned out of `039f` bit 7
-into two places that need it, and **bit 3 is bit 7's analogue-side twin** -
-one of the two is always set, which is why bit 3 was already present in the
-x2-only builds and bit 7 was not.  V.90's new nibble is not four independent
-flags; it is the server role plus two handshakes.
+**Bits 5 and 7 are both the digital-server role.**  The code copies `039f`
+bit 7 to two locations that need it.  **Bit 3 is the analogue-side twin of
+bit 7.**  One of the two is always set.  For this reason, bit 3 was already
+in the x2-only builds and bit 7 was not.  The new nibble of V.90 is not four
+independent flags.  It is the server role and two handshakes.
 
-**Bit 4 is a one-shot, and the handshake closes visibly.**  It is set in a
-delay slot on the way to `a824`, and the reader at `aa12` that finds it set
-branches to `a7c9`, whose only job is to clear it again.  Set on one path,
-consumed and cleared on the other.
+**Bit 4 is a one-shot, and we can see the handshake close.**  The code sets
+it in a delay slot on the path to `a824`.  When the reader at `aa12` finds it
+set, the reader branches to `a7c9`.  The only function of `a7c9` is to clear
+the bit again.  One path sets the bit, and the other path uses and clears it.
 
-**Bit 6 loses its producer by 3.00.02.**  `IE020706` and `IE020405` both carry
-`opl #0040` and two clears; `Ie030002` carries only the clears.  Since the
-whole-word writes to `ffd9` in that build are the cold-start zero-fill, the
-tag-`70` handler's `or #8000`/`or #0001` and tag `72`'s `or #4000`, nothing in
-the shipped 3.00.02 program can set bit 6 - so `a5ad` always takes its
-clear-side branch, and the routine choice there falls to the byte at `dcf5`
-alone.  The x2-only builds never had the bit at all, so it appeared and went
-dead within the V.90 era.
+**Bit 6 has no producer in 3.00.02.**  `IE020706` and `IE020405` both have
+`opl #0040` and two clears.  `Ie030002` has only the clears.  In that build,
+these are the whole-word writes to `ffd9`:
+
+* The cold-start zero-fill.
+* The `or #8000`/`or #0001` of the tag-`70` handler.
+* The `or #4000` of tag `72`.
+
+Thus, nothing in the shipped 3.00.02 program can set bit 6.  Thus, `a5ad`
+always takes its clear-side branch, and only the byte at `dcf5` controls the
+routine choice there.  The x2-only builds never had the bit.  Thus, the bit
+came and became dead in the V.90 era.
 
 ### Tag `72` lands next door, not here
 
-Worth separating, because the two arrive together.  The V.90 command's handler
-in this build is `9283`:
+It is important to keep these items separate, because the two come together.
+In this build, the handler of the V.90 command is `9283`:
 
 ```text
 9283  lamm @7a / sacb            ; the payload
@@ -2069,18 +2074,18 @@ in this build is `9283`:
 9295  sacl [ffdf]                ; the rest -> ffdf
 ```
 
-So the level word the supervisor computes - `((n-1)*2|1) << 4 | 0a06h` - is
-stored whole in **`ffdf`**, with the index in bits 4--8, and only its top bit
-reaches `ffd9`, as bit **14**.  The four new bits are neighbours of that, not
-part of it.
+Thus, the supervisor calculates the level word
+`((n-1)*2|1) << 4 | 0a06h`, and the handler stores all of it in **`ffdf`**,
+with the index in bits 4--8.  Only its top bit goes to `ffd9`, as bit
+**14**.  The four new bits are next to that bit, not part of it.
 
 ## Live 64000 symmetric scrambler confirmation 2026-10-04
 
 The successful `Ie030002.nac` digital pair **does enable GPC scrambling in
-both directions**. It also enables octet bit reversal. This resolves the
+both directions**.  It also enables octet bit reversal.  This removes the
 activation uncertainty in the earlier IM020104 component reconstruction.
 The live data path is eight source bits → GPC → octet reversal → one PCMU
-bearer octet at 8000 words/s. The source includes modem link framing; this
+bearer octet at 8000 words/s.  The source includes modem link framing.  It
 is not a direct copy of terminal bytes into the B channel.
 
 | Item | Caller | Answerer |
@@ -2096,35 +2101,38 @@ is not a direct copy of terminal bytes into the B channel.
 | TX input snapshots after CONNECT | 6720 | 5504 |
 | Consecutive GPC history checks | 6615 | 5418 |
 
-The actual firmware at `e984/e985` tests mode bit 9 and conditionally calls
-`9057`. Its receiver at `e99f/e9a0` tests the same flag and calls `908e`.
-Transmit history is `03d8:03d9`, receive history `031e:031f`.
+The actual firmware at `e984/e985` tests mode bit 9 and calls `9057` if the
+bit is set.  Its receiver at `e99f/e9a0` tests the same flag and calls
+`908e`.  The transmit history is `03d8:03d9`, and the receive history is
+`031e:031f`.
 
 The initializer `e8e1` clears TX history at `e8e5/e8e6` and RX history at
-`e906/e907`. Read-only snapshots at `e908` find both histories zero twice
-per endpoint: initial setup and again after the data callbacks are selected,
-before CONNECT. The last reset captures have `039a=e97e` and `039b=e992`;
-the resident callback cells still contain the previous callbacks until its
-next dispatch copies them. The last reset DSP instruction counts are
-489442359 on the caller and 645117132 on the answerer. These are local DSP
-counters and must not be compared as a common clock.
+`e906/e907`.  Read-only snapshots at `e908` find the two histories at zero two
+times for each endpoint.  The first time is the initial setup.  The second
+time is after the selection of the data callbacks, before CONNECT.  The last
+reset captures have `039a=e97e` and `039b=e992`.  The resident callback cells
+still contain the previous callbacks until the next dispatch copies them.
+The last reset DSP instruction counts are 489442359 on the caller and
+645117132 on the answerer.  These are local DSP counters.  Do not compare them
+as a common clock.
 
-After CONNECT, snapshots at `e984` record the masked source word and history
-before scrambling. For every consecutive pair within each captured window,
-the original DSP's next history exactly matches the LSB-first recurrence:
+After CONNECT, snapshots at `e984` record the masked source word and the
+history before scrambling.  For each consecutive pair in each captured
+window, the next history of the original DSP agrees exactly with the
+LSB-first recurrence:
 
 ```text
 s[n] = u[n] XOR s[n-18] XOR s[n-23]
 history = (history >> 1) | (s[n] << 22)
 ```
 
-All 12033 transitions match. Both distinct markers reach the opposite DTE,
-both DSP and supervisor errors are null, and both PCM underrun counts are
-zero. The sampled windows are not a complete bearer recording. These calls
-do not establish seven-bit activation, every lower-rate negotiation, or
-reset behavior during retrain/fallback. Both roles use GPC in this symmetric
-branch; the role-selected GPA alternative in the Quad PCM mapper does not
-apply merely because one endpoint answers.
+All 12033 transitions agree.  The two different markers get to the opposite
+DTE.  The DSP errors and the supervisor errors are null, and the two PCM
+underrun counts are zero.  The sampled windows are not a complete bearer
+recording.  These calls do not prove seven-bit activation, all lower-rate
+negotiations, or reset behavior during retrain/fallback.  The two roles use
+GPC in this symmetric branch.  The role-selected GPA alternative in the Quad
+PCM mapper does not apply only because one endpoint answers.
 
 Evidence: [verification](../artifacts/x2-scrambler-call-reset-20261004/verification.json),
 [original instruction listing](../artifacts/x2-scrambler-call-reset-20261004/focused.asm),
@@ -2134,28 +2142,30 @@ and [reproduction notes](../artifacts/x2-scrambler-call-reset-20261004/README.md
 ## QF060003 57333 profile correction 4 October 2026
 
 Rate index 15 now builds valid, unique banks with DSP product scaling mode
-SPM 1. Earlier SPM 0 duplicate/non-return results were harness errors.
+SPM 1.  The earlier SPM 0 duplicate/non-return results were harness errors.
 The default mode-zero profile uses radices 82,70,70,70,70,70 and B=37.
-With MD=6 it carries 43 scrambled bits per six samples (57333⅓ bit/s),
-with all six signs differential and no free shaping signs. Mode/record
-variants include six banks of 72 entries. The corrected payload harness
-checks all fifteen indices and continuous index-15 source-byte recovery.
-The dedicated profile scan checks 28 valid seeded contexts and 1792
-exact-symbol inverses. See `../artifacts/x2-57333-profile-20261004/README.md`.
-These are component profiles; a negotiated 57333 or symmetric 57333 call
-has not been established.
+With MD=6, it carries 43 scrambled bits for each six samples (57333⅓ bit/s).
+All six signs are differential, and there are no free shaping signs.
+Mode/record variants include six banks of 72 entries.  The corrected payload
+harness checks all fifteen indices and continuous index-15 source-byte
+recovery.  The dedicated profile scan checks 28 valid seeded contexts and
+1792 exact-symbol inverses.  See
+`../artifacts/x2-57333-profile-20261004/README.md`.  These are component
+profiles.  We have not yet proved a negotiated 57333 call or a symmetric 57333
+call.
 
 
 ## PCM record to data handoff execution 4 October 2026
 
-The Quad server's original four-word PCM record receiver now runs through
-CRC acceptance and record transfer into its working parameters. Its original
-scheduler then chooses a local rate from the peer ceiling and local mask,
-constructs the banks and enters mapped output. This succeeds in forty
-contexts spanning all fifteen indices and sparse local-mask reductions.
-A 57333 case also completes the 4080-sample countdown into payload-source
-activation and queues the original 0003 notification. See
+The original four-word PCM record receiver of the Quad server now operates
+through CRC acceptance and record transfer into its working parameters.  Then
+its original scheduler selects a local rate from the peer ceiling and the
+local mask.  It makes the banks and starts mapped output.  This is successful
+in forty contexts, which include all fifteen indices and sparse reductions of
+the local mask.  A 57333 case also completes the 4080-sample countdown into
+payload-source activation, and queues the original 0003 notification.  See
 [x2-rate-and-data-handoff.md](x2-rate-and-data-handoff.md) for reproduction,
 framing, scope and the remaining client measurement-to-record boundary.
-This shared PCM branch evidence does not establish a complete x2 or lower-rate
-symmetric call and does not identify the short proprietary announcement receiver.
+This evidence of the shared PCM branch does not prove a complete x2 call or a
+lower-rate symmetric call.  It also does not identify the short proprietary
+announcement receiver.
