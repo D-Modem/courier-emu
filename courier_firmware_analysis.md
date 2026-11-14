@@ -3636,7 +3636,7 @@ three variants. It is not related to dialing.
 
 | step | address | what it does |
 |---|---|---|
-| parse | `0x82652` | reads the dial string, folds `P`/`p` to `T` under `[0x94b]` |
+| parse | `0x82652` | reads the dial string, changes `P`/`p` to `T` under `[0x94b]` |
 | settle | `0x5db51` | off-hook settle, `[0x289] = 0x1f4` |
 | detect | `0x5dbda` | `[0x289] = 0x2580`, then waits for `[0x649] >= 5` |
 | give up | `0x5dc4a` | `call 0x63491; db 8` - the `NO DIAL TONE` result |
@@ -3646,43 +3646,43 @@ three variants. It is not related to dialing.
 | gap | `0x8235b` | interdigit, the same countdown less `0x30` |
 | pulse | `0x822a3` | the pulse-dial loop, break/make from `bx`/`dx` |
 
-`[0x649]` is the five-hit line detector, fed from the `0x7c` poll's reading at
-`[0x285]`, which `0x5e4c4` bands: at or below `0x60` present, above it counted
-against `[0x92a]` and then aborted with result `0x27`. `[0x66c]` bit 7 is "a
-result code is pending", not dial tone; `0x63491` is the inline-argument
-setter that raises it and stores the code in `[0x823]`.
+`[0x649]` is the five-hit line detector. The value of the `0x7c` poll at
+`[0x285]` supplies it, and `0x5e4c4` puts that value in bands. At or below `0x60`, the tone is present. Above `0x60`, the code counts it
+against `[0x92a]` and then stops with result `0x27`. `[0x66c]` bit 7 means "a
+result code is pending". It does not mean dial tone. `0x63491` is the inline-argument
+setter that sets this bit and stores the code in `[0x823]`.
 
-**What was blocking it.** The receive handler at `0x6ad6e` reads a tag from
-`0x58`/`0x5a` and the word from `0x5e`/`0x5c`. The bridge served the C52 status
-latch on `0x5c`/`0x5e` whenever the core was active, so a reply it had already
-queued arrived as `0xffff`: the detector consumer banded that above `0x60` and
-hung up after one reading. With queued replies owning the data lanes, the
-firmware counts its own hits and accepts dial tone on its own.
+**What blocked it.** The receive handler at `0x6ad6e` reads a tag from
+`0x58`/`0x5a` and the word from `0x5e`/`0x5c`. The bridge supplied the C52 status
+latch on `0x5c`/`0x5e` each time that the core was active. Thus a reply that it had already
+put in the queue came as `0xffff`. The detector consumer put that value above `0x60` and
+went on-hook after one reading. Now the queued replies control the data lanes. Thus the
+firmware counts its own hits and accepts the dial tone itself.
 
-**What it produces.** Each digit goes out as `0x16:0000`, the tone generator's
-three constant lanes (`0x19:020d`, `0x1a:3000`, `0x1b:0c08`), the digit on
-`0x13`, and `0x16:0000` again when the tone ends. For `5551212` that is
+**What it produces.** Each digit goes out as `0x16:0000`, the three constant lanes of the tone generator
+(`0x19:020d`, `0x1a:3000`, `0x1b:0c08`), the digit on
+`0x13`, and `0x16:0000` again when the tone ends. For `5551212`, that is
 `0013:0005` three times, then `0001`, `0002`, `0001`, `0002`, each about 600 ms
-apart on the firmware's own timers. The bridge renders them, the exchange
-decodes them back off the line, and the number arrives whole.
+apart on the timers of the firmware. The bridge renders them, the exchange
+decodes them from the line, and the full number arrives.
 
-The call-start block uses the same `0x13`/`0x16` lanes with the same constants;
-nothing in a single message tells the two uses apart. What separates them here
-is the line - a digit only means anything while the loop is seized and the call
-has not come up.
+The call-start block uses the same `0x13`/`0x16` lanes with the same constants.
+One message alone does not show which use it is. Here, the line shows the difference.
+A digit has a meaning only while the loop is seized and the call
+has not started.
 
-Still outstanding: the result code. `ATD` ends in command mode, because the
-exchange answers with 2100 Hz and nothing behind it trains.
+Still open: the result code. `ATD` ends in command mode, because the
+exchange answers with 2100 Hz and nothing after it trains.
 
 ### What the call overlay writes, and why it is not audio
 
-Measured 2026-09-05 with `set_synthetic_line(False)`, which stops the core
-substituting its hand-written DTMF and V.8 tones for the datapump's DAC
-accumulation - and stops it discarding that accumulation to make room.
+We measured this on 2026-09-05 with `set_synthetic_line(False)`. This setting stops the core when it
+replaces the DAC accumulation of the datapump with its hand-written DTMF and V.8 tones.
+It also stops the core when it discards that accumulation to make space.
 
-An answered call reaches the overlay: ring the modeled line, let the firmware
-answer, and `call_overlay_active` goes true with the recovered bank executing.
-The frame ISR at `0x0228` then runs every codec slot:
+An answered call gets to the overlay. Ring the modeled line and let the firmware
+answer. Then `call_overlay_active` becomes true, and the recovered bank executes.
+The frame ISR at `0x0228` then runs in each codec slot:
 
 ```
 022c  add     #0000824d      ; table base
@@ -3701,138 +3701,137 @@ The frame ISR at `0x0228` then runs every codec slot:
 0246  bldd    @7a, #ffff     ; out to the ASIC slot
 ```
 
-At DP `0x1ff`, `@7c`/`@7d` are `0xfffc`/`0xfffd`. So **`0xfffd` is the low half
-of a 32-bit phase accumulator, not the DAC word.** The core read it as the DAC,
-which is why the datapump's output measured as broadband noise: the captured
-stream is a linear ramp with a constant step of `-14704` per sample, wrapping
-16 bits - about 2.15 kHz at the 9.6 kHz codec rate.
+At DP `0x1ff`, `@7c`/`@7d` are `0xfffc`/`0xfffd`. Thus **`0xfffd` is the low half
+of a 32-bit phase accumulator, not the DAC word.** The core read it as the DAC.
+This is the reason that the output of the datapump measured as broadband noise. The captured
+stream is a linear ramp with a constant step of `-14704` for each sample, with a
+16-bit wrap. This is about 2.15 kHz at the 9.6 kHz codec rate.
 
-The word the ISR computes from that phase goes out through `@7a` to `0xffff`.
-That slot carries exactly two distinct values, near-DC, so it is not a waveform
-either. `set_line_dac_slot` makes the choice switchable rather than assumed.
+The word that the ISR calculates from that phase goes out through `@7a` to `0xffff`.
+That slot carries exactly two different values, near DC. Thus it is also not a waveform.
+`set_line_dac_slot` makes the choice selectable. It is not an assumption.
 
-Where the datapump's PCM actually leaves the C52 is therefore unresolved. The
-`tblr` at `0x022e` against a table based at `0x824d` is the next thread: a table
-read on this path is what a phase-to-amplitude lookup looks like, and its
-result is overwritten in `@7a` before the store at `0x0245`.
+Thus we do not know where the PCM of the datapump leaves the C52. The
+`tblr` at `0x022e` on a table with base `0x824d` is the next item to examine. A table
+read on this path is typical of a phase-to-amplitude lookup. The code writes over its
+result in `@7a` before the store at `0x0245`.
 
-Two things are settled by this measurement. The V.8 tones a run emits are
-`C5xCore::dtmf_sample()` - 1300 Hz gated 500 ms on/off for calling, 2100 Hz with
-15 Hz AM and 450 ms reversals for answering - not firmware output. And V.21 is
-generated nowhere; the harness only scores 980/1180 Hz symbols it never sees.
+This measurement gives the answer to two questions. The V.8 tones that a run sends come from
+`C5xCore::dtmf_sample()` (1300 Hz gated 500 ms on/off for calling, 2100 Hz with
+15 Hz AM and 450 ms reversals for answering). They are not firmware output. Also, nothing generates
+V.21. The harness only scores 980/1180 Hz symbols that it never sees.
 
-> **Superseded 2026-09-08.** `C5xCore::dtmf_sample()`, `set_dtmf_digits` and
-> `set_synthetic_line` have been deleted. There is no harness tone generator
-> left to switch off, so every measurement below that qualifies itself with
-> `set_synthetic_line(False)` is now simply the unconditional behaviour. The
-> DSP is the whole audio path; on 3.0.13 it emits its own DTMF
+> **Superseded on 2026-09-08.** We deleted `C5xCore::dtmf_sample()`, `set_dtmf_digits` and
+> `set_synthetic_line`. There is no harness tone generator
+> to disable. Thus each measurement below that uses
+> `set_synthetic_line(False)` is now the unconditional behaviour. The
+> DSP is the full audio path. On 3.0.13, it sends its own DTMF
 > (`artifacts/dtmf-emulator-302-01`).
 
 ### Where the audio path is not: four measurements
 
-Measured 2026-09-05 on an answered call with `set_synthetic_line(False)`, so
-nothing but the C52 can put anything on the line.
+We measured this on 2026-09-05 on an answered call with `set_synthetic_line(False)`. Thus
+only the C52 can put a signal on the line.
 
-**1. The overlay runs and stalls where the file already said it would.**
+**1. The overlay runs and stalls at the location that the file already gave.**
 `v8_dispatches` 89, `negotiation_loop_entries` 14, `negotiation_loop_pc`
-`0xc853`, and the PC trace is dominated by `0xc853`. So the datapump's
-negotiation is executing and spinning in the loop that needs the absent
-ASIC-produced workspace.
+`0xc853`, and most of the PC trace is `0xc853`. Thus the negotiation of the datapump
+executes and loops in the loop that needs the missing
+workspace that the ASIC produces.
 
 **2. The frame ISR at `0x0228` is the polyphase resampler, not a DAC writer.**
-It runs about **ten times per codec sample** - the write counts for the ASIC
-block are `0xfffd`, `0xfffb`, `0xffff` at 10.09 per sample, `0xfffa` at 20.2,
-`0xfffc` at 30.3 - which is the 25 MHz/258-cycle TDM slot rate against the
-9.6 kHz codec. It reads the slot number from `@52`, indexes four descriptors at
+It runs about **ten times for each codec sample**. The write counts for the ASIC
+block are `0xfffd`, `0xfffb`, `0xffff` at 10.09 for each sample, `0xfffa` at 20.2, and
+`0xfffc` at 30.3. This is the ratio of the 25 MHz/258-cycle TDM slot rate to the
+9.6 kHz codec. It reads the slot number from `@52`, uses it as an index into four descriptors at
 program `0x824d` (`bf09 04fd be59 bb3f`), and filters the ADC pair `@78`/`@79`
-by them into the 32-bit accumulator `@7c`/`@7d`.
+with them into the 32-bit accumulator `@7c`/`@7d`.
 
-**3. Nothing in the block is a waveform.** De-interleaved by TDM phase, slot
-`0xffff` carries two to four distinct values in every phase, peak/rms 0.066.
-The whole overlay writes only 723 distinct cells, and every one outside
+**3. Nothing in the block is a waveform.** When we separate it by TDM phase, slot
+`0xffff` carries two to four different values in each phase, peak/rms 0.066.
+The full overlay writes only 723 different cells. It writes each cell outside
 `0xfff8`-`0xffff` fewer than 200 times in 98,237 codec samples. A running
-datapump would touch far more than that.
+datapump would touch many more cells.
 
-**4. The receive path is backlogged by about forty seconds.** A known 1800 Hz
-tone from the far end appears nowhere in the ISR's output - and the reason is
-not the firmware. Routing the harness's ADC injection through `DM_WRITE16`
-makes it visible: `0xfff8` is written once per codec sample, 24,979 times, and
-**every write carries the same value**. `codec_rx_queued` is 495,360 against
-`codec_rx_consumed` 101,020, so the queue runs about five times faster than the
-DSP drains it and `front()` is still silence from before the call came up.
+**4. The receive path has a backlog of about forty seconds.** A known 1800 Hz
+tone from the far end does not occur in the output of the ISR. The cause is
+not the firmware. When we send the ADC injection of the harness through `DM_WRITE16`,
+the cause is visible: the code writes `0xfff8` one time for each codec sample, 24,979 times, and
+**each write has the same value**. `codec_rx_queued` is 495,360 and
+`codec_rx_consumed` is 101,020. Thus the queue fills about five times faster than the
+DSP empties it, and `front()` is still silence from before the call started.
 
-That last one is a harness bug, not a firmware property, and it invalidates any
-earlier reading that assumed the datapump had heard the line. The codec receive
-queue has to be paced to consumption before the transmit side can be judged at
-all.
+That last item is a harness bug, not a firmware property. It makes incorrect each
+earlier interpretation that assumed that the datapump had heard the line. The codec receive
+queue must be paced to the consumption before we can evaluate the transmit side.
 
-So the audio path is not at `0xfffd` (a phase accumulator), not at `0xffff`
-(two values), and the input at `0xfff8` never varies. `set_line_dac_slot` and
-`line_phase_samples` make each of those measurable rather than assumed.
+Thus the audio path is not at `0xfffd` (a phase accumulator), and not at `0xffff`
+(two values). The input at `0xfff8` never changes. `set_line_dac_slot` and
+`line_phase_samples` make it possible to measure each of these. We do not assume them.
 
 ### The two clocks disagree by about four times
 
-Pacing the modeled line on the codec rather than on the 80186 instruction count
-removes the receive backlog exactly - `codec_rx_queued` 132,480 against
-`codec_rx_consumed` 132,480, ratio 1.00, backlog 0 - and immediately exposes
+When we pace the modeled line on the codec, not on the 80186 instruction count,
+the receive backlog disappears exactly: `codec_rx_queued` 132,480 and
+`codec_rx_consumed` 132,480, ratio 1.00, backlog 0. This immediately shows
 why the backlog existed.
 
-Over 60,000,000 instructions the codec clocks 132,480 samples, which at 9.6 kHz
-is 13.80 s of line time. That implies **4,348 80186 instructions per
-millisecond**. `INSTRUCTIONS_PER_MS` in `daa.py` is **1,111**, calibrated from
-the answer machine's tick counter reaching the country minimum of 180 during
-one 2 s ring burst. The two disagree by 3.91x.
+Over 60,000,000 instructions, the codec clocks 132,480 samples. At 9.6 kHz this
+is 13.80 s of line time. Thus there are **4,348 80186 instructions for each
+millisecond**. `INSTRUCTIONS_PER_MS` in `daa.py` is **1,111**. We calibrated it from
+the tick counter of the answer machine, which got to the country minimum of 180 during
+one 2 s ring burst. The two values are different by 3.91x.
 
-At the board's 20 MHz that is 4.6 clock cycles per instruction on the codec's
-figure and 18.0 on the DAA's. 4.6 is an ordinary 80186 mix; 18.0 is not.
+At the 20 MHz of the board, that is 4.6 clock cycles for each instruction with the codec
+value, and 18.0 with the DAA value. 4.6 is a usual 80186 mix. 18.0 is not.
 
-Neither is independently verified. The codec figure inherits the C5x cycle
-model and the 5:4 scheduling ratio between the two processors; the DAA figure
-inherits the assumption that one ring burst is what takes the counter to 180.
-But they cannot both stand, and every line-side timing in the harness rests on
-one or the other.
+We did not verify either value independently. The codec value depends on the C5x cycle
+model and the 5:4 scheduling ratio between the two processors. The DAA value
+depends on the assumption that one ring burst takes the counter to 180.
+But both cannot be correct, and each line-side timing in the harness depends on
+one of them.
 
-The immediate consequence is visible in the answer probe. With the line paced
-correctly it advances about four times slower per instruction than before, so
-the firmware's own timeouts - which count in instructions - expire against it:
-the answered call in that run stays up for 6 line frames out of 147, and the
-1800 Hz far-end tone that was supposed to prove the receive path reaches the
-datapump for 600 ms before the modem hangs up. `0xfff8` still reads as one
-distinct value across the run.
+The answer probe shows the immediate result. With correct pacing, the line
+advances about four times slower for each instruction than before. Thus
+the timeouts of the firmware (which count in instructions) expire before the line is ready.
+In that run, the answered call stays up for 6 line frames of 147. The
+1800 Hz far-end tone that was to prove the receive path gets to the
+datapump for 600 ms before the modem goes on-hook. `0xfff8` still reads as one
+value across the run.
 
-So the receive path is now correctly paced and still unproven, and the thing
-standing in the way is a clock calibration rather than anything in the
+Thus the receive path now has correct pacing, but it is still not proved. The
+problem is a clock calibration, not an item in the
 firmware.
 
 ### What the firmware says a second is: 200 ticks
 
-Found 2026-09-05 in the user's own board image,
+We found this on 2026-09-05 in the board image of the user,
 `artifacts/courier-board-21210-capture-403/courier-board.rom` (supervisor
-7.4.16 / DSP 3.1.2), and confirmed against `main211.xmf`.
+7.4.16 / DSP 3.1.2), and confirmed it with `main211.xmf`.
 
-Both builds convert an S-register byte, which is in seconds, to a countdown by
-multiplying by 200:
+Both builds change an S-register byte, which is in seconds, to a countdown. They
+multiply it by 200:
 
 | build | sites |
 |---|---|
 | 403 ROM (7.4.16) | `0x82206`, `0x952b5`, `0xa23ef`, `0xa570a`, `0xa5914` |
 | main211 (2.1.1) | `0x5dc8c`, `0x70fa6`, `0x82635`, `0x82862`, `0x828c8` |
 
-each `mov ah, 0xc8 ; mul ah`, storing to the cell the wait then counts down -
-`[0xc9a]`, `[0xae5]`, `[0xd85]` in the 403; `[0x8d6]` in main211, which
-subtracts `0x50` afterwards where the 403 subtracts `0x0f`. **So the firmware's
-own arithmetic puts one tick at 5.0 ms.**
+Each is `mov ah, 0xc8 ; mul ah`. Each stores the result to the cell that the wait then counts down:
+`[0xc9a]`, `[0xae5]`, `[0xd85]` in the 403, and `[0x8d6]` in main211. main211
+then subtracts `0x50`, and the 403 subtracts `0x0f`. **Thus the arithmetic of the
+firmware gives one tick as 5.0 ms.**
 
-The two builds are the same codebase relocated. Every `mov ah, imm ; mul ah`
-site appears in both in the same order with the same factors - 200, 4, 8, 10,
-24, 100, 100, 10, 20, 60, 60 - and the wait shapes match too: main211's
+The two builds are the same codebase at different locations. Each `mov ah, imm ; mul ah`
+site occurs in both, in the same order, with the same factors (200, 4, 8, 10,
+24, 100, 100, 10, 20, 60, 60). The wait shapes also agree. The main211
 `test byte [0x66c], 0x80 ; cmp word [0x8d6], 0` at `0x82afd`, loaded with 2000,
-is the 403's `test byte [0x225], 0x80 ; cmp word [0x488], 0` at `0xa5b9b`,
-loaded with the same 2000. 7.4.16 reorganises the dial-tone wait itself into a
-dispatch on `[0xaf0]` rather than main211's inline poll, which is why its
-countdown cell `[0xaea]` holds no 9,600 literal.
+is the 403 `test byte [0x225], 0x80 ; cmp word [0x488], 0` at `0xa5b9b`,
+loaded with the same 2000. 7.4.16 changes the structure of the dial-tone wait to a
+dispatch on `[0xaf0]`, and does not use the inline poll of main211. This is the reason that its
+countdown cell `[0xaea]` has no 9,600 literal.
 
-Against that 5 ms, both of the harness's figures are out by about two:
+Compared with that 5 ms, both values of the harness are incorrect by a factor of about two:
 
 | | ms per tick |
 |---|---|
@@ -3840,22 +3839,22 @@ Against that 5 ms, both of the harness's figures are out by about two:
 | harness ROM path, `tick_ms=10` | 10.0 |
 | `daa.py`, from the ring calibration | 11.1 |
 
-`daa.py` derives `INSTRUCTIONS_PER_MS = 1,111` from 2,000,000 instructions
-taking the counter to 180, read as one 2 s ring burst. That is 11,111
-instructions per tick either way; at the firmware's own 5 ms it makes
-`INSTRUCTIONS_PER_MS` **2,222**, not 1,111. And the reading it rests on looks
-wrong in the same direction: 180 ticks at 5 ms is 900 ms, which is an ordinary
-minimum ring-burst length to qualify on, where 2 s is the whole cadence.
+`daa.py` calculates `INSTRUCTIONS_PER_MS = 1,111` from 2,000,000 instructions
+that take the counter to 180, interpreted as one 2 s ring burst. That is 11,111
+instructions for each tick in both cases. At the 5 ms of the firmware, it gives
+`INSTRUCTIONS_PER_MS` **2,222**, not 1,111. Also, the interpretation that it uses is probably
+incorrect in the same direction: 180 ticks at 5 ms is 900 ms. This is a usual
+minimum ring-burst length for qualification. 2 s is the full cadence.
 
-None of this reaches the codec-implied 4,348, so that model stays separately
-suspect - this settles the supervisor's timebase, not the C5x's.
+None of this gets to the 4,348 that the codec gives. Thus that model is still
+doubtful for a different reason. This answers the question of the time base of the supervisor, not of the C5x.
 
-**The falsifiable part.** On the 403 board the dial-tone wait is `S6 x 200`
-ticks. If one tick is 5 ms then `ATD` to `NO DIAL TONE` takes exactly `S6`
-seconds, so timing it at several `S6` settings must give a slope of 1.000
-seconds per unit. `tick_probe --dial-wait` measures precisely that.
+**The part that a test can prove false.** On the 403 board, the dial-tone wait is `S6 x 200`
+ticks. If one tick is 5 ms, then the time from `ATD` to `NO DIAL TONE` is exactly `S6`
+seconds. Thus a measurement at several `S6` settings must give a slope of 1.000
+seconds for each unit. `tick_probe --dial-wait` measures exactly that.
 
 ## Repro notes
 
-Analysis tooling: Python + `capstone` (x86-16). macOS blocks reads under
-`~/Downloads` (TCC) — the file had to be copied into the repo first.
+Analysis tools: Python + `capstone` (x86-16). macOS blocks reads under
+`~/Downloads` (TCC). We had to copy the file into the repo first.
