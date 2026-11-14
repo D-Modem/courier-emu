@@ -1,10 +1,9 @@
 # The sweep's first sample is clobbered
 
-21 addresses, `--memory-test-addresses`. Sample 0 is "PMST as found" and reads
-`5aa5` rather than `00b0`, because this sweep writes its test patterns to data
-`0x1000` - which is `ROM_DUMP_BUFFER`, so the write lands on the already-stored
-sample. Only that one word is affected; every address row is intact, and
-`PMST` as found is in `run-a` and `run-b`, which do not touch `0x1000`.
+This sweep uses 21 addresses, `--memory-test-addresses`. Sample 0 is "PMST as found". It reads
+`5aa5` and not `00b0`. The cause is that this sweep writes its test patterns to data
+`0x1000`. That address is `ROM_DUMP_BUFFER`, thus the write goes onto the sample that is already stored.
+Only that one word is affected. All the address rows are correct. The value of
+`PMST` as found is also in `run-a` and `run-b`, and these runs do not touch `0x1000`.
 
-Move the buffer, or leave `0x1000` out of the address list, before reading
-anything into sample 0 again.
+Before you read data into sample 0 again, move the buffer or remove `0x1000` from the address list.
