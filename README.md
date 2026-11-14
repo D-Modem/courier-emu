@@ -894,72 +894,79 @@ The firmware confirms all three settings in its own profile dump: `&C0`,
 
 ### Ring detection
 
-The answer machine at `0x70fb4` polls input port `0x14` bit `0x02` with a direct
-`in al, 0x14`, and every state in it waits on an edge of that bit, so a line
-that never changes level parks it in its first state forever. That bit is now
-modelled: an idle line is not ringing, and `--ring` drives it with a cadence.
+The answer machine at `0x70fb4` polls input port `0x14` bit `0x02` with a
+direct `in al, 0x14`. Each state in it waits for an edge of that bit. Thus, if
+a line never changes level, the machine stays in its first state forever. The
+harness now models that bit. An idle line does not ring, and `--ring` drives
+the bit with a cadence.
 
 ```sh
 ./courier run main211.xmf --instructions 40000000 \
   --ring --at 'AT#CID=1' --summary
 ```
 
-The harness has no wall clock, so the cadence is converted from milliseconds
-through the instruction count. `0x70fe0` accepts a burst once the tick counter
-at `[0x1d50]` reaches the country minimum at `[0x1f5c]`, which this build loads
-with 180.
+The harness has no wall clock. Thus, it changes the cadence from milliseconds
+through the instruction count. `0x70fe0` accepts a burst when the tick counter
+at `[0x1d50]` gets to the country minimum at `[0x1f5c]`. This build loads that
+minimum with 180.
 
-That counter was once read as the calibration for the conversion: assume the
-burst reaching 180 is a 2 s North American ring, and one firmware tick is 10 ms
-and the instruction clock 1,111 per millisecond. Both figures are withdrawn.
-The tick is 5 ms, measured from the timer 0 compare each build programs on its
-own crystal, so 180 ticks is a 900 ms minimum qualification rather than a whole
-burst - and the derivation was circular anyway, since `machine.py` synthesizes
-the tick itself at `tick_ms * INSTRUCTIONS_PER_MS`. The instruction clock is
-4,348 per millisecond, from the codec's own sample count. See [Hardware time
-base and audio path](docs/hardware-timebase-and-audio-path.md).
+Before, we used that counter as the calibration for the conversion. We assumed
+that the burst that gets to 180 is a 2 s North American ring, that one firmware
+tick is 10 ms, and that the instruction clock is 1,111 for each millisecond. We
+withdraw the two figures:
 
-With that cadence the answer machine qualifies bursts (`0x70fe9`), raises the
-ring-indicate line (`0x70ff0`), and posts its ring message (`0x71026`) into the
-supervisor event queue at `0x02e0`. Two gates matter there:
+- The tick is 5 ms. We measured it from the timer 0 compare that each build
+  programs on its own crystal. Thus, 180 ticks is a minimum qualification of
+  900 ms, not a full burst. Also, the derivation was circular, because
+  `machine.py` makes the tick itself at `tick_ms * INSTRUCTIONS_PER_MS`.
+- The instruction clock is 4,348 for each millisecond. This value comes from
+  the sample count of the codec itself.
+
+See [Hardware time base and audio
+path](docs/hardware-timebase-and-audio-path.md).
+
+With that cadence, the answer machine qualifies bursts (`0x70fe9`). It sets the
+ring-indicate line (`0x70ff0`). It posts its ring message (`0x71026`) into the
+supervisor event queue at `0x02e0`. Two gates are important there:
 
 - `[0x094e]` is `#CID`, expanded from packed-config byte 11 of the parameter
-  sector, and both ring message sites skip the post when it is zero. `AT#CID=1`
+  sector. When it is zero, the two ring message sites do not post. `AT#CID=1`
   enables them.
 - `[0x0287]` bit `0x10` gates the second ring path, and it reads zero here.
 
-What does **not** yet happen is the answer itself: the queued ring events are
-never acted on, with or without `--with-dsp`, so no `RING` reaches the DTE and
-the hook relay stays released. The consumer of that queue is the next thing to
-recover.
+The answer itself does **not** yet occur. Nothing acts on the queued ring
+events, with or without `--with-dsp`. Thus, no `RING` gets to the DTE, and the
+hook relay stays released. The next item to recover is the consumer of that
+queue.
 
 ### Answering
 
-`ATA` reaches the same `0x5dbe7` line-detector wait that `ATD` does. Since an
-answering seizure has no dial tone to find, the DAA qualifies detector byte
-`[0x0649]` on a connected line for `answer` and keeps requiring dial tone for
-`originate`:
+`ATA` gets to the same `0x5dbe7` line-detector wait as `ATD`. An answering
+seizure has no dial tone to find. Thus, for `answer`, the DAA qualifies
+detector byte `[0x0649]` on a connected line. For `originate`, the DAA
+continues to require dial tone:
 
 ```sh
 ./courier run main211.xmf --instructions 40000000 \
   --at ATA --daa-line quiet --summary
 ```
 
-That turns `NO DIAL TONE` into `NO CARRIER`, which is the correct answer to
-answering into silence: the line is seized and qualified, and training then
-fails for the reason the SIP section describes. Treating `[0x0649]` as the
-line-side detector rather than a dial-tone-only counter is an inference from the
-shared wait, not something the image states.
+This changes `NO DIAL TONE` to `NO CARRIER`. This is the correct result when
+the modem answers into silence: the line is seized and qualified, and then
+training fails for the reason that the SIP section gives. We infer from the
+shared wait that `[0x0649]` is the line-side detector and not a counter for dial
+tone only. The image does not state this.
 
 ### Board identification straps
 
-The scan at `0x5bfc6` identifies the board by driving four latch lines low one
-at a time (latch 1 bit `0x02`, latch 2 bits `0x40`, `0x10`, `0x20`) and shifting
-input port `0x14` bit `0x08` into a four-bit code. `0x5c051` looks that code up
-in the table at `0x5c06b` and `0x5c05c` stores the result as the board
-capability byte at `0x0a02`. Two capability bits are pinned down: `0x08` is
-"settings EEPROM fitted", tested by every NVRAM path, and `0x40` sends `0x5bb0f`
-straight to the fatal blinker.
+The scan at `0x5bfc6` identifies the board. It drives four latch lines low, one
+at a time (latch 1 bit `0x02`, latch 2 bits `0x40`, `0x10`, `0x20`). It shifts
+input port `0x14` bit `0x08` into a four-bit code. `0x5c051` finds that code in
+the table at `0x5c06b`. `0x5c05c` stores the result as the board capability byte
+at `0x0a02`. We know the function of two capability bits:
+
+- `0x08` is "settings EEPROM fitted". All NVRAM paths test it.
+- `0x40` sends `0x5bb0f` directly to the fatal blinker.
 
 | code | capability | | code | capability |
 |---:|---|---|---:|---|
@@ -967,27 +974,28 @@ straight to the fatal blinker.
 | 5 | `0x14` | | 12 | `0x28` |
 | 7 | `0x22` | | 13 | `0x22` |
 
-Codes 11 and 14 map to `0x42` and `0x48`, which carry the fatal bit; every other
-code is an empty table entry and `0x5c064` stores zero. `--board-id` drives the
-straps and rejects the codes the firmware cannot run on. It defaults to 2, the
-lowest code describing a board with an EEPROM and no fatal fault; `none` leaves
-the lines floating, which the firmware reads as no board at all.
+Codes 11 and 14 map to `0x42` and `0x48`, which have the fatal bit. All other
+codes are empty table entries, and `0x5c064` stores zero. `--board-id` drives
+the straps and rejects the codes on which the firmware cannot run. Its default
+is 2. This is the lowest code for a board with an EEPROM and no fatal fault.
+`none` leaves the lines floating. The firmware reads this as no board.
 
-Which of 2, 9, and 12 a given board revision actually straps is not recoverable
-from the image — they differ only in capability bit `0x01`, whose meaning is not
-established. The default is a constrained inference, not a verified board ID.
+You cannot find from the image which of 2, 9 and 12 a given board revision
+straps. They are different only in capability bit `0x01`, and the function of
+that bit is not known. The default is a constrained inference, not a verified
+board ID.
 
-Leaving the straps floating is not a state real hardware can be in, and the
-firmware treats it as a fault. Two visible consequences:
+Real hardware cannot have floating straps, and the firmware sees this
+condition as a fault. This has two visible results:
 
-- `0x667cb` maps a zero or `0xff` capability byte straight to result code 4, so
-  `ATI1`, `ATI2`, `ATI3`, `ATI7`, `ATZ` and `ATS30?` answered correctly and then
-  reported `ERROR`.
-- `0x82ea4` picks the product code from capability bit `0x08`: a board with an
-  EEPROM answers `ATI` with `3368`, one without answers `3368A`.
+- `0x667cb` maps a zero or `0xff` capability byte directly to result code 4.
+  Thus, `ATI1`, `ATI2`, `ATI3`, `ATI7`, `ATZ` and `ATS30?` answered correctly
+  and then reported `ERROR`.
+- `0x82ea4` selects the product code from capability bit `0x08`. A board with
+  an EEPROM answers `ATI` with `3368`. A board without one answers `3368A`.
 
-The settings store is a 93C66-class Microwire EEPROM (256 x 16) bit-banged on
-latch 0. The driver is at `0x5ccc0..0x5cdf9`:
+The settings store is a 93C66-class Microwire EEPROM (256 x 16). The firmware
+bit-bangs it on latch 0. The driver is at `0x5ccc0..0x5cdf9`:
 
 | routine | role |
 |---|---|
@@ -997,23 +1005,25 @@ latch 0. The driver is at `0x5ccc0..0x5cdf9`:
 | `5b5e:17d2` | shift bits most-significant first |
 | `5b5e:1801` | presence poll; input port `0x10` bit `0x08` must read high |
 
-`5b5e:17c6` forms `bx = ((opcode & 3) | 4) << 8 | address` and rotates it left by
-four before clocking twelve bits, which is one pad bit, the start bit, two opcode
-bits, and an eight-bit address. Latch bits are `0x20` chip select, `0x40` clock,
-`0x10` data in on write and data out on read.
+`5b5e:17c6` makes `bx = ((opcode & 3) | 4) << 8 | address`. It rotates this
+value left by four before it clocks twelve bits. The twelve bits are one pad
+bit, the start bit, two opcode bits and an eight-bit address. The latch bits
+are: `0x20` chip select, `0x40` clock, `0x10` data in on write and data out on
+read.
 
-Attach a persistent image with `--nvram`; it is created blank (all ones, like an
-unprogrammed part) when the file does not exist and written back after the run:
+To attach a persistent image, use `--nvram`. If the file does not exist, the
+harness makes it blank (all ones, as an unprogrammed part). After the run, the
+harness writes the file back:
 
 ```sh
 ./courier run main211.xmf --instructions 7000000 \
   --at AT --nvram settings.nv --summary
 ```
 
-For a deterministic `IDSDL302.ROM` boot, the recovered six-record settings
-cache can instead be attached in memory, together with the `+S` register
-defaults that `AT+SF` loads - without them the DSP dials at zero level, as the
-board did. This leaves every other EEPROM word erased, and does not alter the
+For a deterministic `IDSDL302.ROM` boot, you can attach the recovered
+six-record settings cache in memory. This also attaches the `+S` register
+defaults that `AT+SF` loads. Without them, the DSP dials at zero level, as the
+board did. This leaves all other EEPROM words erased. It does not change the
 blank `--nvram` behavior:
 
 ```sh
@@ -1021,15 +1031,16 @@ blank `--nvram` behavior:
   --tick-ms 10 --nvram-fixture idsl302 --at AT --summary
 ```
 
-The 20 MHz 302/403 ROM serial adapter runs the firmware's attention detector,
-parser, and UART transmit path. See [ROM serial execution](docs/rom-serial-adapter.md)
-for the tested board settings, captured 403 command, and autobaud limitations.
+The 20 MHz 302/403 ROM serial adapter runs these parts of the firmware: the
+attention detector, the parser and the UART transmit path. For the tested board
+settings, the captured 403 command and the autobaud limits, see
+[ROM serial execution](docs/rom-serial-adapter.md).
 
-The fixture reverses all three byte encodings used for each redundant record;
-it is mutually exclusive with a persistent `--nvram` image.
+The fixture reverses all three byte encodings that each redundant record uses.
+You cannot use it together with a persistent `--nvram` image.
 
-`nvram` in the result reports reads, writes, erases, the write-enable latch, the
-programmed words, and a command trace.
+`nvram` in the result reports these items: reads, writes, erases, the
+write-enable latch, the programmed words and a command trace.
 
 ### Why the EEPROM stays untouched at boot
 
