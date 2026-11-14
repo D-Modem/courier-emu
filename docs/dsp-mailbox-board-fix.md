@@ -2,33 +2,33 @@
 
 ## Exact long-immediate confirmation, 2026-09-09
 
-The fresh [capture](../artifacts/ndx-long-1234-20260909/frame.txt) from the
+The new [capture](../artifacts/ndx-long-1234-20260909/frame.txt) from the
 attached Courier confirms the existing model for `lar ar0, #1234` (hex).
-ATI7 again reports supervisor 7.4.16 and DSP 3.1.2. The minimal probe seeds
-ARCR=`eeee` and INDX=`dddd` independently before each load, clears then sets
-PMST.NDX, and returns the registers through the verified tagged mailbox.
-PMST and AR0 readbacks are controls; `9209` identifies this probe.
+ATI7 again reports supervisor 7.4.16 and DSP 3.1.2. Before each load, the minimal probe seeds
+ARCR=`eeee` and INDX=`dddd` independently. It clears and then sets
+PMST.NDX, and it returns the registers through the verified tagged mailbox.
+The PMST and AR0 readbacks are controls. `9209` identifies this probe.
 
 | NDX | PMST | AR0 after LAR | ARCR | INDX |
 |---|---|---|---|---|
 | Clear | `00b0` | `1234` | `1234` | `1234` |
 | Set | `00b4` | `1234` | `eeee` | `dddd` |
 
-The nine-word frame passes its count and checksum (`a908`). The 4256-byte
-supervisor RAM image was read back byte for byte before execution; the DSP
-kernel is 160 bytes. After watchdog recovery, AT answered, vector 8 was
-restored to `8000:108f`, and T0CON read back as `8021`. No flash or stored
-settings were written. This is a standalone instruction test, not a live-call
-measurement. **No C5x behavior change was necessary.**
+The nine-word frame passes its count and its checksum (`a908`). Before the execution, we read back the 4256-byte
+supervisor RAM image byte for byte. The DSP
+kernel is 160 bytes. After the watchdog recovery, AT answered, vector 8 was
+restored to `8000:108f`, and T0CON read back as `8021`. We did not write to the flash or to the stored
+settings. This is a standalone instruction test. It is not a measurement of a live call.
+**No change to the C5x behavior was necessary.**
 
 The [artifact manifest](../artifacts/ndx-long-1234-20260909/manifest.json)
-records hashes, identity, decoded samples and recovery. Raw serial traffic,
-RAM readback, binaries, labels and the separate offline result are alongside
-it. Tests preserve the existing model, replay the exact captured binary,
-validate the raw frame and compare the upload with its readback. Only PMST
-AVIS is masked in the replay, as in the earlier captures; NDX is not masked.
+records the hashes, the identity, the decoded samples and the recovery. The raw serial traffic,
+the RAM readback, the binaries, the labels and the separate offline result are in the same location.
+The tests keep the existing model, replay the exact captured binary,
+validate the raw frame and compare the upload with its readback. The replay masks only PMST
+AVIS, as in the earlier captures. It does not mask NDX.
 
-To reproduce from the repository root, using a **new** output directory:
+To reproduce the result from the repository root, use a **new** output directory:
 
 ```sh
 .venv/bin/python artifacts/ndx-long-1234-20260909/build.py /tmp/ndx-long-new
@@ -36,89 +36,88 @@ To reproduce from the repository root, using a **new** output directory:
 .venv/bin/python -m pytest tests/test_dsp_board_ndx.py tests/test_mailbox_protocol.py tests/test_asic_ports.py -q
 ```
 
-The runner requires the measured firmware identity, verifies RAM before
-arming Timer 0, and refuses to overwrite an existing frame. The serial device
-name may change when reconnected. Offline execution requires Unicorn JIT
-permission on macOS.
+The runner must have the measured firmware identity. It verifies the RAM before
+it arms Timer 0, and it does not overwrite an existing frame. The name of the serial device
+can change when you connect it again. On macOS, the offline execution must have the Unicorn JIT
+permission.
 
 ## Earlier findings
 
-The NDX failure is now explained. Two faults masked one another: the core
-omitted AR0 compatibility side effects, and PA7 writes incorrectly manufactured
-download-ready status. Fixing NDX alone made the firmware enter that false
-ready path and repeatedly download `FFFF`, including into its interrupt vector
-area. This was not evidence of bad `*0+` addressing.
+We now know the cause of the NDX failure. Two faults hid each other. The core
+did not do the AR0 compatibility side effects, and PA7 writes incorrectly made a
+download-ready status. When we fixed only NDX, the firmware entered that false
+ready path and repeatedly downloaded `FFFF`, also into its interrupt vector
+area. This was not evidence of incorrect `*0+` addressing.
 
 ## Fresh hardware measurements
 
 The connected board at `/dev/cu.usbserial-1420` reports ID_SDL 4.03d,
-supervisor 7.4.16, DSP 3.1.2, 20.16 MHz. Both probe images were uploaded only
-to RAM and read back byte for byte before execution. Both returned complete
-checksummed frames. Afterwards AT answered, vector 8 was `8000:108F`, and
-T0CON was `8021`. No stored settings or flash were written.
+supervisor 7.4.16, DSP 3.1.2, 20.16 MHz. We uploaded the two probe images only
+to RAM, and we read them back byte for byte before the execution. The two images returned complete
+frames with checksums. After this, AT answered, vector 8 was `8000:108F`, and
+T0CON was `8021`. We did not write to the stored settings or to the flash.
 
-`artifacts/ndx-addressing-02/` contains 47 words from a uniquely marked probe:
+`artifacts/ndx-addressing-02/` contains 47 words from a probe with a unique marker:
 
-- With NDX clear, direct, indirect, short-immediate and long-immediate LAR AR0
+- With NDX clear, the direct, indirect, short-immediate and long-immediate LAR AR0
   all copy the loaded value to ARCR and INDX.
-- With NDX set, those registers retain their independent sentinels.
-- SAMM AR0 does **not** copy to ARCR or INDX under either polarity.
-- The tested non-ARP-update indirect addressing modes agree with the core,
-  including indexed addition/subtraction and reverse-carry addressing.
+- With NDX set, those registers keep their independent sentinels.
+- SAMM AR0 does **not** copy to ARCR or INDX with either polarity.
+- The tested indirect addressing modes without ARP update agree with the core.
+  These include indexed addition/subtraction and reverse-carry addressing.
 
-`artifacts/dsp-status-03/` contains 23 further words:
+`artifacts/dsp-status-03/` contains 23 more words:
 
-- PA7 reads `0002` before and after writes of `0200`, `0300`, and `0000`.
-  These writes do not create incoming-download readiness or destroy bit 1.
-- MAR increment/decrement of AR0 copies the resulting value to ARCR/INDX
-  with NDX clear, and leaves them alone with NDX set.
-- Loading AR1 does not copy to ARCR/INDX. Its accompanying first AR0 sample
-  is incoming bootloader state and is excluded from emulator assertions.
+- PA7 reads `0002` before and after writes of `0200`, `0300` and `0000`.
+  These writes do not make an incoming-download readiness, and they do not destroy bit 1.
+- With NDX clear, the MAR increment/decrement of AR0 copies the result to ARCR/INDX.
+  With NDX set, it does not change them.
+- A load of AR1 does not copy to ARCR/INDX. Its related first AR0 sample
+  is the incoming bootloader state, and the emulator assertions do not include it.
 
 The original `artifacts/ndx-probe-01/manifest.json` has incorrect decoded
 fields for the first direct load. Its raw frame supports the later notes,
-not those fields. The fresh captures remove that ambiguity.
+not those fields. The new captures remove that ambiguity.
 
 ## Implementation
 
-The core implements LAR and ARAU AR0 side effects, while leaving MMR writes
-independent. On the measured ROM-board profile, PA7 writes acknowledge flags
-instead of replacing the whole register. Empty-window hardware observations
-support the correction; a populated download-window acknowledgement still
-needs its own measurement. No universal semantics for every unused PA7 bit
-are claimed.
+The core implements the AR0 side effects of LAR and ARAU, and it keeps the MMR writes
+independent. On the measured ROM-board profile, PA7 writes acknowledge flags.
+They do not replace the full register. The hardware observations with an empty window
+support the correction. An acknowledgement with a populated download window must still
+have its own measurement. We do not claim universal semantics for all unused PA7 bits.
 
-The bridge also had the return handshake backwards. PA7 bit 1 means the DSP
-can send; CPU port 1C bit 1 means a reply is waiting. CPU acknowledgement sets
-the DSP-ready bit again. The corresponding stream bit uses the same opposite
-polarity. CPU bit 0 means the input holding register is free, while DSP PA7
-bit 0 means a CPU message is pending.
+Also, the bridge had the return handshake in the reverse direction. PA7 bit 1 means that the DSP
+can send. CPU port 1C bit 1 means that a reply is waiting. The CPU acknowledgement sets
+the DSP-ready bit again. The related stream bit uses the same opposite
+polarity. CPU bit 0 means that the input holding register is free, but DSP PA7
+bit 0 means that a CPU message is pending.
 
-For the measured ROM profile the bridge now commits the staged CPU tag/data
-on the bit-0 write to 1C, returns readiness from the actual latch, and reads
-status from one authoritative I/O value instead of OR-ing stale mirrors back
-in. CPU input and DSP output have separate holding registers, and reading
+For the measured ROM profile, the bridge now commits the staged CPU tag/data
+on the bit-0 write to 1C. It returns the readiness from the actual latch, and it reads
+the status from one authoritative I/O value. It does not OR old mirrors back
+in. The CPU input and the DSP output have separate holding registers. A read of
 an acknowledged output still returns the last word. The legacy image profiles
-retain their existing bridge behavior.
+keep their existing bridge behavior.
 
 `dsp_messages_taken` is a count of **CPU acknowledgements of DSP replies**.
-Older notes mistakenly use it as a count of messages consumed by the DSP.
-Actual DSP receive acknowledgements are writes of `1` to PA7; the new
+Older notes incorrectly use it as a count of messages that the DSP consumed.
+The actual DSP receive acknowledgements are writes of `1` to PA7. The new
 round-trip regression checks those directly.
 
 ## End-to-end command check
 
 `artifacts/mailbox-confirm-04/` repeats `07, 2D, 07` on the recovered board.
-The reply holding registers are `0031:0000` throughout: 07 produces that
-reply, and 2D leaves it unchanged. The emulator now reproduces the same
-sequence after running the real boot ROM and resident initialization, with
-CPU-side byte writes, commit, ready polling, reply reads, and acknowledgement.
+The reply holding registers are `0031:0000` at all times: 07 makes that
+reply, and 2D does not change it. The emulator now reproduces the same
+sequence after it runs the real boot ROM and the resident initialization. It uses
+CPU-side byte writes, commit, ready polling, reply reads and acknowledgement.
 It no longer needs a fixture caller to enter the dispatcher directly.
 
-`tests/test_dsp_board_ndx.py` replays both exact captured DSP binaries and
-checks the booted round trip, commit boundary, backpressure, held reply,
-and independent input/output registers. PMST AVIS is masked in the instruction
-comparison; its reset-state difference is outside these assertions.
+`tests/test_dsp_board_ndx.py` replays the two exact captured DSP binaries. It
+checks the booted round trip, the commit boundary, the backpressure, the held reply
+and the independent input/output registers. The instruction comparison masks PMST AVIS.
+Its difference in the reset state is outside these assertions.
 
-Full dialing results are recorded separately below. Matching these mailbox
-queries does not prove a working call, codec levels, or all ASIC registers.
+The full dialing results are recorded separately below. When these mailbox
+queries agree, this does not prove a working call, the codec levels or all the ASIC registers.

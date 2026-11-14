@@ -1,21 +1,21 @@
 # The DSP takes four images, not one
 
-> **Transport correction, 2026-09-14.** The overlay is consumed by the
-> downloaded C51 loader at `811b..8138`, which reads the ASIC holding registers
-> and performs the program-memory `BLDP` writes itself. It uses the same
+> **Transport correction, 2026-09-14.** The downloaded C51 loader at `811b..8138`
+> consumes the overlay. It reads the ASIC holding registers
+> and does the program-memory `BLDP` writes itself. It uses the same
 > physical ASIC register bridge as the mask-ROM resident loader at `0610`.
-> Direct `core.load_program` publication is an emulator shortcut, not the board
-> mechanism. See [The 80186/C51 download architecture](c51-cpu-loader.md).
+> Direct publication through `core.load_program` is a shortcut of the emulator. It is not the mechanism of the board.
+> Refer to [The 80186/C51 download architecture](c51-cpu-loader.md).
 
 The supervisor downloads a resident C52 bank at boot. It can also send three
-further images, and the resident bank is simply one row of the same table that
-names them. This records the mechanism, the map, and what it does and does not
+more images, and the resident bank is only one row of the same table that
+names them. This document records the mechanism, the map, and what it does and does not
 explain.
 
 ## Two transfer routines, one set of ports
 
-Both push words through the same eight data ports, `0x40`-`0x4e`, four words per
-block. They differ in the handshake and in where the source comes from.
+The two routines push words through the same eight data ports, `0x40`-`0x4e`, four words for each
+block. They are different in the handshake and in the origin of the source.
 
 | | resident downloader | overlay loader |
 |---|---|---|
@@ -23,23 +23,23 @@ block. They differ in the handshake and in where the source comes from.
 | source segment | hard-coded `mov ax, a914` | selected by index |
 | entry | `mov ax, 8000` at the call site | the table's third word |
 
-That hard-coded segment is why a second payload could not have come through the
-first routine: it can only ever send the resident bank.
+Because of that hard-coded segment, a second payload could not come through the
+first routine. That routine can only send the resident bank.
 
 ## The table
 
-The loader masks a four-bit code, multiplies by six and adds a table base -
-`mov bl, 6 ; mul bl ; mov bx, <table>` - then picks the source segment by
-comparing the same code against 6, 7 and 8, falling through to the resident
-segment. Each row is three words: start offset, end offset, and the C52 program
+The loader masks a four-bit code, multiplies it by six and adds a table base
+(`mov bl, 6 ; mul bl ; mov bx, <table>`). Then it selects the source segment: it
+compares the same code with 6, 7 and 8, and uses the resident
+segment for all other values. Each row is three words: the start offset, the end offset, and the C52 program
 address to load at.
 
-`courier_emu.rom.CourierRom.dsp_overlays` reads it. The table's length is not
-marked and rows past its end still look like plausible ranges, so a row is kept
-only if the loader has a segment for its index or it is the resident row - and
-the whole result is discarded unless one row reproduces what the download call
-site independently says. That is the check that identifies the table rather than
-assuming it.
+`courier_emu.rom.CourierRom.dsp_overlays` reads it. The length of the table is not
+marked, and the rows after its end still look like possible ranges. Thus, a row is kept
+only if the loader has a segment for its index, or if it is the resident row. The
+full result is discarded unless one row reproduces what the download call
+site says independently. That check identifies the table. It does not
+assume it.
 
 For the 3.1.2 board:
 
@@ -50,17 +50,17 @@ For the 3.1.2 board:
 | 7 | `3d100..40b94` | 7,498 | `b000` |
 | 8 | `40ba0..44634` | 7,498 | `dc00` |
 
-All three 512 KiB images agree on those four entry addresses - stock 7.3.14,
-ID_SDL 4.03 and the flat `IDSDL302.ROM` - with only the lengths differing.
+All three 512 KiB images agree on those four entry addresses (standard 7.3.14,
+ID_SDL 4.03 and the flat `IDSDL302.ROM`). Only the lengths are different.
 
-Two things follow from the map. Overlays 6 and 7 **overlap in program space**,
-so they are alternatives loaded one at a time, not three pieces of one program.
-And every overlay lands *inside* the resident bank's own range, which runs to
-`eea7` here: loading one overwrites resident code rather than extending it.
+The map shows two facts. Overlays 6 and 7 **overlap in program space**.
+Thus, they are alternatives that load one at a time, not three pieces of one program.
+Also, each overlay goes *into* the range of the resident bank itself, which goes to
+`eea7` here. Thus, when one loads, it overwrites resident code. It does not extend it.
 
 ## What the overlays contain
 
-Nothing that talks to the outside world. Across all three:
+They contain nothing that communicates with the outside world. Across all three:
 
 | | `out *, 0060` | `samm @21` (DXR) | codec writes |
 |---|---:|---:|---:|
@@ -69,57 +69,57 @@ Nothing that talks to the outside world. Across all three:
 | overlay 7 | 0 | 0 | 0 |
 | overlay 8 | 0 | 0 | 1 |
 
-No host sender and no serial transmit anywhere in them - algorithm code, fed by
-the resident bank's ISR.
+They have no host sender and no serial transmit. They are algorithm code, fed by
+the ISR of the resident bank.
 
-Overlay 8's single codec write is **register 4 again**: it loads `0409`, adjusts
+The single codec write of overlay 8 is **register 4 again**. It loads `0409`, adjusts
 the low byte conditionally by four and then by one, and calls the resident
-sender. So with the overlays included, the picture in
-[codec-rate-312.md](codec-rate-312.md) does not change. Every codec write this
-firmware makes after reset - three from the supervisor by tag `2c`, one from
-overlay 8 - targets register 4.
+sender. Thus, with the overlays included, the result in
+[codec-rate-312.md](codec-rate-312.md) does not change. Each codec write that this
+firmware makes after reset (three from the supervisor by tag `2c`, one from
+overlay 8) goes to register 4.
 
-> **Corrected.** The last sentence used to read "the divider registers are
+> **Corrected.** Before, the last sentence was "the divider registers are
 > written once, at reset, and never again". That is false. The rate selector at
-> `8140` writes register 2 from a six-row table, and the overlays reach it: the
-> `call <sender>` counts above miss it because it inlines the sender's handshake
-> rather than calling it. Overlay 6 selects 8000 Hz at its entry. Overlay 7 was
-> briefly recorded here as selecting 7578.95 Hz; that was a data-page error and
-> is withdrawn - overlay 7 is not shown to select any rate. See
-> [codec-sample-rates.md](codec-sample-rates.md), which also identifies
-> overlay 8 as the V.90 layer and overlay 6 as the PCM core it runs beside.
+> `8140` writes register 2 from a six-row table, and the overlays get to it. The
+> `call <sender>` counts above do not find it, because it inlines the handshake of the sender
+> and does not call it. Overlay 6 selects 8000 Hz at its entry. For a short time, this document recorded
+> that overlay 7 selects 7578.95 Hz. That was a data-page error, and we
+> withdraw it. No evidence shows that overlay 7 selects a rate. Refer to
+> [codec-sample-rates.md](codec-sample-rates.md). That document also identifies
+> overlay 8 as the V.90 layer, and overlay 6 as the PCM core that runs together with it.
 
 ## A correction to driving-the-tones.md
 
-That document's third blocker says tag `0x19`'s entry at `0xdaaf` "falls in the
+The third blocker of that document says that the entry of tag `0x19` at `0xdaaf` "falls in the
 gap between the resident bank ending at `0xd9ef` and the overlay starting at
 `0xde83`, so it reads as zeros".
 
-Against the payload as `dsp_download` extracts it now, none of that holds. The
-3.0.13 resident bank runs `8000..ec3e`, not to `d9ef`; the overlays load at
-`9d00`, `b000` and `dc00`, not `de83`; `0xdaaf` is inside the resident bank and
-holds instructions, not zeros; and the payload contains no zero run longer than
-32 words anywhere. So the premise behind that either/or needs re-checking. The
+With the payload as `dsp_download` now extracts it, none of that is correct. The
+3.0.13 resident bank goes from `8000..ec3e`, not to `d9ef`. The overlays load at
+`9d00`, `b000` and `dc00`, not at `de83`. `0xdaaf` is in the resident bank and
+holds instructions, not zeros. The payload has no zero run longer than
+32 words. Thus, it is necessary to check again the premise of that either/or. The
 table above is the measured replacement for its resident/overlay boundary.
 
 ## The bridge now services a mid-call overlay transfer
 
-Until 2026-09-09 the bridge dropped every overlay download on the floor, which
-is why no run in this project ever produced a second `bootstrap`. Three
-separate faults, each found by measuring what arrived rather than by reading:
+Until 2026-09-09, the bridge discarded each overlay download. This
+is why no run in this project ever made a second `bootstrap`. There were three
+separate faults. We found each one when we measured what arrived, not when we read the code:
 
-**1. The wrong handshake port.** The strobe path only ever inspected
-`self.transfer.command_port`, which for a board ROM is `ROM_COMMAND_PORT`
+**1. The wrong handshake port.** The strobe path examined only
+`self.transfer.command_port`. For a board ROM, that is `ROM_COMMAND_PORT`
 (`0x18`). The overlay loader acknowledges on `0x1e`, as the table at the top
-of this document records. Writes to `0x1e` returned early, so the payload
-windows were never committed and the firmware strobed correctly into a port
-nothing was listening on. Fixing this alone took the answering side from 6
+of this document records. Writes to `0x1e` returned early. Thus, the payload
+windows were never committed, and the firmware strobed correctly into a port
+that nothing monitored. This fix alone took the answering side from 6
 window strobes to 3,750.
 
 **2 and 3. The wrong block size, and the wrong window for the second half.**
-These were first inferred from arriving data - the opening window came in as
-`06bc807a` + stale bytes against overlay 7's `06bc807a9fad807a` - and the
-inference is unnecessary, because the loop is in the image. From `0x8e6c2`:
+First, we inferred these from the data that arrived. The first window came as
+`06bc807a` + old bytes, against `06bc807a9fad807a` of overlay 7. But
+the inference is not necessary, because the loop is in the image. From `0x8e6c2`:
 
 ```text
 8e6c2  in   al, 0x1e / test al,1 / je wait / test al,2 / je wait
@@ -134,39 +134,39 @@ inference is unnecessary, because the loop is in the image. From `0x8e6c2`:
 8e730  mov  al, 4 ; out 0x1e, al                ; end of transfer
 ```
 
-So the real method, stated rather than fitted:
+Thus, this is the real method, read from the code and not fitted:
 
 * a **block is four words**, low byte then high byte to `0x40`, `0x42`,
   `0x44`, `0x46`, then `0x48`, `0x4a`, `0x4c`, `0x4e`;
-* the loader acknowledges **twice per block** - `1` after words 1-2, `2` after
-  words 3-4 - so each acknowledgement covers **four bytes**;
-* both halves are lanes of the **same** eight-port window; the resident
-  downloader's strobe `2`, which selects `0x50`, has no counterpart here;
+* the loader acknowledges **two times for each block**: `1` after words 1-2, `2` after
+  words 3-4. Thus, each acknowledgement covers **four bytes**;
+* the two halves are lanes of the **same** eight-port window. The strobe `2` of the resident
+  downloader, which selects `0x50`, has no equivalent here;
 * it polls `0x1e` for bits 1 and 2 before each half, and for 1, 2 and 4 before
   the closing `out 0x1e, 4`;
 * `CX` is the block count, `(end - start) / 2 / 4` rounded up, from the same
-  table row; `ES` is the source segment chosen by comparing the id against 6,
-  7 and 8 with the resident segment as fall-through.
+  table row. `ES` is the source segment that the code selects when it compares the id with 6,
+  7 and 8, with the resident segment for all other values.
 
-`out 0x1e, 4` therefore marks **both** boundaries, at `0x8e631` to begin and
-`0x8e730` to end, which is why the bridge treats that value as a transfer
-reset rather than as data.
+Thus, `out 0x1e, 4` marks **the two** boundaries: at `0x8e631` to start and at
+`0x8e730` to end. This is why the bridge uses that value as a transfer
+reset and not as data.
 
-The empirical framing and the firmware agree exactly. That the reconstructed
-14,996-byte image matches the ROM byte for byte is the same statement made a
-third way.
+The empirical framing and the firmware agree exactly. The reconstructed
+14,996-byte image is identical to the ROM byte for byte, and this is the same statement in
+a third way.
 
 ### What it does now
 
-`_accumulate_overlay` takes half-blocks and identifies the overlay by matching
-its opening eight bytes against **this ROM's own overlay table**. The ASIC then
-publishes each complete four-word block at DSP registers `58..5b` and raises
-status bit `0200`. The resident routine at `811b..8138` performs the four
-`BLDP` writes, advances the destination in `ff62`, and acknowledges with
-`0300`. Only after those writes does the bridge compare program RAM with the
+`_accumulate_overlay` takes half-blocks. It identifies the overlay when it compares
+its first eight bytes with **the overlay table of this ROM**. The ASIC then
+publishes each complete four-word block at DSP registers `58..5b` and sets
+status bit `0200`. The resident routine at `811b..8138` does the four
+`BLDP` writes, increments the destination in `ff62`, and acknowledges with
+`0300`. Only after those writes does the bridge compare the program RAM with the
 ROM payload. Nothing calls `core.load_program` on this path.
 
-Measured on a two-instance link, A originating and B answering:
+Measured on a two-instance link, with A as the originator and B as the answerer:
 
 | | side A | side B |
 |---|---|---|
@@ -175,44 +175,44 @@ Measured on a two-instance link, A originating and B answering:
 | `overlay_match` | - | **true** |
 | `call_overlay_active` | false | **true** |
 
-Overlay 7, 14,996 bytes, matching the ROM byte for byte, loaded at `b000` -
-the address this document's table names. The answering side is where the
-DSP requests it; see
+Overlay 7, 14,996 bytes, identical to the ROM byte for byte, loaded at `b000`.
+This is the address that the table of this document gives. The DSP requests it on the answering side.
+Refer to
 [datapump-gate-403-addresses.md](datapump-gate-403-addresses.md) for the
 chain from the request to `out 0x1e, 4`.
 
 `tests/test_asic_ports.py`, `test_mailbox_protocol.py`,
-`test_dsp_board_ndx.py` and `test_g_dsp_capture.py` pass unchanged.
+`test_dsp_board_ndx.py` and `test_g_dsp_capture.py` pass without changes.
 
 This does not yet claim a completed call. It claims that the datapump image
-now reaches the C52, which no run before it did.
+now gets to the C52. No run before it did that.
 
 ### Transport wake signal
 
-The recovered mask ROM now installs the resident and the running resident
-installs flash overlays; neither path directly publishes program memory. The
-ASIC acknowledges the first half-block when it has latched it, then withholds
+The recovered mask ROM now installs the resident, and the running resident
+installs the flash overlays. Neither path publishes program memory directly. The
+ASIC acknowledges the first half-block when it has latched it. Then it holds
 the second-half ready bit until the C51 has consumed the complete block and
 written `0300`.
 
-The C51 service path is woken through the board's reset net: 80C186EB `P1.1`
-(CPU pin 58) drives C51 `RS` (pin 127). Reset release enters the mask-ROM path;
-the model then uses the status latch observed by the firmware. Its data and
-acknowledgement behavior is independently visible from both processors.
+The board reset net wakes the service path of the C51: 80C186EB `P1.1`
+(CPU pin 58) drives C51 `RS` (pin 127). The reset release enters the mask-ROM path.
+The model then uses the status latch that the firmware reads. Its data and
+acknowledgement behavior is visible independently from the two processors.
 
-One defect this also caught: the first version of the publish set
-`_call_overlay_active`, which belongs to main211's in-resident call overlay -
-a different mechanism located by signature in `_find_call_overlay`. A flash
-overlay is not that, and it now reports itself through `overlay_downloads`,
-`overlay_id` and `overlay_match` alone.
+This also found one defect. The first version of the publish set
+`_call_overlay_active`. That flag belongs to the in-resident call overlay of main211,
+which is a different mechanism that `_find_call_overlay` finds by its signature. A flash
+overlay is not that. It now reports itself only through `overlay_downloads`,
+`overlay_id` and `overlay_match`.
 
 ## Destination handshake correction, 2026-09-21
 
-The start strobe holds CPU port 1e bit 2 low until the DSP handles the tag-02
-destination. Detect this through the guest write count at data FF62, not by
-waiting for its value to change: a valid destination command can repeat the
-value already there. The former value-change test stalled such a transfer
+The start strobe holds CPU port 1e bit 2 low until the DSP operates on the tag-02
+destination. Detect this through the guest write count at data FF62. Do not
+wait for its value to change, because a valid destination command can repeat the
+value that is already there. The old value-change test stopped such a transfer
 before its first payload group. A native-core regression executes the same-value
-store and checks that the CPU status becomes ready only after that write.
-This establishes the handshake defect, not the cause of every reported overlay
-stall; reproducing a particular stall still requires its image and run command.
+store, and checks that the CPU status becomes ready only after that write.
+This establishes the handshake defect. It is not the cause of each reported overlay
+stall. To reproduce a specific stall, you still need its image and its run command.

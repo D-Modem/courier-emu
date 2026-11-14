@@ -1,9 +1,9 @@
 # Nine I-modem builds, and when x2 arrived
 
-`docs/x2` now holds eight more Courier I-modem releases beside `Ie030002`.
-Every one is a NAC/XMP update payload of the same shape - `0xb8000` bytes based
-at `0x40000` - so none of them carries a boot block or a 386 reset vector.  What
-they do carry is the feature's arrival, release by release.
+`docs/x2` now has eight more Courier I-modem releases in addition to `Ie030002`.
+Each one is a NAC/XMP update payload with the same shape: `0xb8000` bytes with a base
+at `0x40000`. Thus, no release has a boot block or a 386 reset vector.  But
+they show the arrival of the feature, release by release.
 
 | release | dated | S58 block | DSP images |
 |---|---|---|---:|
@@ -17,9 +17,9 @@ they do carry is the feature's arrival, release by release.
 
 ## x2 server and symmetric shipped together, in the first x2 build
 
-The three 1996-and-early-1997 releases have no S58 x2 block at all.  It appears
-whole in **2.01.04, March 1997** - one month after x2's launch - and it already
-has both roles:
+The three releases from 1996 and early 1997 have no S58 x2 block.  The block appears
+complete in **2.01.04, March 1997**, one month after the launch of x2. It already
+has the two roles:
 
 ```
 S58 x2 Mode and Remote Server Xmit
@@ -30,15 +30,15 @@ S58 x2 Mode and Remote Server Xmit
   16   -6dbm constellation
 ```
 
-`2.02.02` (December 1997) changes exactly one thing in that block: `symetric`
-becomes `symmetric`.  `2.04.05` (August 1998) appends `32 V.90`.  So symmetric
-mode was not a later addition to x2 on this product - it was there in the first
-release that had x2 at all, and the only thing that changed for two years was a
-typo.
+`2.02.02` (December 1997) changes exactly one item in that block: `symetric`
+becomes `symmetric`.  `2.04.05` (August 1998) adds `32 V.90`.  Thus, on this product, symmetric
+mode was not a later addition to x2. It was in the first
+release that had x2. For two years, the only change was a
+spelling error.
 
 ## The seven images, across the series
 
-The overlay table reads out the same way in every build from 2.00.09 on - a
+From 2.00.09 on, the overlay table has the same layout in each build: a
 row table at `cs:T`, a segment table at `cs:T+0x48`, indices 5 to 11:
 
 | idx | 2.00.09 | 2.01.04 | 2.02.02 | 2.04.05 | 3.00.02 | what |
@@ -52,29 +52,29 @@ row table at `cs:T`, a segment table at `cs:T+0x48`, indices 5 to 11:
 | 11 | 14,525 | 15,811 | 15,898 | 15,993 | 15,997 | part 2 |
 | | 46,084 | 50,119 | 50,800 | 52,849 | 52,936 | total |
 
-V.FC and fax are frozen from 1996 onward, to the word.  V.34 grows by 4,400
-words.  The pair grows by 3,463: **+2,622 across the x2 release**, then +479
-over the two builds that add V.90 and follow it.
+V.FC and fax do not change from 1996, to the word.  V.34 increases by 4,400
+words.  The pair increases by 3,463 words: **+2,622 across the x2 release**, then +479
+over the two builds that add V.90 and come after it.
 
 ## Correction: the pair is older than x2
 
 [x2-symmetric-and-all-digital.md](x2-symmetric-and-all-digital.md) identifies
-image 11 as the PCM image because it is the only one touching `fff1`, `fff3`,
-`fff4`, `fff7` and `3fff` - the cells the x2 setup path writes.  That inference
-does not survive this series: **`IM020009`, from October 1996 and with no x2
-anywhere in it, already has 18 hits on those cells in image 11 and 4 in image
-10.**  They are the datapump's general host parameter block, not an x2
+image 11 as the PCM image, because it is the only image that touches `fff1`, `fff3`,
+`fff4`, `fff7` and `3fff`. These are the cells that the x2 setup path writes.  That inference
+is not correct for this series: **`IM020009`, from October 1996 and with no x2
+in it, already has 18 hits on those cells in image 11 and 4 hits in image
+10.**  They are the general host parameter block of the datapump. They are not an x2
 fingerprint.
 
-What survives is the content evidence, which is stronger anyway: image 6 is
-V.34 by a 24.8% byte match against the analog overlay 6, image 7 is V.FC by
-68% and a 1,039-byte run against overlay 7, image 9 is fax because every one of
-its seven request sites sits in the Class 2 code.
+The content evidence stays correct, and it is stronger. Image 6 is
+V.34, by a 24.8% byte match against the analog overlay 6. Image 7 is V.FC, by
+68% and a 1,039-byte run against overlay 7. Image 9 is fax, because all
+seven of its request sites are in the Class 2 code.
 
 ## What the pair actually is: the resident bank, loaded
 
-Asking *where* the shared bytes fall answers it.  Matched runs, binned by
-decile of the analog segment they land in:
+The location of the shared bytes gives the answer.  These are the matched runs, binned by
+the decile of the analog segment that they fall in:
 
 ```
 idx 6  vs analog ov6   24.8%   18 12  8 15  8 16 17  1  0  0
@@ -82,24 +82,26 @@ idx10  vs analog res   27.7%    0  0  0  1  0  2 48 40  2  4
 idx11  vs analog res   47.6%    1  7 16 21 16 25  0  0  0 10
 ```
 
-Image 6 is spread across the first seven tenths of the analog **V.34 overlay** -
-a body, not a startup fragment, which is what settles it as V.34.  But images 10
-and 11 do not match any overlay: they match the analog **resident bank**, in two
-*adjacent and non-overlapping* regions - 11 covering its first six tenths, 10
-covering the seventh and eighth.  Between them they reproduce most of it.
+Image 6 is spread across the first seven tenths of the analog **V.34 overlay**.
+It is a body, not a startup fragment, and this confirms that it is V.34.  But images 10
+and 11 do not match an overlay. They match the analog **resident bank**, in two
+*adjacent regions that do not overlap*. Image 11 covers its first six tenths, and image 10
+covers the seventh and eighth tenths.  Together, they reproduce most of it.
 
-The arithmetic agrees.  The I-modem's resident plus the pair is
-4,670 + 7,536 + 15,997 = **28,203 words**, against the analog resident's 27,710
-- and it holds across the series: 25,793 in 2.00.09, 27,189 in 2.01.04, 27,753
+The arithmetic agrees.  The resident of the I-modem plus the pair is
+4,670 + 7,536 + 15,997 = **28,203 words**, against 27,710 words for the analog resident.
+This is true across the series: 25,793 in 2.00.09, 27,189 in 2.01.04, 27,753
 in 2.02.02, 28,183 in 2.04.05.
 
-So the I-modem does not have a big second datapump.  It has the **same resident
-bank as the analog Courier, delivered as two loadable images** because its
-actual resident is a 4,670-word loader and ISR stub rather than a 27,710-word
-program.  That explains everything the earlier reading strained at: why the
-pair predates x2 by six months (the resident always existed), why it carries the
-`fff1`/`fff3`/`fff4`/`fff7` parameter cells (the host mailbox interface is
-resident code), why it grew 2,622 words exactly when x2 server and symmetric
-arrived (the PCM send path went into the resident-class image), and why it
-matches the analog **PCM overlay** 0.0% (that overlay is the client receiver,
-which this product does not have).
+Thus, the I-modem does not have a large second datapump.  It has the **same resident
+bank as the analog Courier, delivered as two loadable images**. The reason is that
+its actual resident is a 4,670-word loader and ISR stub, not a 27,710-word
+program.  This explains all the problems of the earlier interpretation:
+
+- The pair is six months older than x2, because the resident always existed.
+- It has the `fff1`/`fff3`/`fff4`/`fff7` parameter cells, because the host mailbox interface is
+  resident code.
+- It increased by 2,622 words exactly when x2 server and symmetric
+  arrived, because the PCM send path went into the resident-class image.
+- It matches the analog **PCM overlay** 0.0%, because that overlay is the client receiver,
+  and this product does not have one.

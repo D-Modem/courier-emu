@@ -1,20 +1,20 @@
 # The DSP is a 'C51: 8K of on-chip ROM, not 2K
 
-`probe_transport --memory-test`, run twice on the 25 MHz board, identical both
-times. Seventeen words.
+We ran `probe_transport --memory-test` two times on the 25 MHz board. The two results
+were identical. The result is seventeen words.
 
 ## What it does
 
-The stability test [probing.md](../../docs/probing.md) proposed - read `0x0800`
-twice and see whether the firmware's live scratch moves - cannot work, because
-the probe resets the DSP and takes it over. There is no firmware running
-underneath to move anything, and both parts return the same thing twice. What
-separates them without needing the firmware alive is whether the region accepts
-a **write**: SARAM seen from both spaces is one physical memory, so a write
-through data space must read back through program space. ROM cannot.
+[probing.md](../../docs/probing.md) proposed a stability test: read `0x0800`
+two times and see if the live scratch of the firmware moves. This test cannot operate, because
+the probe resets the DSP and takes control of it. No firmware runs
+below the probe to move data, and the two parts return the same value two times. A different
+test does not need live firmware: does the region accept
+a **write**? SARAM that is visible from the two spaces is one physical memory. Thus, a write
+through data space must read back through program space. ROM cannot do this.
 
-Each address is written twice, with two different patterns, so a region that
-merely returns a constant cannot pass by coincidence.
+The test writes each address two times, with two different patterns. Thus, a region that
+only returns a constant cannot pass by chance.
 
 ## What came back
 
@@ -38,37 +38,38 @@ PMST after RAM|OVLY          00b0
 2400 program after 5AA5      5aa5
 ```
 
+
 **`PMST` = `00b0`: `IPTR` 0, `AVIS` 1, `OVLY` 1, `RAM` 1, `MP/MC` 0.**
 
 ## MP/MC has now been read
 
-Bit 3 of `PMST` is `MP/MC`, and it is **0** - microcomputer mode, on-chip ROM
-mapped at program `0x0000`. Every ROM reading in this repository carried the
-caveat that this had never been read directly. It has now, and it agrees with
-what the vector table at `0x0000` implied.
+Bit 3 of `PMST` is `MP/MC`, and it is **0**. This is microcomputer mode, with the on-chip ROM
+mapped at program `0x0000`. Each ROM reading in this repository had the
+caveat that nobody had read this bit directly. Now we read it, and it agrees with
+the vector table at `0x0000`.
 
-Note also that `RAM` and `OVLY` are **already set when the kernel starts** -
-`PMST` reads `00b0` before the `opl @07, #0030` as well as after. That `opl`
-has never been changing anything.
+Also, `RAM` and `OVLY` are **already set when the kernel starts**.
+`PMST` reads `00b0` before the `opl @07, #0030` and also after it. Thus, that `opl`
+never changed anything.
 
 ## Why this is a 'C51
 
 With `MP/MC=0` and `PMST.RAM=1`:
 
-* a **'C50** maps its 9K SARAM into program space over `0x0800`-`0x2BFF`, so
+* A **'C50** maps its 9K SARAM into program space over `0x0800`-`0x2BFF`. Thus,
   `0x0800` and `0x1800` would both follow the write. Neither does. **Excluded.**
-* a **'C51** has 8K of on-chip ROM at `0x0000`-`0x1FFF`, which wins over SARAM
-  in program space in microcomputer mode, and only 1K of SARAM. `0x0800` and
-  `0x1800` read ROM and ignore the write; `0x2400` is above the ROM and is
-  writable. **That is exactly the observed split.**
+* A **'C51** has 8K of on-chip ROM at `0x0000`-`0x1FFF`. In microcomputer mode, this ROM
+  has priority over SARAM in program space. The 'C51 has only 1K of SARAM. `0x0800` and
+  `0x1800` read ROM and ignore the write. `0x2400` is above the ROM and is
+  writable. **That is exactly the split that we saw.**
 
-The package marking agrees and always did: `D17140PQ`, and `PQ` is carried by
-'C50/'LC50/'C51/'LC51 alike.
+The package marking agrees, and it always agreed: `D17140PQ`. The 'C50, 'LC50, 'C51 and
+'LC51 all have the `PQ` marking.
 
 ## The instrument shows both signatures
 
-Run offline against the emulator fixture - which maps a 4K ROM at
-`0x0000`-`0x0FFF` and SARAM above it - the same kernel reports `0x0800`
-unaffected by the write and `0x1800`/`0x2400` following it. The opposite split
-from the board, from the same instrument, so a null result here would have been
-visible as one.
+We also ran the same kernel offline against the emulator fixture. The fixture maps a 4K ROM at
+`0x0000`-`0x0FFF` and SARAM above it. The kernel shows that the write has no effect on `0x0800`,
+and that `0x1800`/`0x2400` follow the write. This is the opposite split
+from the board, from the same instrument. Thus, if the instrument gave a null result here,
+we would see it.

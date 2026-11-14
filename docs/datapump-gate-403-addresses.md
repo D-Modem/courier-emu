@@ -1,26 +1,27 @@
 # How the datapump gets armed
 
-The datapump used to never start. It does now, by two independent routes, and
-the remaining gap is downstream of arming. This is the whole chain, in 403
-addresses, with the 302 counterparts alongside.
+Before, the datapump never started. Now it starts, by two independent routes.
+The gap that remains is after the arming. This is the full chain, in 403
+addresses, with the 302 counterparts next to them.
 
-Two later sections carry the downstream work: "Overlay 8 is loaded and never
-entered", which traces one overlay entry to its gate and finds the gate
-**correct**, and the corrected ampersand handler table, which fixes an
-eleven-entry indexing error that had been renaming commands.
+Two later sections contain the downstream work. The first is "Overlay 8 is
+loaded and never entered". It follows one overlay entry to its gate and finds
+that the gate is **correct**. The second is the corrected ampersand handler
+table. It corrects an indexing error of eleven entries that gave incorrect
+names to commands.
 
 ## Answered: an answered call arms it from the DSP, in one message
 
-On a real peer - two `courier run` instances over one line socket, A
-originating and B answering, `--line-audio-only` so the bridge injects nothing
-at all - the answering side carries exactly one message:
+We used a real peer: two `courier run` instances on one line socket. A
+originates and B answers. With `--line-audio-only`, the bridge injects nothing
+at all. On this peer, the answering side carries exactly one message:
 
 ```text
 0047:0007
 ```
 
-**Tag `0x47`, data `0x0007`: the DSP asking for overlay 7.** Fifty-nine
-instructions later the supervisor has started fetching it:
+**Tag `0x47`, data `0x0007`: the DSP asks for overlay 7.** Fifty-nine
+instructions later, the supervisor starts to fetch it:
 
 ```text
 94d83  ovl-from-5c   @53,010,564    in al, 0x5c -> 07, force bit 7 -> [0x0d28]
@@ -28,7 +29,7 @@ instructions later the supervisor has started fetching it:
 8e631  xfer-start    @53,010,623    ax = bx = b000, out 0x1e, 4
 ```
 
-`b000` is overlay 7's documented load address in
+`b000` is the documented load address of overlay 7 in
 [dsp-overlays.md](dsp-overlays.md):
 
 | overlay | flash range | bytes | C52 load address |
@@ -37,8 +38,8 @@ instructions later the supervisor has started fetching it:
 | **7** | `3d100..40b94` | 7,498 | **`b000`** |
 | 8 | `40ba0..44634` | 7,498 | `dc00` |
 
-So the chain is correct and self-consistent end to end, and none of it needs a
-command, a profile setting, an NVRAM fixture or leased-line mode:
+Thus the chain is correct and consistent from one end to the other. No part of
+it needs a command, a profile setting, an NVRAM fixture or leased-line mode:
 
 ```text
 peer answers
@@ -50,22 +51,24 @@ peer answers
   -> 14,996 bytes, matching the ROM, published at b000
 ```
 
-The consumer forces bit 7 to mark the id as DSP-requested for the loader's
-`and al, 0x7f`; the DSP does not send it set.
+The consumer forces bit 7. This bit marks the id as a DSP request for the
+`and al, 0x7f` of the loader. The DSP does not send the bit set.
 
-`0x94d83`'s trace record carries `ret_seg 0000`, `ret_off 006d` - not a
-plausible return address, which is consistent with the indirect dispatch that
-defeated every static search for its caller. It is dispatched, not called.
+The trace record of `0x94d83` has `ret_seg 0000`, `ret_off 006d`. This is not a
+possible return address. It agrees with the indirect dispatch that prevented
+all static searches from finding its caller. The firmware dispatches to it. It
+does not call it.
 
 ## The second route: `&L1`, leased-line mode
 
-`AT&L1` writes `[0x04f2] = 1`, and with `[0x04c6]` bit 6 clear and `[0x04f8]`
-zero - both true at rest - the **CF gate** at `0x8b8a1` passes. That reaches
-`0x8bc06`, `mov byte [0x0d28], 6`, through the branch at `0x8bbf6` that does
-not consult the three-flag discriminator at all.
+`AT&L1` writes `[0x04f2] = 1`. When `[0x04c6]` bit 6 is clear and `[0x04f8]`
+is zero, the **CF gate** at `0x8b8a1` passes. These two conditions are both
+true at rest. The path then gets to `0x8bc06`, `mov byte [0x0d28], 6`, through
+the branch at `0x8bbf6`. That branch does not use the three-flag discriminator
+at all.
 
-Measured on the board, read-only apart from the setting itself, which was
-restored:
+We measured this on the board. The measurement was read-only, except for the
+setting itself, which we restored:
 
 ```text
 before     04c6=00 04f2=00 04f8=00    CF gate fails
@@ -73,8 +76,9 @@ AT&L1      04c6=00 04f2=01 04f8=00    CF gate PASSES
 AT&L0      04c6=00 04f2=00 04f8=00    CF gate fails
 ```
 
-In the emulator, `AT&L1` paired with `--exchange-hotline` (answer on seizure,
-no dial tone, no digits - the shape leased-line mode expects):
+In the emulator, we used `AT&L1` together with `--exchange-hotline`. The
+exchange answers on seizure, with no dial tone and no digits. This is the shape
+that leased-line mode expects:
 
 | | plain dial | `&L1` + dial | **`&L1` + hotline** |
 |---|---|---|---|
@@ -87,24 +91,25 @@ no dial tone, no digits - the shape leased-line mode expects):
 | **nonzero** | **3,669** (DTMF bursts) | - | **291,175** |
 | peak | 22,764 | - | 15,424 |
 
-The line output stops being isolated DTMF bursts and becomes continuous - 83%
-of samples nonzero against 5.5% for a dial. A Goertzel sweep of three windows
-puts the energy at **1800 Hz** with sidebands at 1600 and 2000: a modulated
-data carrier, not a tone. (That reads the capture at the 7200 Hz codec rate
-this project infers elsewhere; at another rate the figure scales, but it is in
-the data-carrier band either way and nowhere near DTMF.) The first window is
-silent, so the carrier starts partway in, as a handshake does.
+The line output changes from isolated DTMF bursts to a continuous signal. 83%
+of the samples are nonzero, against 5.5% for a dial. A Goertzel sweep of three
+windows puts the energy at **1800 Hz**, with sidebands at 1600 and 2000. This
+is a modulated data carrier, not a tone. (This reading uses the 7200 Hz codec
+rate that this project infers in other documents. At a different rate the
+figure scales, but it stays in the data-carrier band and far from DTMF.) The
+first window is silent. Thus the carrier starts after some time, as a
+handshake does.
 
 ## Where the three flags actually come from
 
-The discriminator at `0x8b88d` tests three flags, and the long search for what
-sets them has an answer: **operator commands, not the dial path.**
+The discriminator at `0x8b88d` tests three flags. The long search for the code
+that sets them has an answer: **operator commands, not the dial path.**
 
 The handler table at `0xa669b` is the **ampersand** command family, not the
-bare AT letters - which is why `ATL` and `ATN` reached nothing. The shared
-entry `a6780` is `stc; ret`, a genuine reject, and the non-rejecting letters
-are `A B C D F G H I J K L M N P R S T U W X Y Z` - exactly the ampersand set,
-with no `&E`, `&O`, `&Q` or `&V`, and the board's own `ATI5` switches are a
+bare AT letters. This is why `ATL` and `ATN` got to nothing. The shared entry
+`a6780` is `stc; ret`, a real reject. The letters that it does not reject are
+`A B C D F G H I J K L M N P R S T U W X Y Z`. This is exactly the ampersand
+set, without `&E`, `&O`, `&Q` or `&V`. The `ATI5` switches of the board are a
 subset of it.
 
 | entry | command | what it does |
@@ -113,9 +118,9 @@ subset of it.
 | 13 | **`&N`** | writes `[0x04f8]` |
 | 19 | **`&T`** - test | the router: `AL` 0..8, **`AL=2` rejected** |
 
-`&T`'s shape is its own confirmation: USR's `&T` takes 0-8 and `&T2` is unused
-on these modems, and the router's nine-entry table rejects exactly `AL=2`.
-Tested on the board:
+The shape of `&T` confirms itself. The USR `&T` accepts 0-8, and these modems
+do not use `&T2`. The nine-entry table of the router rejects exactly `AL=2`.
+We tested this on the board:
 
 | command | board | why the model says so |
 |---|---|---|
@@ -123,14 +128,14 @@ Tested on the board:
 | `AT&T3` | **`ERROR`** | `a6b1a` rejects `AL` 3, 6 and 7 when `[0x0237] & 1`; the board reads `[0x0237] = 01` |
 | `AT&T0` | `OK` | `AL=0` dispatches at `a6b43` before the flag tests |
 
-So `&T1` sets flag C and `&L1` opens the parallel CF gate. Both are operator
-commands, and **`&T1` is an analog loopback** - the modem trains against
-itself, a complete datapump exercise with no far end and no phone line.
+Thus `&T1` sets flag C, and `&L1` opens the parallel CF gate. Both are operator
+commands. **`&T1` is an analog loopback**: the modem trains against itself.
+This is a full datapump exercise with no far end and no phone line.
 
-The router is reached through a RAM function pointer, not a direct branch.
-`[0x03ff]` is called at `0x90ef1` and at `0x92004` (immediately after
-`out 0x1c` / `out 0x1e`, the ASIC mailbox commit) and written from about
-eighty-eight installer sites, one of which is:
+The firmware gets to the router through a RAM function pointer, not a direct
+branch. The firmware calls `[0x03ff]` at `0x90ef1` and at `0x92004`
+(immediately after `out 0x1c` / `out 0x1e`, the ASIC mailbox commit).
+Approximately eighty-eight installer sites write it. One of them is:
 
 ```text
 910c6  cli
@@ -140,16 +145,17 @@ eighty-eight installer sites, one of which is:
 910d8  sti
 ```
 
-Nothing branches to `0x910c6` either, and that is not the anomaly it looks
-like: only 19 of the 87 installer sites have any direct branch to them at all.
-Indirect dispatch is this family's norm.
+Also, no code branches to `0x910c6`. This is not the anomaly that it seems to
+be: only 19 of the 87 installer sites have a direct branch to them. Indirect
+dispatch is normal for this family.
 
 ## The 302/403 address map
 
-Scanning both images for the discriminator's shape - `test byte [imm16], 2`
-then two `test byte [imm16], 1` and a `ret` - gives exactly one counterpart,
-at `+0x3e` from the 302 site. The CF gate and the overlay loader follow
-immediately after it in both images, in the same order.
+We scanned the two images for the shape of the discriminator:
+`test byte [imm16], 2`, then two `test byte [imm16], 1` and a `ret`. The scan
+gives exactly one counterpart, at `+0x3e` from the 302 site. In the two
+images, the CF gate and the overlay loader come immediately after it, in the
+same order.
 
 | role | 302 | 403 |
 |---|---|---|
@@ -173,12 +179,13 @@ immediately after it in both images, in the same order.
 | handler-offset table | `0xa6615` | `0xa669b` |
 | rejects `AL=1` when set | `[0x0ea7]` | `[0x0d93]` |
 
-Flag B cross-checks independently: the unrelated routine at 302 `0xa5602`
-tests `[0x5a5] & 2`, and its 403 counterpart at `0xa562d` tests `[0x49e] & 2`.
-The 403 loader confirms the map by its own contents - it reads `[0x0d28]`,
-compares against 6, rewrites the cell as 8, indexes a six-byte-stride table at
-`cs:0xe741` and starts the transfer with `out 0x1e, 4`, instruction for
-instruction the 302 loader with `[0x0e3c]` and `cs:0xe711`.
+Flag B has an independent cross-check. The unrelated routine at 302 `0xa5602`
+tests `[0x5a5] & 2`, and its 403 counterpart at `0xa562d` tests
+`[0x49e] & 2`. The contents of the 403 loader also confirm the map. It reads
+`[0x0d28]`, compares it with 6, writes the cell again as 8, indexes a table
+with a six-byte stride at `cs:0xe741`, and starts the transfer with
+`out 0x1e, 4`. Each instruction agrees with the 302 loader, with `[0x0e3c]`
+and `cs:0xe711`.
 
 ## The overlay id has six writers, and three ignore the flags
 
@@ -193,8 +200,9 @@ instruction the 302 loader with `[0x0e3c]` and `cs:0xe711`.
 
 ## The counter route exists and is disabled by default
 
-There is a third structure, and it is worth knowing about because it looks like
-the answer and is not. `[0x0b9e]` reaching 5 loads overlay 5:
+There is a third structure. It is important to know about it, because it
+seems to be the answer, but it is not. When `[0x0b9e]` gets to 5, the firmware
+loads overlay 5:
 
 ```text
 8b7a2  mov  word [0x134], 0x2760      ; a countdown
@@ -208,47 +216,48 @@ the answer and is not. `[0x0b9e]` reaching 5 loads overlay 5:
 8b7c9  jmp  8b7db                     ; reached 5 -> overlay 5, loader
 ```
 
-`0x94fdc` feeds it - `test ah, 1`, then either `inc byte [0xb9e]` or
-`mov byte [0xb9e], 0` - so it counts **consecutive** successes, with `AH` from
-`in al, 0x5e`, the DSP mailbox. The corroboration is in the same module:
-`0x94dc1` writes `mov word [0x192], 0x5742`, and `5742` is exactly the off-hook
-state value measured on the board, so this is the live call-progress state
-machine.
+`0x94fdc` supplies the counter. It does `test ah, 1`, then either
+`inc byte [0xb9e]` or `mov byte [0xb9e], 0`. Thus it counts **consecutive**
+successes, with `AH` from `in al, 0x5e`, the DSP mailbox. The same module has
+the corroboration: `0x94dc1` writes `mov word [0x192], 0x5742`, and `5742` is
+exactly the off-hook state value that we measured on the board. Thus this is
+the live call-progress state machine.
 
-**But both of its call sites are gated** - `0x94ddc` on `[0x0d93] & 1` and
-`0x94e07` on `[0x0d92] & 1` - and the board reads both cells as `00`. On the
+**But the two call sites are both gated**: `0x94ddc` on `[0x0d93] & 1` and
+`0x94e07` on `[0x0d92] & 1`. The board reads the two cells as `00`. On the
 two-instance link, side A polls `0x5e`/`0x5c` 536 times at `0x94dc8` and never
-calls `0x94fdc` once. So the poll is disabled by default and this is *a* route
-to overlay 5, not the normal one. The `[0x0d92]` probe the earlier chase
-followed is the countdown's **timeout** branch, a fallback.
+calls `0x94fdc`. Thus the poll is disabled by default, and this is *a* route to
+overlay 5, not the normal route. The earlier search followed the `[0x0d92]`
+probe. That probe is the **timeout** branch of the countdown, a fallback.
 
 ## Measured on the board: all seven gate cells are zero at idle
 
-Read 2026-09-09 from the Courier on `/dev/cu.usbserial-11420`, ID_SDL 4.03d,
-command mode, read-only, two passes with identical page hashes:
+We read these values on 2026-09-09 from the Courier on
+`/dev/cu.usbserial-11420`, ID_SDL 4.03d, in command mode. The read was
+read-only, in two passes with identical page hashes:
 
 | `098a` | `049e` | `057c` | `04c6` | `04f2` | `04f8` | `0d28` |
 |---|---|---|---|---|---|---|
 | `00` | `00` | `00` | `00` | `00` | `00` | `00` |
 
-The pages are live rather than a failed read - `0400`, `0900`, `0c00` and
-`0d00` carry 51, 54, 60 and 15 nonzero bytes, and `0cd9`/`0cdb` read
-`32c8`/`0c08`.
+The pages are live, not a failed read. `0400`, `0900`, `0c00` and `0d00` have
+51, 54, 60 and 15 nonzero bytes, and `0cd9`/`0cdb` read `32c8`/`0c08`.
 
-**This kills the provisioning hypothesis for this gate.** The tone-gain cells
-were populated on a board that had them and blank in an emulator that did not
-([datapump-dispatch-gate.md](datapump-dispatch-gate.md)). These are blank on
-the working board too, so they are not stored settings the emulator fails to
-supply. They are set by command, or not at all.
+**This result rejects the provisioning hypothesis for this gate.** The
+tone-gain cells had values on a board that had them, and were blank in an
+emulator that did not
+([datapump-dispatch-gate.md](datapump-dispatch-gate.md)). These cells are also
+blank on the working board. Thus they are not stored settings that the
+emulator does not supply. A command sets them, or nothing sets them.
 
 [Capture](../artifacts/datapump-gate-403-cells/cells.json),
 [script](../artifacts/datapump-gate-403-cells/read-cells.py).
 
 ## What the board itself shows
 
-**The supervisor's state pointer moves, and the router is never installed.**
-Sampled continuously across an `ATDT9099;` dial - command mode, line seized, no
-handshake - fifteen samples over 29 s:
+**The state pointer of the supervisor moves, and the firmware never installs
+the router.** We sampled continuously during an `ATDT9099;` dial (command
+mode, line seized, no handshake). There were fifteen samples in 29 s:
 
 | phase | `[0x0192]` | `[0x03ff]` | gate cells |
 |---|---|---|---|
@@ -256,29 +265,31 @@ handshake - fifteen samples over 29 s:
 | off-hook, x13 over 20 s | **`5742`** | `0000` | all zero |
 | after release | `0110` | `0000` | all zero |
 
-That is the first direct observation of the board's supervisor state machine and
-it gives the emulator a baseline: **a 403 dial should reach `5742` and return to
-`0110`.** `[0x03ff]` stays `0000` throughout, so the router is never installed on
-this path, consistent with the gate cells never moving.
+This is the first direct observation of the supervisor state machine of the
+board. It gives a baseline for the emulator: **a 403 dial must get to `5742`
+and go back to `0110`.** `[0x03ff]` stays `0000` all the time. Thus the
+firmware never installs the router on this path. This agrees with the gate
+cells, which never move.
 
 > **Resolved 2026-09-19.** The capture labelled each pointer as `a4e2:value`,
-> on the strength of the installers writing `a4e2` offsets, and that failed for
-> `5742` - the implied `aa562` is garbage. The segment is not `a4e2` and does
-> not vary: `[0x192]` is called with `call word ptr [0x192]` at `0x8f4c9`, a
-> **near** call, so it is read in the caller's **CS `0x8f46`**. Both recorded
-> values then decode as the same four-instruction state stub:
+> because the installers write `a4e2` offsets. That label failed for `5742`:
+> the implied `aa562` is garbage. The segment is not `a4e2`, and it does not
+> change. The firmware calls `[0x192]` with `call word ptr [0x192]` at
+> `0x8f4c9`. This is a **near** call, thus the firmware reads it in the
+> **CS `0x8f46`** of the caller. Then the two recorded values decode as the
+> same four-instruction state stub:
 >
 > | `[0x192]` | under `0x8f46` | |
 > |---|---|---|
 > | `0110` | `0x8f570` | `mov bx,0x121 / mov cx,5 / mov di,0x11c / jmp 8f77a` |
 > | `5742` | `0x94ba2` | `mov bx,0x56f4 / mov cx,0x24 / mov di,0x56d0 / jmp 8f77a` |
 >
-> So the board's `5742`/`0110` capture is directly usable as a state trace, and
-> `0x94ba2` is the off-hook state. Its 36-tag dispatch table and what the
-> supervisor does with each event are in
+> Thus you can use the `5742`/`0110` capture of the board directly as a state
+> trace, and `0x94ba2` is the off-hook state. Its 36-tag dispatch table, and
+> the actions of the supervisor for each event, are in
 > [who-produces-the-events.md](who-produces-the-events.md#the-consumer-side-what-the-supervisor-does-with-an-event).
 
-**`&L1` alone is inert.** Sampled for 20 s with the setting live:
+**`&L1` alone has no effect.** We sampled for 20 s with the setting live:
 
 | | `[0x04f2]` | `[0x0d28]` | `[0x0192]` |
 |---|---|---|---|
@@ -286,34 +297,36 @@ this path, consistent with the gate cells never moving.
 | `&L1` live, x11 over 20 s | **`01`** | `00` | **`0110`** |
 | after `&L0` | `00` | `00` | `0110` |
 
-The command takes and stays taken, and nothing else moves - `[0x0192]` never
-leaves the idle state. That is not a contradiction of the emulator: `&L1`
-selects leased-line mode, it does not start a connection. Both emulator runs
-included a connection attempt (`ATDT6245` in one, the hotline exchange answering
-in the other), and **the overlay id is written during a connection attempt**, in
-leased-line mode as much as in a normal call.
+The board accepts the command and keeps it, and nothing else moves.
+`[0x0192]` never leaves the idle state. This does not contradict the
+emulator. `&L1` selects leased-line mode. It does not start a connection. The
+two emulator runs both included a connection attempt (`ATDT6245` in one, and
+the hotline exchange that answers in the other). **The firmware writes the
+overlay id during a connection attempt**, in leased-line mode and also in a
+normal call.
 
-Which is the wall every bench route here reaches: the cells move only inside the
-window the DTE cannot read, because a connection attempt takes the serial port
-out of command mode and `+++` aborts rather than escapes. During a real call the
-seven gate cells read `00` at every sample - idle, off-hook, dialling, ringing
-over 6 s, and after release.
+This is the limit that all bench routes here get to. The cells move only in
+the window that the DTE cannot read. A connection attempt takes the serial port
+out of command mode, and `+++` aborts the attempt. It does not escape to
+command mode. During a real call, the seven gate cells read `00` at each
+sample: idle, off-hook, dialling, ringing during 6 s, and after release.
 
 ### The hand-armed tone works end to end, and the ear was the instrument
 
 Three eight-digit `ATG` commands, in command mode, with no call and no dial
-sequencer, put the firmware's own DTMF on a live line: **the operator heard a
-DTMF tone held for about ten seconds**, the length of the armed window, stopping
-when tag `16` was sent. So the resident arms tag `13` perfectly well outside a
-call, the oscillator runs, and the tone reaches the line.
+sequencer, put the DTMF of the firmware on a live line. **The operator heard a
+DTMF tone for approximately ten seconds.** This is the length of the armed
+window. The tone stopped when we sent tag `16`. Thus the resident arms tag
+`13` correctly outside a call, the oscillator runs, and the tone gets to the
+line.
 
-**A hazard worth stating plainly:** arming a tone off-hook on a connected line
-puts real signal on a real loop. The window ends only when tag `16` is sent.
+**WARNING: When you arm a tone off-hook on a connected line, you put a real
+signal on a real loop. The window ends only when you send tag `16`.**
 
 ### Query 62 cannot observe the transmitter
 
-`62` sums squares of `0900..098f`, which looked like a receive-energy reading
-that might serve as a transmit-side observable. It is **pinned**:
+`62` sums the squares of `0900..098f`. This seemed to be a receive-energy
+reading that could possibly be a transmit-side observable. It is **pinned**:
 
 | point | query 62 |
 |---|---|
@@ -322,43 +335,47 @@ that might serve as a transmit-side observable. It is **pinned**:
 | off-hook, tone armed, x4 | `0069:0015` |
 | off-hook, after tag 16 | `0069:0015` |
 
-Dial tone is a large known signal in the receive path and query 62 does not move
-for it, nor for a tone loud enough to hear. It is not an energy detector that
-happens to be quiet on hook; it returns `0015` unconditionally.
+Dial tone is a large known signal in the receive path, and query 62 does not
+move for it. It also does not move for a tone that is loud enough to hear. It
+is not an energy detector that is quiet on hook. It always returns `0015`.
 
-**That has a consequence for [mailbox-312-comparison.md](mailbox-312-comparison.md)**,
-which records the emulator reproducing `0069:0015` as a match against the board
-and treats resolving an earlier `0012` discrepancy as a result about
-initialization. Matching an unconditional constant confirms the mailbox transport
-and the dispatcher and carries **no** information about the handler's sample
-arithmetic. That file's hedge is right and understates it.
+**This has a consequence for
+[mailbox-312-comparison.md](mailbox-312-comparison.md).** That file records
+that the emulator gives `0069:0015`, and it counts this as a match with the
+board. It also treats the resolution of an earlier `0012` discrepancy as a
+result about initialization. A match with an unconditional constant confirms
+the mailbox transport and the dispatcher. It gives **no** information about the
+sample arithmetic of the handler. The caution in that file is correct, but it
+is not strong enough.
 
 ### No tag returns transmit-side state
 
-Sweeping all 128 entries of the 3.1.2 dispatcher table at program `0x83e9`. The
-reply convention had to be established first, and it is not the obvious one:
-handlers do **not** call the sender at `0x83bf`; they enqueue by calling or
-delayed-branching to `0x83b1`, the tail of `0x83a6`, with the value in ACC - so
-on a delayed branch the value is loaded in the delay slots *after* the branch.
-That routine pushes into a ring masked by `ar0 = ff60` with head and tail at data
-`0x78`/`0x79`, and `0x83bf` drains it, masks `0x7fff` and writes to ports `0x5e`
-and `0x5f`.
+We swept all 128 entries of the 3.1.2 dispatcher table at program `0x83e9`.
+First, we had to find the reply convention, and it is not the obvious one.
+Handlers do **not** call the sender at `0x83bf`. They enqueue the value: they
+call or do a delayed branch to `0x83b1`, the tail of `0x83a6`, with the value
+in ACC. Thus, on a delayed branch, the handler loads the value in the delay
+slots *after* the branch. That routine pushes into a ring masked by
+`ar0 = ff60`, with head and tail at data `0x78`/`0x79`. `0x83bf` drains the
+ring, masks with `0x7fff` and writes to ports `0x5e` and `0x5f`.
 
 Twenty tags reply: `07 14 23 24 28 29 2e 2f 32 33 34 3b 3d 4b 55 59 5a 5f 62 7f`.
-Every one returns either a constant tag word paired with a status cell, or a
-value computed from receive-side analysis. **None replies with a value read from
-the transmit block** - not the `0390` work pointer, `0392` gain, `039a` callback,
-`03c0`/`03c1` phases, `03c7` mixer accumulator, `03f1..03f5`, the transmit slots
-of the buffer at `0bc0..0bde`, or `DXR`. Handlers that *touch* transmit cells are
-common - `13`, `1a`, `1b`, `16` and the overlay-resident tags at `20..25`, `2e`,
-`2f`, `32..34` all write them - but they are setters, not readers.
+Each one returns a constant tag word together with a status cell, or a value
+calculated from receive-side analysis. **None replies with a value that it
+reads from the transmit block.** This includes the `0390` work pointer, `0392`
+gain, `039a` callback, `03c0`/`03c1` phases, `03c7` mixer accumulator,
+`03f1..03f5`, the transmit slots of the buffer at `0bc0..0bde`, and `DXR`.
+Many handlers *touch* transmit cells: `13`, `1a`, `1b`, `16` and the
+overlay-resident tags at `20..25`, `2e`, `2f`, `32..34` all write them. But
+they are setters, not readers.
 
-So the transmit-side read this project wanted **does not exist as a tag in this
-image**, and no experiment can be built on one. An earlier pass reported tag `01`
-and then `55`/`59`/`5a` as candidates; both were artefacts - the first followed a
-jump into the main loop and inherited its references, the second misread
-`bit 1, @1f` (a status word at `039f` with twenty-five writers) as the replied
-value, when those handlers reply with the constants `#06` and `#04`.
+Thus the transmit-side read that this project wanted **is not a tag in this
+image**, and no experiment can use one. An earlier pass reported tag `01`, and
+then `55`/`59`/`5a`, as candidates. Both were artefacts. The first followed a
+jump into the main loop and took its references. The second read
+`bit 1, @1f` incorrectly as the reply value. That is a status word at `039f`
+with twenty-five writers. Those handlers reply with the constants `#06` and
+`#04`.
 
 [Sweep](../artifacts/dispatcher-tag-sweep-312/sweep.py),
 [table](../artifacts/dispatcher-tag-sweep-312/replying-tags.json),
@@ -366,8 +383,9 @@ value, when those handlers reply with the constants `#06` and `#04`.
 
 ## Overlay 8 is loaded and never entered
 
-The overlays download and verify. Overlay 8 does not run. Measured on a
-leased-line pair, 403 image, `--line-audio-only`, 400M instructions a side:
+The overlays download and pass verification. Overlay 8 does not run. We
+measured this on a leased-line pair, 403 image, `--line-audio-only`, 400M
+instructions for each side:
 
 ```text
 overlay_destinations      ['9d00', 'dc00']
@@ -375,17 +393,18 @@ overlay_match             True
 overlay_words_verified    20096
 ```
 
-Tracing DSP program `dc00:ffff` for the whole run returns **zero** entries. The
-trace records every PC that falls in the band, so this is never-executed, not a
-sampling miss. Overlay 6 meanwhile is busy: the last 512 PCs in `9c00:dbff`
-cover 169 distinct addresses, including a ~130-address straight-line block at
-`0xa0e6-0xa20f` that runs every pass and has the shape of a filter kernel.
+A trace of DSP program `dc00:ffff` for the full run gives **zero** entries.
+The trace records each PC in the band. Thus this result means that the code
+never executes. It is not a sampling miss. During this time, overlay 6 is
+busy. The last 512 PCs in `9c00:dbff` cover 169 different addresses. These
+include a straight-line block of approximately 130 addresses at
+`0xa0e6-0xa20f`. This block runs on each pass and has the shape of a filter
+kernel.
 
 ### The one door that was traced end to end
 
-Eleven entries in the dispatch table at program `0x83e9` vector into overlay 8
-- tags `0x18`, `0x20`-`0x27` and `0x75` - and the resident has one direct
-branch:
+Eleven entries in the dispatch table at program `0x83e9` go into overlay 8:
+tags `0x18`, `0x20`-`0x27` and `0x75`. The resident has one direct branch:
 
 ```text
 8fce  481f       bit  7, @1f      ; BIT code 7 tests bit 8
@@ -397,10 +416,10 @@ branch:
 9097  7980 dc0c  b    dc0c        ; the entry into overlay 8
 ```
 
-Bit 8 of that cell is set by exactly one thing - the mailbox handler at
-`0x823d`, `ldp #007 ; opl @1f, #0100`, so **data `0x039f`**, corroborated by the
-`lar ar1, #039f` at `0x9041`. Reverse-mapping the table gives its tag, and the
-two neighbouring handlers that clear the same bit:
+Only one item sets bit 8 of that cell: the mailbox handler at `0x823d`,
+`ldp #007 ; opl @1f, #0100`. Thus the cell is **data `0x039f`**. The
+`lar ar1, #039f` at `0x9041` corroborates this. A reverse map of the table
+gives its tag, and the two adjacent handlers that clear the same bit:
 
 | handler | tag | effect on `0x039f` bit 8 |
 |---|---|---|
@@ -408,8 +427,8 @@ two neighbouring handlers that clear the same bit:
 | `0x8245` | `0x4e` | cleared |
 | `0x824d` | `0x4d` | cleared |
 
-On the supervisor side those three tags come from one selector, at `0x84749`
-and again at `0x8be6f`:
+On the supervisor side, one selector makes those three tags. It is at
+`0x84749` and also at `0x8be6f`:
 
 ```text
 8be5f  cmp byte [0x4e9], 5
@@ -425,27 +444,28 @@ and again at `0x8be6f`:
 8be86  lcall 8f46:01e8     ; 0x8f648, the outbox at [0x0183]
 ```
 
-`AH` = tag, `AL` = data, confirmed live: `0x8f648` was entered 11 times in one
-run with `AX` = `1500`, `433f`, `0100`, `0400`, `463f`, `583f`, matching the
-tags seen on the ports. The pump at `0x8f487` drains `[0x0183]` with `xchg` and
-shifts it out to `0x58`/`0x5a`/`0x5c`/`0x5e`.
+`AH` = tag, `AL` = data. A live run confirmed this: the firmware entered
+`0x8f648` 11 times in one run with `AX` = `1500`, `433f`, `0100`, `0400`,
+`463f`, `583f`. These agree with the tags on the ports. The pump at `0x8f487`
+drains `[0x0183]` with `xchg` and shifts it out to `0x58`/`0x5a`/`0x5c`/`0x5e`.
 
 ### Why it does not fire, and why that is correct
 
-`[0x04e9]` is `&M` and `[0x04ed]` is `&X` - see the corrected table below.
-`[0x04e9]` reads **4**, the factory default written by the defaults block at
-`0x878b7`, i.e. **`&M4`**. The gate wants `1` or above `5`: `&M1`, `&M6`,
-`&M7`. Those are the **synchronous** modes.
+`[0x04e9]` is `&M` and `[0x04ed]` is `&X`. Refer to the corrected table below.
+`[0x04e9]` reads **4**. This is the factory default that the defaults block at
+`0x878b7` writes, thus **`&M4`**. The gate needs `1` or a value above `5`:
+`&M1`, `&M6`, `&M7`. Those are the **synchronous** modes.
 
-So tags `0x4d`/`0x4e`/`0x4f` are the synchronous transmit clock source, `&X`
-picks which, and the message is sent only in sync operation. Overlay 8 is the
-synchronous datapump, and **an async `&M4` call is right not to load it.** An
-earlier reading of this chase called `0x4f` "the missing datapump mode message"
-and treated overlay 8's silence as the bug; that was wrong, and it was wrong
-because the command table was misindexed by eleven entries.
+Thus tags `0x4d`/`0x4e`/`0x4f` are the synchronous transmit clock source, `&X`
+selects one of them, and the firmware sends the message only in sync
+operation. Overlay 8 is the synchronous datapump, and **it is correct that an
+async `&M4` call does not load it.** An earlier reading of this search called
+`0x4f` "the missing datapump mode message", and treated the silence of overlay
+8 as the bug. That was incorrect. The cause of the error was the command
+table, which was misindexed by eleven entries.
 
-Traced, to be sure it is the gate and not reachability - 120M instructions,
-`--nvram-fixture idsdl403`:
+To make sure that the cause is the gate and not reachability, we traced it:
+120M instructions, `--nvram-fixture idsdl403`:
 
 ```text
 pc_watch_counts: {'callerB': 1, 'entry': 1}    # 0x8b723 and 0x8be5f
@@ -453,18 +473,19 @@ pc_watch_counts: {'callerB': 1, 'entry': 1}    # 0x8b723 and 0x8be5f
 peek: {'4e9': '04', '4ed': '02'}
 ```
 
-The caller runs, the routine is entered, `[0x04ed]` is already `2` meaning tag
-`0x4f`, and the `&M` gate returns before it is read.
+The caller runs, and the firmware enters the routine. `[0x04ed]` is already
+`2`, which means tag `0x4f`. The `&M` gate returns before the routine reads
+it.
 
 ### The `&M` and `&X` commands cannot be changed on this board anyway
 
-Both handlers open with `test byte [0x58b], 6 / je <reject>`. `[0x058b]` reads
-`0x29`, and `0x29 & 6 == 0`, so `AT&M1` and `AT&M2` both return `ERROR`
-(measured; `AT&M0` returns `OK` only because 0 is already the value). The
-`--nvram-fixture idsdl403` profile restores `[0x04ed] = 2` wholesale, bypassing
-the command.
+The two handlers start with `test byte [0x58b], 6 / je <reject>`. `[0x058b]`
+reads `0x29`, and `0x29 & 6 == 0`. Thus `AT&M1` and `AT&M2` both return
+`ERROR` (measured). `AT&M0` returns `OK` only because 0 is already the value.
+The `--nvram-fixture idsdl403` profile restores `[0x04ed] = 2` directly, and
+does not use the command.
 
-`[0x058b]` has one writer, `0x809ee`, fed by a hardware-indexed lookup:
+`[0x058b]` has one writer, `0x809ee`. A hardware-indexed lookup supplies it:
 
 ```text
 809cf  mov ax, 0x200a / call 82808
@@ -477,8 +498,9 @@ the command.
 809ee  mov [0x58b], al
 ```
 
-The table is inline at `0x809fd`. Index 2 gives `0x29`, which is what this
-board computes; seven of the twenty-four entries carry the capability:
+The table is inline at `0x809fd`. Index 2 gives `0x29`, which is the value
+that this board calculates. Seven of the twenty-four entries have the
+capability:
 
 | index | value | `& 6` |
 |---|---|---|
@@ -490,22 +512,24 @@ board computes; seven of the twenty-four entries carry the capability:
 | 21 | `0x75` | 4 |
 | 23 | `0x33` | 2 |
 
-**Not verified:** the three accessor calls were not traced, so whether index 2
-is right for this board or an artefact of what the emulator returns to them is
-open. That is the question that decides whether this is a firmware gate to
-satisfy or an emulator gap to fix.
+**Not verified:** we did not trace the three accessor calls. Thus it is not
+known if index 2 is correct for this board, or if it is an artefact of the
+values that the emulator returns to them. This question decides if this is a
+firmware gate to satisfy or an emulator gap to correct.
 
 ### The corrected ampersand handler table
 
-The table is letter-indexed and its base is **`0xa6685`**, not `0xa669b`.
-`0xa669b` is where entry 11 sits, and reading it as entry 0 shifts every letter
-by eleven. Four independent anchors fix the base:
+The table is indexed by letter, and its base is **`0xa6685`**, not `0xa669b`.
+Entry 11 is at `0xa669b`. If you read it as entry 0, each letter moves by
+eleven. Four independent anchors set the base:
 
-* `&L` (11) writes `[0x04f2]` at `0xa6980` - in the handler at `0xa695e`;
-* `&N` (13) writes `[0x04f8]` at `0xa6a71` - in the handler at `0xa6a11`;
-* `&T` (19) is the router at `0xa6afe`, board-verified by `AT&T2` -> `ERROR`;
-* the four `0xa6780` `stc; ret` rejects land on **E, O, Q, V** - exactly the set
-  this file already records. Under the old base they fell on D, F and K.
+* `&L` (11) writes `[0x04f2]` at `0xa6980`, in the handler at `0xa695e`;
+* `&N` (13) writes `[0x04f8]` at `0xa6a71`, in the handler at `0xa6a11`;
+* `&T` (19) is the router at `0xa6afe`, which the board verifies with
+  `AT&T2` -> `ERROR`;
+* the four `0xa6780` `stc; ret` rejects are on **E, O, Q, V**. This is exactly
+  the set that this file already records. With the old base, they were on D, F
+  and K.
 
 | entry | cmd | handler | |
 |---|---|---|---|
@@ -520,57 +544,59 @@ by eleven. Four independent anchors fix the base:
 
 ### What this does and does not settle
 
-It explains overlay 8, and it explains it as correct behaviour. It does **not**
-explain the measured starvation in
-[what-runs-and-what-blocks.md](what-runs-and-what-blocks.md): the outbound ring
-at `0x0bd0` stays empty, `@78 == @79`, and the DSP sends one message per call
-while running overlay 6 the whole time. The async event producer is in overlay
-6 or the resident, and finding it is the open question - the other ten overlay-8
-tags are a distraction for the same reason tag `0x4f` was.
+It explains overlay 8, and it shows that the behaviour is correct. It does
+**not** explain the measured starvation in
+[what-runs-and-what-blocks.md](what-runs-and-what-blocks.md). The outbound ring
+at `0x0bd0` stays empty, `@78 == @79`, and the DSP sends one message for each
+call while it runs overlay 6 all the time. The async event producer is in
+overlay 6 or the resident. To find it is the open question. The other ten
+overlay-8 tags are a distraction for the same reason as tag `0x4f`.
 
 ## What remains
 
-Two stand-ins under the working download, both recorded in
-[dsp-overlays.md](dsp-overlays.md):
+Two stand-ins are below the working download. [dsp-overlays.md](dsp-overlays.md)
+records both:
 
-- the `0x1e` readiness bits answer all-ones, so the transfer never waits;
-- `load_program` bypasses whatever C52 code receives an overlay while the
-  resident runs.
+- the `0x1e` readiness bits answer all-ones, thus the transfer never waits;
+- `load_program` bypasses the C52 code (unknown) that receives an overlay while
+  the resident runs.
 
-And `call_overlay_active` is still false on the `&L1` hotline run, where
-`bootstraps` stays 1 - that route reaches `out 0x1e, 4` twice and no second
-download completes, where the DSP-requested route now does. Whether the two
-should converge on one transfer path is not settled.
+Also, `call_overlay_active` is still false on the `&L1` hotline run, where
+`bootstraps` stays 1. That route gets to `out 0x1e, 4` two times, and no
+second download completes. The DSP-requested route now completes it. It is not
+settled if the two routes must use one transfer path.
 
 ## Ruled out - do not re-run these
 
-**"Nothing indexes that table, so the gate is on a dead path."** Reached twice,
-independently, on both images, by searching only for *direct* references - an
-indexed `jmp`/`call` using the table's displacement, a far pointer, an
-immediate load of its address. This firmware dispatches through RAM function
-pointers; the search was too narrow both times. Reproducing a negative on a
-second image made it look like a property of the firmware rather than of the
-method.
+**"Nothing indexes that table, so the gate is on a dead path."** We got this
+result two times, independently, on the two images. The searches looked only
+for *direct* references: an indexed `jmp`/`call` with the displacement of the
+table, a far pointer, an immediate load of its address. This firmware
+dispatches through RAM function pointers. Both times, the search was too
+narrow. Because the negative occurred again on a second image, it seemed to be
+a property of the firmware. It was a property of the method.
 
-**Reading the `0xa669b` table as the bare AT letters.** Its entries were first
-identified positionally as `L`, `N` and `T` on the strength of what each handler
-writes. Tested on the board, the ordinary letters do not reach it - there is no
-`ATL` and no `ATN` on this firmware, and `AT$` is HELP. The table is the
-**ampersand** family, which is what makes entries 11, 13 and 19 `&L`, `&N` and
-`&T`. The positional reading was right and the family was wrong.
+**Reading the `0xa669b` table as the bare AT letters.** First we identified its
+entries by position as `L`, `N` and `T`, from the data that each handler
+writes. Tests on the board show that the ordinary letters do not get to it.
+This firmware has no `ATL` and no `ATN`, and `AT$` is HELP. The table is the
+**ampersand** family. Thus entries 11, 13 and 19 are `&L`, `&N` and `&T`. The
+reading by position was correct, and the family was incorrect.
 
-**Reading `0xa669b` as the table's base.** It is entry 11, so indexing from it
-shifts every letter by eleven and silently renames handlers - it is what turned
-`&X` into `&M` once. The base is `0xa6685`; see the corrected table above.
+**Reading `0xa669b` as the table's base.** It is entry 11. If you index from
+it, each letter moves by eleven, and handlers get incorrect names with no
+warning. This error once changed `&X` into `&M`. The base is `0xa6685`. Refer
+to the corrected table above.
 
-**Reading `ATN` as the arming command.** The 403 `7b`/`7c` consumers reach a
-rate-index request through operation `0054`, not any of these flags. The shared
-shape of the two decimal command parsers is about method, not about this gate.
+**Reading `ATN` as the arming command.** The 403 `7b`/`7c` consumers get to a
+rate-index request through operation `0054`, not through these flags. The two
+decimal command parsers have the same shape, but this is about method, not
+about this gate.
 
-**`0008:0885` as the overlay request.** That reading reasoned from `0x85` being
-`0x80 | 5` and from the consumer's `or al, 0x80`. The correspondence is a
-coincidence; the request is `0047:0007` and the consumer sets bit 7 itself.
+**`0008:0885` as the overlay request.** That reading used two facts: `0x85` is
+`0x80 | 5`, and the consumer does `or al, 0x80`. This correspondence is a
+coincidence. The request is `0047:0007`, and the consumer sets bit 7 itself.
 
 **A probe placed before the store.** `0x94d83` fires before its `in al, 0x5c`
-executes, so the `al = 47` it records is stale, not the id. Probe `0x8e60f`,
-after the loader's `and al, 0x7f`.
+executes. Thus the `al = 47` that it records is stale, and is not the id. Put
+the probe at `0x8e60f`, after the `and al, 0x7f` of the loader.

@@ -1,10 +1,10 @@
 # The DSP's mailbox poll, and what is actually starved
 
-This file opened as "what it takes to make a call complete". Two of its
-blockers are now retired. The datapump putting nothing on the line is resolved
-in [datapump-gate-403-addresses.md](datapump-gate-403-addresses.md). And the
-mailbox poll - the blocker this file was renamed for - **is not blocking.**
-Measured, 403 board image, leased-line pair, 400M instructions a side:
+The first title of this file was "what it takes to make a call complete". Two of its
+blockers are now removed. [datapump-gate-403-addresses.md](datapump-gate-403-addresses.md)
+resolves the problem that the datapump puts nothing on the line. Also, the
+mailbox poll (the blocker that gave this file its new name) **does not block.**
+We measured this with the 403 board image, a leased-line pair, and 400M instructions on each side:
 
 | | side A |
 |---|---|
@@ -14,22 +14,22 @@ Measured, 403 board image, leased-line pair, 400M instructions a side:
 | DSP acknowledgements (`samm @57` from `0x839d`) | 5,064 |
 | **DSP->CPU messages sent** (`out` to port `0x5e`) | **1** |
 
-The DSP polls constantly, takes every message it is handed, and acknowledges.
-The `ARCR` compare below is satisfied at rest - `ar7` and `arcr` both read
-`0x0bc8` in a live run - so the gated block runs and the whole "messages
-overwrite each other while the DSP is not looking" reading is **wrong**. Keep
-the `NDX` measurement in this file; discard the conclusion that was built on it.
+The DSP polls constantly, takes each message that it gets, and acknowledges.
+The `ARCR` compare below is satisfied at rest. `ar7` and `arcr` both read
+`0x0bc8` in a live run. Thus, the gated block runs, and the full interpretation that "messages
+overwrite each other while the DSP does not look" is **wrong**. Keep
+the `NDX` measurement in this file. Discard the conclusion that we made from it.
 
-What is starved is the **other direction**. The resident's sender at `0x83bf`
-was traced over its last 128 entries with a carrier up, and exited at `0x83c2`
-- `retc eq`, the ring read and write pointers equal - **every time**. It never
-reaches the host-window gate at `0x83c9`, let alone the `out` at `0x83d3`.
-`@78` and `@79` both read `0xff52` at the end of the run. Nothing is queueing
-into the outbound ring, so the supervisor gets one event per call and no
-negotiation can proceed.
+The direction that gets no data is the **other direction**. We traced the sender of the resident at `0x83bf`
+over its last 128 entries with a carrier up. It exited at `0x83c2`
+(`retc eq`, the ring read and write pointers equal) **each time**. It never
+gets to the host-window gate at `0x83c9`, and thus also not to the `out` at `0x83d3`.
+`@78` and `@79` both read `0xff52` at the end of the run. Nothing puts data
+into the outbound ring. Thus, the supervisor gets one event for each call, and no
+negotiation can continue.
 
-Where that leads is [datapump-gate-403-addresses.md](datapump-gate-403-addresses.md),
-under "Overlay 8 is loaded and never entered".
+For the next step, refer to [datapump-gate-403-addresses.md](datapump-gate-403-addresses.md),
+in the section "Overlay 8 is loaded and never entered".
 
 ## The status register is PA7, and the harness models one bit of it
 
@@ -42,35 +42,35 @@ Four routines in the resident all read `0xff57`:
 80f8:  and #0200     -> bit 9
 ```
 
-SPRU056D settles what that address is. Section 3.5.11 and 8.3.2: `0000h-004Fh`
-is on-chip memory-mapped registers, `0050h-005Fh` is memory-mapped I/O -
-`0x50` = PA0 through `0x5F` = PA15, with `0x60`-`0x7F` scratch-pad DARAM B2. And
+SPRU056D tells what that address is. Section 3.5.11 and 8.3.2: `0000h-004Fh`
+is on-chip memory-mapped registers, and `0050h-005Fh` is memory-mapped I/O:
+`0x50` = PA0 through `0x5F` = PA15, with `0x60`-`0x7F` scratch-pad DARAM B2. Also,
 Figure 5-10: `LAMM`/`SAMM`/`LMMR`/`SMMR` force the 9 MSBs of the address to
-zero, so `lamm *` with `AR1 = 0xff57` genuinely reads `0x57`.
+zero. Thus, `lamm *` with `AR1 = 0xff57` really reads `0x57`.
 
-**So `0x57` is PA7, a real external I/O port, and these four routines poll a
-status word the ASIC drives.** The mechanism is TI's; the bit meanings are the
-ASIC's, and no TI document has them.
+**Thus, `0x57` is PA7, a real external I/O port, and these four routines poll a
+status word that the ASIC controls.** The mechanism comes from TI. The bit meanings come from the
+ASIC, and no TI document gives them.
 
-The harness raises `HOST_MESSAGE_PENDING` (`0x0001`) directly. The other bits
-are not raised by the harness, but they are not unreachable either: the DSP's
-own tag-`0x02` handler at `0x8255` does `lacc #0700 ; samm @57`, writing bits 8,
-9 and 10 itself, and the CPU's `out 0x1c` path raises bits 1 and 2 through
-`_set_dsp_status(set_bits=value & 6)`. An earlier version of this section said
-bits 1, 2 and 9 are "never set" and concluded the polls return immediately. The
-measurement above contradicts that: `0x839b` and its neighbours run hundreds of
+The harness raises `HOST_MESSAGE_PENDING` (`0x0001`) directly. The harness does not raise the other bits,
+but it is possible for them to be set. The
+tag-`0x02` handler of the DSP at `0x8255` does `lacc #0700 ; samm @57`, and thus writes bits 8,
+9 and 10 itself. The `out 0x1c` path of the CPU raises bits 1 and 2 through
+`_set_dsp_status(set_bits=value & 6)`. An earlier version of this section said that
+bits 1, 2 and 9 are "never set", and it concluded that the polls return immediately. The
+measurement above contradicts that: `0x839b` and the routines near it run hundreds of
 thousands of times and do real work.
 
-**Where to look for the rest.** The DSP's PA0-PA7 are fed from the 80186's
-parallel window at ports `0x40`-`0x5e`, which `_publish_window` already models,
-so whatever sets PA7's bits is 80186 code in an image this repository has. That
-is a static-analysis question against the supervisor, not an unanswerable one
-about an undocumented part. `0x847a`'s path through data `0x039e` and `bacc` is
-the one shaped like "start this task".
+**Where to look for the rest.** The parallel window of the 80186 at ports `0x40`-`0x5e`
+supplies PA0-PA7 of the DSP. `_publish_window` already models this window.
+Thus, the code that sets the bits of PA7 is 80186 code in an image that this repository has. That
+is a static-analysis question against the supervisor. It is not a question without an answer
+about an undocumented part. The path of `0x847a` through data `0x039e` and `bacc` is
+the path that looks like "start this task".
 
 ## Where the DSP actually is
 
-Sampling the program counter over 60,000 instructions after the download:
+We sampled the program counter over 60,000 instructions after the download:
 
 ```text
   0x0022-0x0023     3.7%     ROM interrupt dispatch
@@ -82,15 +82,15 @@ Sampling the program counter over 60,000 instructions after the download:
   0x81b7-0x81ca    35.4%     a dispatched handler
 ```
 
-Eleven regions, 102 distinct addresses, out of a 27,710-word resident. The DSP is
-**healthy and idle**: it runs its main loop, dispatches through the handler cells
-at `@1a`/`@1b`, and services the codec every frame. It is not stuck, not crashed
-and not in a wait. It has simply never been asked to do anything. Its only
-external reads are I/O `0x51` - 106 reads in 60,000 instructions.
+There are eleven regions and 102 different addresses, out of a 27,710-word resident. The DSP is
+**healthy and idle**. It runs its main loop, dispatches through the handler cells
+at `@1a`/`@1b`, and services the codec in each frame. It has not stopped, it has not crashed,
+and it is not in a wait. But nothing has ever requested it to do work. Its only
+external reads are I/O `0x51`: 106 reads in 60,000 instructions.
 
-The steady-state loop is `0x80d0 → 0x80f1 → 0x80d0`, and it reaches the
-block-level work at `0x80c8` only through the `cmpr eq` branch below. That block
-is where all four of the polls live:
+The steady-state loop is `0x80d0 → 0x80f1 → 0x80d0`. It gets to the
+block-level work at `0x80c8` only through the `cmpr eq` branch below. All four of the polls
+are in that block:
 
 ```text
 80c6  call 8223
@@ -100,19 +100,19 @@ is where all four of the polls live:
 80ce  call 80f8
 ```
 
-Forcing `ARCR` to a value `AR7` reaches (`0x0bd0` or `0x0bde`) makes the block run
-and lifts the DSP from 103 distinct program addresses to 159. **That is a
-diagnostic, not a fix** - nothing on the board writes it by hand, and the
-mechanism that does is the `@10` reload below.
+If we force `ARCR` to a value that `AR7` gets to (`0x0bd0` or `0x0bde`), the block runs,
+and the DSP goes from 103 different program addresses to 159. **That is a
+diagnostic, not a fix**. Nothing on the board writes it manually, and the
+mechanism that writes it is the `@10` reload below.
 
-**In the 403 runs this block runs anyway.** A live pair reads `ar7 = arcr =
-0x0bc8`; the compare matches, the block executes, and the status latch is read
-342,624 times in one run. So whatever the harness does or does not model about
-`ARCR`, it is not what keeps the DSP from being asked to do anything.
+**In the 403 runs, this block runs in all cases.** A live pair reads `ar7 = arcr =
+0x0bc8`. The compare agrees, the block executes, and the status latch is read
+342,624 times in one run. Thus, independent of what the harness models about
+`ARCR`, `ARCR` is not the reason why nothing requests work from the DSP.
 
 ## The mailbox dispatch itself works
 
-Handing the resident one message and diffing the executed addresses:
+We gave one message to the resident and compared the executed addresses:
 
 | | distinct PCs | furthest PC |
 |---|---|---|
@@ -120,36 +120,36 @@ Handing the resident one message and diffing the executed addresses:
 | one message delivered | **397** | **`0x8b8c`** |
 
 The DSP leaves idle, dispatches through the tag table at `0x8480`, runs a
-handler and comes back - `0x86e9` is reached, next door to one of the dozen
-`splk @1a, #8139` sites that put the task pointer back to idle. None of the
-receive path is broken, and on the 403 image the DSP looks often enough:
-35 tag/word reads against 82 deliveries in a 400M-instruction run, each one
-acknowledged. The direction that carries nothing is the DSP's own sender.
+handler and comes back. It gets to `0x86e9`, which is next to one of the twelve
+`splk @1a, #8139` sites that put the task pointer back to idle. No part of the
+receive path is defective. On the 403 image, the DSP looks sufficiently often:
+35 tag/word reads against 82 deliveries in a run of 400M instructions, and it acknowledges each one.
+The direction that carries nothing is the sender of the DSP itself.
 
 ## The ARCR compare, and what it actually tests
 
-The poll lives in the block at `0x80c8`, which the main loop reaches only when
-`cmpr eq` matches `AR7` against `ARCR`. The ring is known exactly: `0x802e` sets
-`CBCR = 0x00ef`, selecting `AR7` for circular buffer 1 with `CBSR1 = 0x0bd0` and
-`CBER1 = 0x0bdf`. An `ARCR` anywhere in that ring makes the block run once per
-pass, a few hundred times a second - a sensible mailbox poll rate. With `ARCR` at
-zero it would run **once, during initialisation**.
+The poll is in the block at `0x80c8`. The main loop gets to this block only when
+`cmpr eq` finds that `AR7` agrees with `ARCR`. The ring is known exactly: `0x802e` sets
+`CBCR = 0x00ef`. This selects `AR7` for circular buffer 1, with `CBSR1 = 0x0bd0` and
+`CBER1 = 0x0bdf`. If `ARCR` is at any location in that ring, the block runs one time on each
+pass, a few hundred times each second. That is a sensible mailbox poll rate. With `ARCR` at
+zero, it would run **one time, during initialisation**.
 
-That second case was once reported as the live behaviour, on a run showing 87
-messages delivered and almost nothing consumed. It is not what the 403 image
-does: `arcr` reads `0x0bc8` alongside `ar7`, the compare matches and the block
-runs. The "almost nothing consumed" figure was the DSP->CPU count being read as
-if it were the CPU->DSP one.
+Before, we reported that second case as the live behaviour, on a run that showed 87
+delivered messages and almost no consumed messages. That is not what the 403 image
+does: `arcr` reads `0x0bc8` together with `ar7`, the compare agrees, and the block
+runs. The "almost nothing consumed" value was the DSP->CPU count, which we read
+as the CPU->DSP count.
 
 **`@10` is data `0x0390`, and `0x0390` is where `AR7` is kept.** Direct
-addressing is DP-relative and `ldp #007` sits immediately before the
-`lar ar0, @10` at `0x8105` and `0x810d`, with the steady-state loop passing the
-`ldp #007` at `0x80e6` every turn - so `@10` is *not* the memory-mapped `AR0` at
-data `0x0010` that a DP-0 reading would give. That is the trap here. `sar ar7,
-@10` at `0x808f` and `0x81a1` store the cell; `lar ar7, @10` at `0x80c5` and
+addressing is relative to DP, and `ldp #007` is immediately before the
+`lar ar0, @10` at `0x8105` and `0x810d`. The steady-state loop goes through the
+`ldp #007` at `0x80e6` on each pass. Thus, `@10` is *not* the memory-mapped `AR0` at
+data `0x0010` that an interpretation with DP 0 would give. That is the trap here. `sar ar7,
+@10` at `0x808f` and `0x81a1` store the cell. `lar ar7, @10` at `0x80c5` and
 `0x8192` restore it.
 
-Which makes the sequence coherent and self-contained:
+This makes the sequence coherent and self-contained:
 
 ```text
 80c5  lar  ar7, @10     ; AR7 <- saved ring pointer
@@ -159,109 +159,108 @@ Which makes the sequence coherent and self-contained:
 80d2  bcnd 80c8, tc     ; ...so: has AR7 moved off its saved value?
 ```
 
-The compare is not waiting for an uninitialised register to be filled by
-something unfound. It tests the **live ring pointer against its own saved
-value**, and `ARCR` is reloaded from that slot every pass. It needs nothing
+The compare does not wait for an unknown component to fill an uninitialised register.
+It tests the **live ring pointer against its own saved
+value**, and `ARCR` is loaded again from that slot on each pass. It needs nothing
 external.
 
 ## The `NDX` side effect is real, measured on the part
 
-That reading depends on `lar ar0` loading `ARCR` as a side effect. SPRU056D's
-`LAR` page and Table 4-3 say it does when `NDX` is clear; its section 3.5 prose
-says when `NDX` is set. The document cannot arbitrate itself, so the part was
-asked - `artifacts/ndx-probe-01/`, on the live board, loading `AR0` three ways
-under each polarity and rewriting sentinels `ARCR = 0xEEEE` / `INDX = 0xDDDD`
-before every load so "loaded" and "untouched" cannot be confused:
+That interpretation depends on `lar ar0` loading `ARCR` as a side effect. The
+`LAR` page and Table 4-3 of SPRU056D say that it does this when `NDX` is clear. The prose of its section 3.5
+says that it does this when `NDX` is set. The document cannot resolve this itself. Thus, we asked
+the part: `artifacts/ndx-probe-01/`, on the live board. We loaded `AR0` in three ways
+with each polarity. We wrote the sentinels `ARCR = 0xEEEE` / `INDX = 0xDDDD` again
+before each load, so that "loaded" and "untouched" cannot be confused:
 
 | | `PMST` | `lar ar0, @7b` | `lark ar0, #55` | `lar ar0, #4321` |
 |---|---|---|---|---|
 | **`NDX` clear** | `00b0` | `ARCR`/`INDX` = **`1234`** | = **`0055`** | = **`4321`** |
 | **`NDX` set** | `00b4` | `ARCR`/`INDX` = `EEEE`/`DDDD` | - | - |
 
-1. **The side effect is real on this part**, not a documentation artefact.
-2. **The `LAR` page and Table 4-3 have the polarity right**; the prose is wrong.
+1. **The side effect is real on this part.** It is not a documentation artefact.
+2. **The `LAR` page and Table 4-3 have the correct polarity.** The prose is wrong.
    This firmware clears `NDX` explicitly at `0x8012` (`apl @07, #07f8` then
-   `opl @07, #00b0`), so the side effect is **active** on the live board.
+   `opl @07, #00b0`). Thus, the side effect is **active** on the live board.
 3. **It is not restricted to 'C2x instructions.** `lar ar0, #4321` is the 'C5x
-   long-immediate form and it loaded `ARCR` and `INDX` too. The trigger is
-   loading `AR0` at all, whatever the encoding; the manual's "'C2x
-   compatibility" framing is misleading about scope.
+   long-immediate form, and it also loaded `ARCR` and `INDX`. Any load of
+   `AR0` causes it, with any encoding. The manual says "'C2x
+   compatibility", and this is misleading about the scope.
 
-`AR0` was mailed back in both halves (`4321`, then `1234`) to prove the loads
-executed - without that, a surviving sentinel could just mean a skipped
+The kernel sent `AR0` back in the two halves (`4321`, then `1234`) to prove that the loads
+executed. Without that, a sentinel that did not change could only mean a skipped
 instruction.
 
-**The core does not model this.** It parses `m_pmst.ndx` and never reads it, so
-that is a known-wrong model rather than a neutral omission.
+**The core does not model this.** It parses `m_pmst.ndx` and never reads it. Thus,
+this is a model that we know is wrong. It is not a neutral omission.
 
 ## The unresolved part
 
-Implementing the side effect gives exactly the predicted state - `ARCR` =
-`0x0bdc`, inside the `0x0bd0`-`0x0bdf` ring - and **breaks the firmware in the
-harness**: `INDX` takes the same value, a stride of 3036 corrupts all 317
-`*0+`/`*0-` sites in the resident, the DSP stops reaching its main loop and the
-codec goes undriven (`dxr_writes` 17,931 -> 15, `tdxr_writes` 801,645 -> 0).
-Restricting the effect to `ARCR` alone, or to one `LAR` encoding, does not
-rescue it.
+If we implement the side effect, we get exactly the predicted state (`ARCR` =
+`0x0bdc`, in the `0x0bd0`-`0x0bdf` ring), and **the firmware stops operating in the
+harness**. `INDX` gets the same value. A stride of 3036 corrupts all 317
+`*0+`/`*0-` sites in the resident. The DSP does not get to its main loop, and nothing
+controls the codec (`dxr_writes` 17,931 -> 15, `tdxr_writes` 801,645 -> 0).
+If we restrict the effect to `ARCR` alone, or to one `LAR` encoding, the firmware still does not operate.
 
-**The board does this and runs anyway**, so the breakage is the harness's
-problem to explain, not evidence against the mechanism. Re-landing the side
-effect without resolving the `*0+` behaviour would swap a wrong model for a
-broken one, so the emulator is deliberately left unchanged.
+**The board does this and runs.** Thus, the harness must explain the failure.
+It is not evidence against the mechanism. If we add the side
+effect again without a solution for the `*0+` behaviour, we would replace a wrong model with a
+defective one. Thus, we intentionally do not change the emulator.
 
-This remains a real known-wrong model. It is no longer a **blocker**, because
-the block it was thought to gate runs regardless - see the head of this file.
+This is still a real model that we know is wrong. It is not a **blocker** now, because
+the block that we thought it gates runs in all cases. Refer to the start of this file.
 
 ## The open measurement
 
-Read on the board, `0x0390` is `0x0000` - all sixteen samples,
-`artifacts/dsp-at10-01/`. The control matters, because zero is also what a broken
-probe returns: the same kernel pointed at data `0xffff` returned `0x0083` sixteen
-times, matching `artifacts/dsp-boot-word-01`. So the path reads live cells and the
-zero is a reading.
+On the board, `0x0390` reads `0x0000` in all sixteen samples
+(`artifacts/dsp-at10-01/`). The control is important, because a defective
+probe also returns zero. The same kernel pointed at data `0xffff` returned `0x0083` sixteen
+times, which agrees with `artifacts/dsp-boot-word-01`. Thus, the path reads live cells, and the
+zero is a real reading.
 
-But it was taken idle and on hook, and after the monitor had reset the DSP, so it
-is the value the resident left behind rather than a sample of the running loop.
-With `@10` at zero, `AR7` restores to zero, `ARCR` is set to zero and the compare
-matches - consistent with the block running during initialisation and never
-again. It does **not** follow that `@10` is zero during a call: the ring and task
-machinery may only be set up once a connection starts.
+But we took it while idle and on hook, and after the monitor had reset the DSP. Thus, it
+is the value that the resident left, and not a sample of the running loop.
+With `@10` at zero, `AR7` restores to zero, `ARCR` is set to zero, and the compare
+agrees. This agrees with a block that runs during initialisation and never
+again. It does **not** show that `@10` is zero during a call. The ring and task
+machinery may be set up only when a connection starts.
 
-**Sampling `0x0390` during a call is the next thing worth doing**, and it needs a
-probe that runs alongside the firmware rather than replacing it - the shape
-`cooperative_probe.py` has, which cannot currently reach DSP data memory.
+**The next useful step is to sample `0x0390` during a call.** This needs a
+probe that runs together with the firmware and does not replace it. `cooperative_probe.py`
+has this shape, but it cannot get to DSP data memory now.
 
-`ARCR` is shared scratch, which is part of why this was hard to read: the
-resident's only write to it, `samm @19` at `0x9644`, computes
-`(@7e >> 10) + 0xd9fe`, a **program** address for a table walk, and `0xafdf`
-reads it back. It is a general-purpose ARAU register the firmware reuses, exactly
-as SPRU056D suggests.
+`ARCR` is shared scratch, and this is one reason why it was difficult to interpret. The
+only write of the resident to it, `samm @19` at `0x9644`, calculates
+`(@7e >> 10) + 0xd9fe`. This is a **program** address for a table walk, and `0xafdf`
+reads it back. It is a general-purpose ARAU register that the firmware uses again for other work,
+exactly as SPRU056D suggests.
 
-See [dsp-cpu-interconnect.md](dsp-cpu-interconnect.md).
+Refer to [dsp-cpu-interconnect.md](dsp-cpu-interconnect.md).
 
 ## Smaller things still known wrong
 
-None of these blocks a call:
+None of these items blocks a call:
 
 * **No ring trip on the `--ring` path.** `machine.py` ORs the ring-detect bit
-  from `RingSource.present()` with no off-hook gate, so answering a `--ring`
-  call leaves the detector asserted for the whole call. `LineExchange` gets this
-  right; `RingSource` does not.
-* **The boot transport is the wrong mechanism**, though it reaches the right
-  state - see [dsp-boot-transport.md](dsp-boot-transport.md).
+  from `RingSource.present()` without an off-hook gate. Thus, when you answer a `--ring`
+  call, the detector stays asserted for the full call. `LineExchange` does this
+  correctly. `RingSource` does not.
+* **The boot transport is the wrong mechanism**, but it gets to the correct
+  state. Refer to [dsp-boot-transport.md](dsp-boot-transport.md).
 * **`XRDY` is optimistic on the legacy TDM path**, because that path models no
   framing on the primary serial port.
 * **Codec gain, high-pass and loopback are decoded but not applied** to samples.
-* **The four-bit part identity at supervisor `0x287f9`** is unmodelled, so it
+* **The four-bit part identity at supervisor `0x287f9`** is not modelled. Thus, it
   reads floating bits, and six sites branch on the result.
 
 ## Ruled out - do not re-run these
 
 **Wiring the ASIC ports together instead of interpreting them.**
-`COURIER_ASIC_TRANSPARENT=1` mirrors the 80186 side onto the DSP's I/O ports
-rather than decoding the supervisor's writes and synthesising status. It does not
-substitute for the protocol: the supervisor's `0x1c` handshake is a sequence, not
+`COURIER_ASIC_TRANSPARENT=1` copies the 80186 side onto the I/O ports of the DSP.
+It does not decode the writes of the supervisor and synthesise the status. It does not
+replace the protocol: the `0x1c` handshake of the supervisor is a sequence, not
 a register image.
 
-**Reading `@10` as the memory-mapped `AR0` at data `0x0010`.** DP is 7 at every
-one of those sites, so it is data `0x0390`.
+**Reading `@10` as the memory-mapped `AR0` at data `0x0010`.** DP is 7 at each
+of those sites. Thus, it is data `0x0390`.

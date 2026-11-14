@@ -1,26 +1,26 @@
 # What the 20.16 MHz Courier's CPU sees of its line interface
 
-The supervisor's picture of the phone line comes from two different places, and
-only one of them is the ASIC. This records the CPU-side half - what the 80186
-reads and writes directly, before anything the ASIC or DSP computes - because
-a model that puts every line signal behind the event channel gets the ring path
+The supervisor gets its information about the phone line from two different locations.
+Only one of them is the ASIC. This file records the CPU-side half: what the 80186
+reads and writes directly, before the ASIC or the DSP calculates anything. This is important, because
+a model that puts all line signals behind the event channel makes the ring path
 wrong.
 
-Addresses below are file offsets in the user's board image,
+The addresses below are file offsets in the board image of the user,
 `artifacts/courier-board-21210-capture-403/courier-board.rom` (supervisor
-7.4.16). `IDSDL302.ROM` carries both structures too; where its addresses differ
-they are noted.
+7.4.16). `IDSDL302.ROM` also contains the two structures. Where its addresses are different,
+we give them.
 
 ## Two CPU-visible line signals, both on port 0x14
 
-Ports `0x10`, `0x12` and `0x14` are write-only board latches, so the firmware
-keeps shadow copies: `[0x011b]` mirrors port `0x12` and `[0x011c]` mirrors port
-`0x14`. Every write below is built by OR-ing or AND-ing a mask into the shadow
-and sending the whole byte.
+Ports `0x10`, `0x12` and `0x14` are write-only board latches. Thus, the firmware
+keeps shadow copies: `[0x011b]` is a mirror of port `0x12`, and `[0x011c]` is a mirror of port
+`0x14`. Each write below ORs or ANDs a mask into the shadow,
+and then sends the full byte.
 
 ### Ring sense - port 0x14 bit 1
 
-A tick-driven cadence machine samples it directly. The ticker at `0x14ff0`:
+A cadence machine that a tick controls samples this bit directly. The ticker at `0x14ff0`:
 
 ```
 14ff0  dec  byte [0ae4]
@@ -31,7 +31,7 @@ A tick-driven cadence machine samples it directly. The ticker at `0x14ff0`:
 15004  call word ptr [0ada]      ; the current cadence state
 ```
 
-`[0x0ada]` is a state vector in the same style as `[0x0298]` and `[0x02d3]`.
+`[0x0ada]` is a state vector of the same type as `[0x0298]` and `[0x02d3]`.
 Its states read the line and branch on one bit:
 
 ```
@@ -40,21 +40,21 @@ Its states read the line and branch on one bit:
 15021  jne  15039
 ```
 
-with debounce counters `[0x0ade]` and `[0x0adf]` compared against a threshold
-held in `[0x0cd2]`, and `0x5bb5` as the reset state. Twenty-seven sites arm the
-vector; the two that start it, `0x0bfe8` and `0x0bff2`, sit in the same module
-as the `CALL PROGRESS` banner. `IDSDL302.ROM` has the same machine with six
-sense sites rather than ten.
+The debounce counters `[0x0ade]` and `[0x0adf]` are compared with a threshold
+in `[0x0cd2]`, and `0x5bb5` is the reset state. Twenty-seven sites arm the
+vector. The two sites that start it, `0x0bfe8` and `0x0bff2`, are in the same module
+as the `CALL PROGRESS` banner. `IDSDL302.ROM` has the same machine, with six
+sense sites and not ten.
 
-This is the signal `daa.py` already models as "ring cadence presented to the
-ring detector on input port 0x14", and it is the one line signal the CPU
-measures for itself.
+`daa.py` already models this signal as "ring cadence presented to the
+ring detector on input port 0x14". It is the one line signal that the CPU
+measures itself.
 
 ### A four-bit part identity - port 0x14 bit 3, clocked on 0x12 and 0x14
 
-`0x287f9` bit-bangs a small serial read. It asserts masks on port `0x12`
-(`0x09`, `0x02`) and port `0x14` (`0x70`, `0x40`, `0x20`, `0x10`), sampling
-port `0x14` bit 3 after each and shifting it into `BX`:
+`0x287f9` does a small serial read with bit-banging. It asserts masks on port `0x12`
+(`0x09`, `0x02`) and port `0x14` (`0x70`, `0x40`, `0x20`, `0x10`). After each mask, it samples
+bit 3 of port `0x14` and shifts it into `BX`:
 
 ```
 2880c  out  0x14, al        ; 0x70 asserted
@@ -67,44 +67,43 @@ port `0x14` bit 3 after each and shifting it into `BX`:
 2888f  mov  al, bl / sar al, 4 / and al, 0x0f              ; the 4-bit value
 ```
 
-Absent returns `0xFF`. The value is stored at `[0x014b]` by the caller at
-`0x28426`, after a table walk indexed through `[0x0156]` against `[0x014c]`.
-Its bits are tested at `0x00595`, `0x005af`, `0x00751`, `0x209d7`, `0x209ea`
-and `0x49b2b` - `test byte [014b], 1` and `, 2` - so the identity selects
-behaviour rather than being merely reported. The second caller, `0x28787`,
-pushes the same value out the 80186 serial port (`[0xff6a]`, spinning on
-`[0xff66] & 8`). `IDSDL302.ROM` carries the identical routine at `0x28765` and
+If the part is absent, the routine returns `0xFF`. The caller at
+`0x28426` stores the value at `[0x014b]`, after a table walk indexed through `[0x0156]` against `[0x014c]`.
+The code tests its bits at `0x00595`, `0x005af`, `0x00751`, `0x209d7`, `0x209ea`
+and `0x49b2b` (`test byte [014b], 1` and `, 2`). Thus, the identity selects
+behaviour. It is not only reported. The second caller, `0x28787`,
+sends the same value out of the 80186 serial port (`[0xff6a]`, with a wait loop on
+`[0xff66] & 8`). `IDSDL302.ROM` contains the identical routine at `0x28765`, and
 a second copy at `0x7d222` in the boot area.
 
 ## What the CPU does not see
 
-No CPU port carries a line level. The detector the dial path waits on is not
-sampled here: it arrives over the ASIC event channel as event `0x08` with a
-data word read from ports `0x5e`/`0x5c`, and the qualification is bit 0 of that
-word's high byte, five consecutive times - see
+No CPU port carries a line level. The code does not sample here the detector for which the dial path waits.
+This detector comes through the ASIC event channel as event `0x08`, with a
+data word read from ports `0x5e`/`0x5c`. The qualification is bit 0 of the high byte of that
+word, five consecutive times. Refer to
 [the ATY diagnostics](at-y-diagnostics.md). Dial tone, ringback, busy and
 answer tone are all recognised on the far side of that channel.
 
-So the split is: **ring sense and part identity are the CPU's; every level and
+Thus, the split is: **ring sense and part identity are the CPU's; every level and
 every call-progress tone is the ASIC's.**
 
 ## What this does not establish
 
-The bit meanings are inferred from how the code uses them, not from a probe.
-"Port `0x14` bit 1 is ring sense" rests on a tick-driven cadence machine with
-debounce counters reading that bit and nothing else, plus the harness's
-existing model; no capture in this repository shows the bit changing while a
-line rings. The same bit number is
-*written* by the serial receive path as CTS flow control, and `panel.py` has
-`CS` measured there - see
+We inferred the bit meanings from how the code uses them. We did not use a probe.
+"Port `0x14` bit 1 is ring sense" has two bases: a cadence machine that a tick controls, with
+debounce counters that read that bit and nothing else, and the existing model of the harness.
+No capture in this repository shows the bit change while a
+line rings. The serial receive path *writes* the same bit number as CTS flow control, and `panel.py` has
+`CS` measured there. Refer to
 [board-verified-403.md](board-verified-403.md#the-ring-is-the-dte-receive-buffer-and-port-0x14-bit-1-is-its-cts).
-That does not contradict this reading: on a latch with independent read and
-write paths the same address carries different signals in each direction, and
-port `0x00` in this firmware is the worked example - `0x33` reads as strapped
-inputs while `0xc4` are outputs. `machine.py` already models `0x14`'s read side
-from the panel and strap inputs rather than from the latch. So bit 1 is
-plausibly CS/CTS out and ring sense in, and the two routines do not conflict. The four-bit read at `0x287f9` is called an identity because it is
-read once, stored, and branched on - the device on the other end of those
-clocks has not been identified, and calling it the DAA rather than an option
-strap or country module is an assumption. Neither routine was executed in the
-emulator for this note; both were read statically from the two images.
+That does not contradict this interpretation. On a latch with independent read and
+write paths, the same address carries different signals in each direction.
+Port `0x00` in this firmware is the example: `0x33` reads as strapped
+inputs, while `0xc4` are outputs. `machine.py` already models the read side of `0x14`
+from the panel and strap inputs, not from the latch. Thus, bit 1 is
+probably CS/CTS out and ring sense in, and the two routines do not conflict. We call the four-bit read at `0x287f9`
+an identity because the firmware reads it one time, stores it, and branches on it. We did not identify the device
+at the other end of those clocks. It is an assumption that it is the DAA and not an option
+strap or a country module. We did not execute these routines in the
+emulator for this note. We read the two statically from the two images.
