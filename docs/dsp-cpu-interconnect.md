@@ -595,7 +595,7 @@ and `A4` high. Thus the two groups cannot collide. In the second group, the
 low nibble separates the ports again.
 
 **The important point is that the ASIC uses `A5` but not `A4`.** This is not a
-random saving. `0x5x` and `0x6x` are different in *both* bits 4 and 5. Thus one
+random decision to use fewer lines. `0x5x` and `0x6x` are different in *both* bits 4 and 5. Thus one
 line separates the banks, and the other line is redundant. A designer who
 connected the gate array to only one of the two lines knew that there were
 exactly two banks to separate. Thus this is positive evidence for the two-bank
@@ -710,52 +710,53 @@ one failed run here:
   reset restores the vector, clears RAM and brings `AT` back as one event.
 ## The retraction: the ASIC is not shown to master the primary serial bus
 
-[second-serial-port.md](second-serial-port.md) argues that the ASIC generates
-`SCLK` and `FS` for the DSP-codec link, and concludes from that that the ASIC
-inserts its own words into `DRR`, making the ring at `0x0bd0` an inbound
-*command* stream the harness has never supplied. **The premise does not hold,
-so neither does the conclusion.**
+[second-serial-port.md](second-serial-port.md) says that the ASIC generates
+`SCLK` and `FS` for the DSP-codec link. From this, it concludes that the ASIC
+puts its own words into `DRR`. Then the ring at `0x0bd0` would be an inbound
+*command* stream that the harness never supplied. **The premise is not true,
+thus the conclusion is also not true.**
 
-The argument needs both devices on that bus to be slaves. For the DSP that is
-read correctly from `SPC = 0x40c8` (`MCM = 0`, `TXM = 0`). For the codec it is
-read from "register 6 = `0x20` puts the AC01 in free-run, and it is wired in
-slave/codec mode". That step is wrong twice over:
+The argument needs the two devices on that bus to be slaves. For the DSP, the
+argument reads this correctly from `SPC = 0x40c8` (`MCM = 0`, `TXM = 0`). For
+the codec, it reads it from "register 6 = `0x20` puts the AC01 in free-run, and
+it is wired in slave/codec mode". That step has two errors:
 
-* **Register 6 carries no master/slave bit.** It is the *digital configuration*
+* **Register 6 has no master/slave bit.** It is the *digital configuration*
   register: free-run, FSD output enable, 16-bit mode, force secondary, software
-  reset, software power-down (datasheet section 2.20.7). The master/slave role
-  is the **`M/S` pin** - Table 2-1, "Master/slave select input. When M/S is
+  reset, software power-down (datasheet section 2.20.7). The **`M/S` pin** sets
+  the master/slave role. Table 2-1 says: "Master/slave select input. When M/S is
   high, the device is the master and when low, it is a slave." Firmware cannot
   set it, and nothing in this repository has measured it.
 * **Free-run does not imply slave/codec mode.** `0x20` is `DS05`, and free-run
-  does exactly one thing: it makes the ADC/DAC conversion rate follow the A and
-  B registers rather than the external frame-sync interval. In codec mode that
-  is a real choice; in stand-alone mode the rate already comes from A and B, so
-  the bit is redundant but harmless. It is consistent with **both** topologies
-  and discriminates neither.
+  does only one thing. It makes the ADC/DAC conversion rate follow the A and
+  B registers, not the external frame-sync interval. In codec mode, that is a
+  real choice. In stand-alone mode, the rate already comes from A and B, thus
+  the bit is redundant but it causes no problem. It agrees with **both**
+  topologies and does not select one of them.
 
-With that premise gone, the textbook topology is fully consistent with every
-firmware fact on record, and it is the one TI's own `slaa006` reference design
-wires: **the AC01 is the stand-alone master, generating `SCLK` and `FS` for a
-slave DSP.** That is also what [ac01-codec-protocol.md](ac01-codec-protocol.md)
-already says ("the AC01 is on the primary port and supplies `SCLK` and `FS`"),
-which `second-serial-port.md` contradicts without noticing.
+Without that premise, the standard topology agrees with all firmware facts
+that we recorded. TI wires this topology in its own `slaa006` reference
+design: **the AC01 is the stand-alone master, and it generates `SCLK` and `FS`
+for a slave DSP.** [ac01-codec-protocol.md](ac01-codec-protocol.md) already says
+the same ("the AC01 is on the primary port and supplies `SCLK` and `FS`").
+`second-serial-port.md` contradicts this, but it does not say so.
 
-There is a second, independent gap in the same argument. Even if the ASIC
-*were* the clock and frame master, that is a **timing** role, not a data role:
-driving `SCLK` and `FS` does not put the master's data on `DIN`/`DOUT`. The
-step from "bus master" to "inserts its own words into `DRR`" does not follow
-either way.
+The same argument has a second, independent gap. If the ASIC *were* the clock
+and frame master, that is a **timing** function, not a data function. When a
+master drives `SCLK` and `FS`, this does not put its data on `DIN`/`DOUT`.
+Thus "bus master" does not lead to "inserts its own words into `DRR`" in either
+case.
 
-So the ring at `0x0bd0` is what it looks like - a codec sample ring - and the
-inbound command path is the mailbox, which is proven and already modelled.
+Thus the ring at `0x0bd0` is what it looks like: a codec sample ring. The
+inbound command path is the mailbox, which is proven and which the emulator
+already models.
 
 ## The codec's control words decode cleanly, and give MCLK
 
-`docs/` now has the TLC320AC01 datasheet, so the six control words this board's
-firmware sends at reset can be read rather than guessed. The secondary-word
-format (section 2.19.1) is two control bits, `R/W`, a 5-bit register address in
-`DS12`-`DS08`, and 8 bits of data:
+`docs/` now has the TLC320AC01 datasheet. Thus we can read the six control
+words that the firmware of this board sends at reset, and it is not necessary
+to guess them. The secondary-word format (section 2.19.1) is two control bits,
+`R/W`, a 5-bit register address in `DS12`-`DS08`, and 8 bits of data:
 
 | word | register | data |
 |---|---|---|
@@ -766,34 +767,36 @@ format (section 2.19.1) is two control bits, `R/W`, a 5-bit register address in
 | `0505` | 5, analog configuration | 5 |
 | `0620` | 6, digital configuration | `0x20` = free-run |
 
-The decode checks out against the part's own rate equation,
-`fs = MCLK / (A x 2 x B)`, which with A = 10 and B = 20 gives exactly
-**7200 Hz** - the dial path's measured rate - and with the B = 19 and B = 18
-that [codec-rate-312.md](codec-rate-312.md) finds the V.34 path selecting,
-exactly **7578.95 Hz** and **8000 Hz**. Three independent rates land on their
-known values from one constant:
+The decode agrees with the rate equation of the part,
+`fs = MCLK / (A x 2 x B)`. With A = 10 and B = 20, it gives exactly
+**7200 Hz**, which is the measured rate of the dial path.
+[codec-rate-312.md](codec-rate-312.md) finds that the V.34 path selects B = 19
+and B = 18. These give exactly **7578.95 Hz** and **8000 Hz**. Thus three
+independent rates agree with their known values from one constant:
 
-> **MCLK = 2.880 MHz**, which is the board's 40.320 MHz oscillator divided by
-> exactly **14**.
+> **MCLK = 2.880 MHz**, which is the 40.320 MHz oscillator of the board divided
+> by exactly **14**.
 
-That is a new datum. It also says where MCLK comes from: the AC01's `MCLK` is
-an input in every mode, there is one can on the board, and the ASIC is the only
-part that could divide it - so the ASIC supplies the codec's master clock
-whether or not it supplies its shift clock.
+That is a new datum. It also shows where MCLK comes from. The `MCLK` of the
+AC01 is an input in all modes, and the board has one oscillator can. The ASIC
+is the only part that could divide it. Thus the ASIC supplies the master clock
+of the codec, independent of whether it supplies the shift clock.
 
-Note also that **registers 7 and 8 are never programmed**. Register 8 is the
-frame-sync number, which a master device needs in order to know how many slaves
-are chained, and register 7 is the frame-sync delay, which "must be the last
-register programmed when using slave devices". Their absence rules out
-*master-with-slaves*, leaving stand-alone or codec mode - which is as far as
-the firmware can take this. Settling it needs one look at the `M/S` pin.
+Also, **the firmware never programs registers 7 and 8**. Register 8 is the
+frame-sync number. A master device needs it to know how many slaves are in the
+chain. Register 7 is the frame-sync delay, which "must be the last
+register programmed when using slave devices". Because these registers are not
+programmed, *master-with-slaves* is not possible. Stand-alone mode or codec
+mode remain, and the firmware cannot give more data than this. One look at the
+`M/S` pin is necessary to decide.
 
 ## The live blocker, and a lead that does not work yet
 
-What actually stops the two processors talking is not the topology. It is that
-the DSP's mailbox poll almost never runs. The poll is in the block at `0x80c8`
-(program `0x00c8`; this file uses the `+0x8000` convention), and the main loop
-reaches it only when `cmpr eq` matches `AR7` against `ARCR`:
+The topology is not what stops the communication between the two processors.
+The cause is that the mailbox poll of the DSP almost never runs. The poll is in
+the block at `0x80c8` (program `0x00c8`. This file uses the `+0x8000`
+convention). The main loop gets to it only when `cmpr eq` finds that `AR7` is
+equal to `ARCR`:
 
 ```
 80d0  0010           lar     ar0, @10     ; @10 under DP=7 is 0x0390
@@ -801,64 +804,67 @@ reaches it only when `cmpr eq` matches `AR7` against `ARCR`:
 80d2  e100 80c8      bcnd    80c8, tc
 ```
 
-`AR7` is the ring pointer - `0x802e` sets `CBCR = 0x00ef`, selecting `AR7` for
-circular buffer 1 with `CBSR1 = 0x0bd0` and `CBER1 = 0x0bdf` - and data `0x0390`
-is the ring **write** pointer the serial ISR maintains at `0x8191`/`0x81a1`. So
-the compare wants to be a ring rendezvous, and any `ARCR` inside the ring makes
-the mailbox poll run once per pass.
+`AR7` is the ring pointer. `0x802e` sets `CBCR = 0x00ef`, which selects `AR7` for
+circular buffer 1 with `CBSR1 = 0x0bd0` and `CBER1 = 0x0bdf`. Data `0x0390`
+is the ring **write** pointer that the serial ISR keeps at `0x8191`/`0x81a1`.
+Thus the compare is intended as a ring rendezvous. Any `ARCR` value in the ring
+makes the mailbox poll run once on each pass.
 
-In the emulator `ARCR` instead holds `0xec3e`, a **program** address left by the
-table walk at `0x9644` - the only `samm @19` in the resident - so the compare
-never matches and 87 delivered messages overwrite each other unconsumed.
+But in the emulator, `ARCR` holds `0xec3e`. This is a **program** address that
+the table walk at `0x9644` leaves there. That walk has the only `samm @19` in
+the resident. Thus the compare never matches, and 87 delivered messages
+overwrite each other before the DSP reads them.
 
 ### The lead: PMST.NDX, which is real but does not fit
 
-The `lar ar0, @10` immediately before each `cmpr eq` is pointless if the compare
-reads `ARCR`, and the idiom appears at three sites (`0x80d0`, `0x8105`,
-`0x810d`). SPRU056D explains why it would not be pointless - PMST bit 2, `NDX`:
+The `lar ar0, @10` immediately before each `cmpr eq` has no purpose if the
+compare reads `ARCR`. The idiom is at three sites (`0x80d0`, `0x8105`,
+`0x810d`). SPRU056D explains why it could have a purpose. The cause is PMST
+bit 2, `NDX`:
 
 > *(LAR instruction reference, page 6-124)* "You can maintain software
 > compatibility with the 'C2x by clearing the NDX bit. This causes any 'C2x
 > instruction that loads auxiliary register 0 (AR0) to load the auxiliary
 > register compare register (ARCR) and index register (INDX) also."
 
-Table 4-3 agrees, and gives the reset value as 0. And this firmware **clears
-`NDX` explicitly**, at `0x8012`: `apl @07, #07f8` masks off bits 0, 1 and 2, and
-the following `opl @07, #00b0` sets only bits 4, 5 and 7. So on paper every
-`lar ar0` should be writing `ARCR` with the ring write pointer, and the core
-implements none of it: `m_pmst.ndx` is parsed and stored in
-`native/c5x_core.cpp`, and then read nowhere except to reconstruct the register.
+Table 4-3 agrees, and gives the reset value as 0. This firmware **clears
+`NDX` explicitly** at `0x8012`. `apl @07, #07f8` clears bits 0, 1 and 2, and
+the next `opl @07, #00b0` sets only bits 4, 5 and 7. Thus, in theory, each
+`lar ar0` writes the ring write pointer to `ARCR`. The core implements none of
+this. `native/c5x_core.cpp` parses and stores `m_pmst.ndx`, but it reads the
+value only to make the register again.
 
-Implementing it does produce exactly the predicted state - `ARCR` becomes
-`0x0bdc`, inside the ring - **and it breaks the firmware**. `INDX` takes the
-same value, and a stride of 3036 corrupts all 317 `*0+`/`*0-` indexed-addressing
-sites in the resident; the DSP stops reaching its main loop and the codec goes
-undriven (`dxr_writes` 17,931 → 15). Restricting the side effect to `ARCR`
-alone, or to the direct/indirect `LAR` encoding alone, does not rescue it.
+If we implement it, we get exactly the predicted state: `ARCR` becomes
+`0x0bdc`, in the ring. **But this breaks the firmware.** `INDX` gets the same
+value. A stride of 3036 corrupts all 317 `*0+`/`*0-` indexed-addressing sites
+in the resident. The DSP does not get to its main loop, and nothing drives the
+codec (`dxr_writes` 17,931 → 15). The firmware also fails if we apply the side
+effect only to `ARCR`, or only to the direct/indirect `LAR` encoding.
 
-So the change was **reverted**, and the position is:
+Thus we **reverted** the change. The position is:
 
-* the mechanism is real and documented, and it is the only thing found so far
-  that would leave a ring address in `ARCR`;
-* the firmware clears `NDX`, which by the datasheet's own table *enables* the
-  side effect;
-* but a firmware that ran on real hardware cannot tolerate the side effect as
-  the datasheet describes it.
+* The mechanism is real and documented. It is the only mechanism that we found
+  that would put a ring address in `ARCR`.
+* The firmware clears `NDX`. The table of the datasheet says that this
+  *enables* the side effect.
+* But this firmware ran on real hardware, and it cannot operate with the side
+  effect that the datasheet describes.
 
-One of those three has to give. Worth noting that SPRU056D contradicts itself on
-the polarity - the prose at section 3.5 says the side effect happens when NDX is
-**set**, the LAR page and Table 4-3 say when it is **clear** - so the document is
-not a reliable arbiter here, and the part's actual behaviour is the open
-question. The cheap decider is a hardware probe: a kernel that clears `NDX`,
-does `lar ar0, #1234`, and mails back `ARCR` and `INDX`.
+One of these three items must be wrong. Also, SPRU056D contradicts itself on
+the polarity. The text in section 3.5 says that the side effect occurs when NDX
+is **set**. The LAR page and Table 4-3 say that it occurs when NDX is
+**clear**. Thus the document cannot reliably decide this question, and the
+actual behavior of the part is the open question. A hardware probe is the easy
+test that decides: a kernel that clears `NDX`, does `lar ar0, #1234`, and sends
+back `ARCR` and `INDX`.
 
 ## The channel is interrupt-driven, and the harness invents the interrupt
 
-Everything above is about the *ports*. This is about the line that says *when*,
-and it is the part the harness does not model.
+All the sections above are about the *ports*. This section is about the line
+that gives the *time*. The harness does not model this part.
 
-On the 403 board, IVT vector `0x0c` - INT0, an external pin - reads
-`8f46:0000`, and that address is the entire DSP-to-CPU path:
+On the 403 board, IVT vector `0x0c` (INT0, an external pin) reads
+`8f46:0000`, and that address is the full DSP-to-CPU path:
 
 ```
 8f46:0000  fb        sti
@@ -878,29 +884,30 @@ On the 403 board, IVT vector `0x0c` - INT0, an external pin - reads
            e61c      out  0x1c, al
 ```
 
-**Nothing in the image calls or jumps to that address.** A search of all 512 KiB
-for a near call, a near jump, a far call and for the bare word `0000` paired
-with segment `8f46` finds no reference at all: the handler is only ever entered
-through the vector. So every message either processor ever receives is one entry
-to this interrupt, and the "supervisor never pops" symptom is a statement about
-an interrupt line, not about a polling loop.
+**No code in the image calls or jumps to that address.** We searched all 512
+KiB for a near call, a near jump, a far call and the bare word `0000` with
+segment `8f46`. We found no reference. Only the vector starts the handler.
+Thus each message that the two processors receive is one entry to this
+interrupt. The "supervisor never pops" symptom is about an interrupt line, not
+about a polling loop.
 
-A second, near-identical copy sits at `8f46:0939` (file `0xfd99`) and masks to
-`7` rather than `3`, adding a bit-2 branch that `lcall 8000:067b`. It is
-likewise unreferenced. Which of the two a given firmware state vectors is not
-established here; the run measured below enters the one at offset zero.
+A second copy, almost the same, is at `8f46:0939` (file `0xfd99`). It masks to
+`7`, not `3`, and it adds a bit-2 branch that does `lcall 8000:067b`. No code
+refers to it either. We did not find which of the two handlers the vector
+points to in each firmware state. The run that we measured below enters the
+handler at offset zero.
 
 ### What the harness does instead
 
-[machine.py:1565](../courier_emu/machine.py:1565) raises vector `0x0c` whenever
-`FRAME_INSTRUCTIONS` have elapsed since the last one, and
-[machine.py:523](../courier_emu/machine.py:523) says why in as many words:
+[machine.py:1565](../courier_emu/machine.py:1565) raises vector `0x0c` each time
+that `FRAME_INSTRUCTIONS` have elapsed since the last one.
+[machine.py:523](../courier_emu/machine.py:523) gives the reason directly:
 "Nothing on the CPU side produces that edge, so a ROM run has to stand in for it
-the way it already stands in for the tick." On the board the ASIC drives that
-pin from mailbox state. In the harness it free-runs.
+the way it already stands in for the tick." On the board, the ASIC drives that
+pin from the mailbox state. In the harness, it runs freely.
 
-Measured on the failing 403 plain dial, with `--trace-pc` on each branch of the
-handler:
+We measured this on the 403 plain dial that fails, with `--trace-pc` on each
+branch of the handler:
 
 ```sh
 ./courier run artifacts/courier-board-21210-capture-403/courier-board.rom \
@@ -919,70 +926,74 @@ handler:
 | `dsp_originated_messages` | 28 |
 | reads of `0x5c`/`0x5e` | 28 each |
 
-12,809 interrupts to carry 34 events. Every one of the other 12,775 re-reads a
-status the ASIC never asserted and re-acks it by writing it back to `0x1c`.
+12,809 interrupts to carry 34 events. Each of the other 12,775 reads a
+status that the ASIC never asserted, and acknowledges it again when it writes
+it back to `0x1c`.
 
-The tag the handler reads says the same thing more sharply. Across the 57 calls
-to `[0x192]`, the word taken from `0x5a`/`0x58` is:
+The tag that the handler reads shows the same problem more clearly. In the 57
+calls to `[0x192]`, the word from `0x5a`/`0x58` is:
 
     0008   28 times    the resident's messages, all of them
     0000   29 times    an empty lane
 
-So the 28 real messages do arrive, and the free-running edge manufactures 29
-more receive cycles on top of them, each one reading a mailbox with nothing in
-it and dispatching on a tag of zero. The channel is not silent in the harness;
-it is being driven at random against a request line nobody is asserting.
+Thus the 28 real messages arrive. But the free-running edge also makes 29 more
+receive cycles. Each of these cycles reads an empty mailbox and dispatches on a
+tag of zero. The channel is not silent in the harness. The harness drives it
+randomly against a request line that nobody asserts.
 
-This does not by itself prove the free-running edge is what breaks the 403 dial.
-It does mean the harness has never had a faithful version of the one event the
-whole channel is built on.
+This alone does not prove that the free-running edge causes the 403 dial to
+fail. But it shows that the harness never had a correct model of the one event
+that the full channel uses.
 
 ### Measured: the edge free-runs at 2.4 kHz, and the reply cadence is 20 ms
 
-**Run on hardware, 2026-09-09**, `artifacts/coop-int0-01` and `-02`: the board
-at `/dev/cu.usbserial-11420`, ID_SDL 4.03d, supervisor 7.4.16, DSP 3.1.2, a line
-in the jack, stimulus a bare `ATD` held 6 s and then aborted (`NO CARRIER`).
+**Run on hardware, 2026-09-09**, `artifacts/coop-int0-01` and `-02`. The board
+was at `/dev/cu.usbserial-11420`, ID_SDL 4.03d, supervisor 7.4.16, DSP 3.1.2,
+with a line in the jack. The stimulus was a bare `ATD`, held for 6 s and then
+aborted (`NO CARRIER`).
 
     interrupts            15,868 in 6.61 s   =  2,401 / s
     0x1c = fd             1,895 of the last 1,920 entries
     0x1c = ff                25 of them
     0x1e = ff             1,920 of 1,920
 
-**The first claim above is wrong and is withdrawn.** The ASIC does *not* assert
-this pin from mailbox state. It free-runs, at 2,401 Hz, and the handler polls
-`0x1c` on every one of them - which is why `0x1c` reads `fd` for 98.7% of the
-entries: bit 0 standing, bit 1 clear, nothing to do. The harness standing in for
-the edge with a periodic one is therefore right *in kind*, and the paragraph
-saying the board would settle whether it is event-driven has been answered
-against the hypothesis that prompted it.
+**The first claim above is wrong, and we withdraw it.** The ASIC does *not*
+assert this pin from the mailbox state. The pin runs freely at 2,401 Hz, and
+the handler polls `0x1c` on each interrupt. This is why `0x1c` reads `fd` for
+98.7% of the entries: bit 0 is set, bit 1 is clear, and there is no work. Thus
+the harness is correct *in kind* when it uses a periodic edge. A paragraph said
+that the board would show if the edge is event-driven. The board answered
+that question, and the answer is against the hypothesis that caused the
+question.
 
-What the harness has wrong is the rate, and it is wrong the opposite way to what
-"12,809 interrupts to carry 34 events" suggested. That run covers 6,858 ticks of
-5 ms - 34.3 s of emulated time - so it raises **373 INT0 per second** against the
-board's 2,401. The harness's mailbox is not being hammered; it is being serviced
-**six times too slowly**.
+The harness has the rate wrong, and it is wrong in the opposite direction to
+what "12,809 interrupts to carry 34 events" suggested. That run covers 6,858
+ticks of 5 ms, which is 34.3 s of emulated time. Thus it raises **373 INT0 per
+second**, and the board raises 2,401. The harness does not service its mailbox
+too frequently. It services it **six times too slowly**.
 
-And the part that is genuinely a signal is bit 1:
+The part that is really a signal is bit 1:
 
     entries between consecutive 0x1c = ff, in order:
     48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 48 58 81
 
-Twenty-two consecutive intervals of exactly 48 interrupts. At 2,401 Hz that is
-**20.0 ms**, a 50 Hz report from the DSP held to the sample, with the last two
-intervals stretching as the dial is aborted and the loop released. The earlier
-capture, whose ring stopped when full and so holds the *first* 0.8 s after
-arming - before the hook closes - shows `0x1c` flat at `fd` with no bit 1 at
-all. So the cadence is not free-running with the interrupt: it starts with the
-seizure.
+There are twenty-two consecutive intervals of exactly 48 interrupts. At
+2,401 Hz, that is **20.0 ms**. It is a 50 Hz report from the DSP, accurate to
+the sample. The last two intervals become longer when the dial is aborted and
+the loop is released. The earlier capture had a ring that stopped when it was
+full. Thus it holds the *first* 0.8 s after the stub was armed, before the hook closes. In
+that capture, `0x1c` stays at `fd`, with no bit 1. Thus the cadence does not
+run freely with the interrupt. It starts with the seizure.
 
-That is the shape the harness has to produce, and it is a much more specific
-target than "the resident should report something": a message every 20 ms for as
-long as the loop is off hook, against 28 heartbeats 70 ms apart that nothing
-consumes.
+The harness must produce that shape. It is a much more specific target than
+"the resident should report something". The target is a message every 20 ms
+while the loop is off hook. Now the harness has 28 heartbeats at 70 ms
+intervals, and nothing reads them.
 
 ### And the harness cannot yet run at that rate
 
-Setting the edge to the measured 2,401 Hz **breaks the one path that worked**:
+If we set the edge to the measured 2,401 Hz, **the one path that worked
+breaks**:
 
 | | 391 Hz (default) | 2,401 Hz (measured) |
 |---|---|---|
@@ -991,7 +1002,8 @@ Setting the edge to the measured 2,401 Hz **breaks the one path that worked**:
 | DSP-originated messages | 389 | 389 |
 | 403 plain | `""`, idle | `""`, idle |
 
-The reason is in the handler's own tail. It does not end at the acknowledgement:
+The cause is in the last part of the handler. The handler does not stop at the
+acknowledgement:
 
 ```
 00f4d8  e8155b        call 0x14ff0
@@ -1002,22 +1014,22 @@ The reason is in the handler's own tail. It does not end at the acknowledgement:
 00f4e9  ff0e3401      dec  word ptr [0x134]
 ```
 
-Unconditionally, on every entry. **This interrupt is the firmware's fine
-timebase**, so raising it six-fold makes every countdown it drives elapse six
-times faster in emulated time, and the dial emits 5.7x the tone blocks while the
-exchange decodes no digits from any of them.
+This code runs on each entry, without a condition. **This interrupt is the fine
+timebase of the firmware.** Thus, if the rate increases six times, each
+countdown that it drives elapses six times faster in emulated time. The dial
+sends 5.7x the tone blocks, and the exchange decodes no digits from them.
 
-Both numbers cannot be right, and the board is not the thing that is wrong - the
-same firmware dials on it, at 2,401 Hz, with the same `dec [0x134]` running. So
-the harness holds a *second* error that 391 Hz was quietly compensating for,
-somewhere between this countdown chain and the codec-sample clock the exchange
-measures digit lengths in. Finding it is the next piece of work, and it is now a
-bounded question rather than a guess: something in the harness is six times out
-against a rate that is no longer in doubt.
+The two numbers cannot both be correct, and the board is not the item that is
+wrong. The same firmware dials on the board at 2,401 Hz, with the same
+`dec [0x134]`. Thus the harness has a *second* error, and the 391 Hz rate hid
+it. This error is between this countdown chain and the codec-sample clock that
+the exchange uses to measure digit lengths. The next task is to find it. It is
+now a bounded question, not a guess: one item in the harness is wrong by a
+factor of six against a rate that is now certain.
 
-Until then the default stays at `MODELLED_FRAME_HZ = 391`, which is the rate the
-rest of the harness is consistent with, and `--frame-hz` reproduces the
-comparison in one flag:
+Until then, the default stays at `MODELLED_FRAME_HZ = 391`. The other parts of
+the harness agree with this rate. `--frame-hz` gives the comparison again with
+one flag:
 
 ```sh
 ./courier run IDSDL302.ROM --with-dsp --exchange \
@@ -1026,95 +1038,99 @@ comparison in one flag:
     --summary --frame-hz 2401
 ```
 
-Keeping the wrong rate as the default is a deliberate choice and worth naming as
-one: the alternative is a harness that is faithful about this interrupt and
-cannot complete a call, which would trade a known-wrong number for a broken
-bench.
+We keep the wrong rate as the default on purpose, and we record this decision.
+The alternative is a harness that is correct about this interrupt but cannot
+complete a call. That would replace a number that we know is wrong with a test
+bench that does not work.
 
-`0x1e` never moved, in either capture. Whatever the handler's `mov ah, al` is
-carrying, it is not carrying it here.
+`0x1e` did not change in the two captures. The `mov ah, al` of the handler
+carries some value, but it does not carry it here.
 
 ### How it was measured
 
-`courier_emu.cooperative_probe --hook int0` chains this vector the way the INT3
-mode chains the tick, and the trick is cheaper here: the original offset is
-**zero**, so the segment `0x01a0` puts the stub at `0x1a00` - the bottom of the
-`0x1600`-`0x2b00` region that survives `AT&T8`, with the whole gap to the live
-firmware data at `0x1aab` free for its 42 bytes. One word arms it, the same word
-disarms it, and there is no intermediate state.
+`courier_emu.cooperative_probe --hook int0` chains this vector in the same way
+that the INT3 mode chains the tick. Here the method is easier. The original
+offset is **zero**, thus the segment `0x01a0` puts the stub at `0x1a00`. That is
+the bottom of the `0x1600`-`0x2b00` region that `AT&T8` does not erase. The full
+gap up to the live firmware data at `0x1aab` is free for its 42 bytes. One word
+arms the stub, the same word disarms it, and there is no intermediate state.
 
-It records `0x1e` and `0x1c` - in the handler's own order, so the columns compare
-directly against the `and ax,3` it performs on them - and then `jmp far
-8f46:0000`, so the firmware services the interrupt exactly as if it had been
-entered directly. That yields the real edge *rate* and the real status *at* each
-edge, which are the two numbers the harness is currently inventing.
+The stub records `0x1e` and `0x1c` in the order that the handler uses. Thus you
+can compare the columns directly with the `and ax,3` that the handler does on
+them. Then it does `jmp far
+8f46:0000`, thus the firmware services the interrupt exactly as if the vector
+had started it directly. This gives the real edge *rate* and the real status
+*at* each edge. These are the two numbers that the harness now invents.
 
-The mailbox lanes `0x58`-`0x62` are refused in this mode. Elsewhere sampling them
-only might race the firmware; inside INT0 it certainly does, because the handler
-this stub runs in front of is about to read exactly those, and a byte taken here
-is a byte it does not get.
+This mode refuses the mailbox lanes `0x58`-`0x62`. In other modes, a sample of
+these lanes can possibly race the firmware. In INT0 it certainly races the
+firmware, because the handler after this stub reads exactly those lanes. If
+the stub reads a byte, the handler does not get that byte.
 
-`courier_emu.cooperative_run` drives the whole sequence on the board - identity,
-vector check, place, verify, arm, stimulus, disarm, read out - with the disarm in
-a `finally`. Two things the first hardware run taught it:
+`courier_emu.cooperative_run` drives the full sequence on the board: identity,
+vector check, place, verify, arm, stimulus, disarm, read out. The disarm is in
+a `finally`. The first hardware run taught it two things:
 
-* **The ring must wrap.** Stopping when full keeps the *oldest* entries, and at
-  2,401 Hz a 1,920-entry ring is 0.8 s: `coop-int0-01` filled before the hook
-  even closed and recorded 1,920 samples of an idle mailbox. Wrapping keeps the
-  newest, and a wrap counter beside the pointer turns "at least capacity" into
-  the exact interrupt count, which is what makes the 2,401 Hz figure available
-  at all.
-* **A filled ring is a lower bound on nothing else.** 15,868 interrupts were
-  taken and 1,920 kept. The 20 ms cadence is measured across the kept window and
-  is not evidence about the 15.6 s of interrupts that fell out of it.
+* **The ring must wrap.** If the ring stops when it is full, it keeps the
+  *oldest* entries. At 2,401 Hz, a 1,920-entry ring is 0.8 s. `coop-int0-01`
+  became full before the hook closed, and it recorded 1,920 samples of an idle
+  mailbox. A ring that wraps keeps the newest entries. A wrap counter adjacent
+  to the pointer changes "at least capacity" into the exact interrupt count.
+  This is why the 2,401 Hz value is available.
+* **A full ring is not a lower bound on other items.** The handler took 15,868
+  interrupts, and the ring kept 1,920. We measured the 20 ms cadence across the
+  kept window. It is not evidence about the 15.6 s of interrupts that are not in
+  the window.
 
 ## What the hardware does during a dial-tone wait: almost nothing
 
-`artifacts/coop-int0-cells-01` and `-02`, on the live 403 board, 2026-09-09. The
-INT0 hook again, but sampling **RAM cells** rather than ports: the 403 handler
-caches the word it is about to hand the DSP at `[0x183]`/`[0x184]` before it
-writes `0x58`-`0x5e`, and a co-resident `mov al,[imm16]` cannot disturb a cached
-word the way an `in` disturbs a mailbox lane. Stimulus was a bare `ATD` on a
-connected line, which found dial tone and ran on to `NO CARRIER`.
+`artifacts/coop-int0-cells-01` and `-02`, on the live 403 board, 2026-09-09.
+This is the INT0 hook again, but it samples **RAM cells**, not ports. The 403
+handler caches the word for the DSP at `[0x183]`/`[0x184]` before it writes
+`0x58`-`0x5e`. A co-resident `mov al,[imm16]` cannot disturb a cached word in
+the way that an `in` disturbs a mailbox lane. The stimulus was a bare `ATD` on
+a connected line. It found dial tone and continued to `NO CARRIER`.
 
 | | window | `7f3f` | `013f` |
 |---|---|---|---|
 | `-01`, non-wrapping | first 0.80 s: the seizure | 1,917 | **3** |
 | `-02`, wrapping | last 0.80 s: after dial tone, into the carrier wait | 1,918 | **2** |
 
-`0x7f3f` is the handler's own idle sentinel - `mov ax, 0x7f3f ; xchg [0x183], ax`
-- so it means "nothing to send". Everything else the supervisor put on the
-mailbox across an entire dial is **`0x013f`, five words, in single-interrupt
-blips**. No burst at the seizure, none when dial tone was found, none entering
-the carrier wait.
+`0x7f3f` is the idle sentinel of the handler (`mov ax, 0x7f3f ; xchg [0x183], ax`).
+Thus it means "nothing to send". The only other value that the supervisor put
+on the mailbox during a full dial is **`0x013f`, five words, each for one
+interrupt only**. There is no burst at the seizure, no burst when it found dial
+tone, and no burst when it started the carrier wait.
 
-`-02` also reconfirms the interrupt rate independently: 8,680 interrupts over
-3.62 s is **2,397.8 Hz**, against the 2,401 measured in `coop-int0-02`, which is
+`-02` also confirms the interrupt rate independently. 8,680 interrupts in
+3.62 s is **2,397.8 Hz**. `coop-int0-02` measured 2,401, thus the difference is
 0.1%.
 
 ### Which settles where the dial-tone report comes from
 
-**The supervisor does not arm anything.** The hypothesis that a detector has to
-be told to listen, and that the harness's supervisor gives up before telling it,
-is wrong in both halves: there is no arming command on the board, and the
-harness already sends the same traffic. On the failing `ATX2` dial the emulated
-supervisor puts **six** words through this path - five `013f` and one `1500` -
-which is the board's own behaviour, slightly more of it.
+**The supervisor does not arm anything.** The hypothesis had two parts: a
+detector must get a command to listen, and the supervisor of the harness stops
+before it sends that command. Both parts are wrong. No command arms a detector
+on the board, and the harness already sends the same traffic. On the `ATX2`
+dial that fails, the emulated supervisor sends **six** words through this path:
+five `013f` and one `1500`. That is the behavior of the board, with slightly
+more of it.
 
-So the CPU-to-DSP direction is faithful, and it is not where the dial tone is
-lost. Whatever tells the supervisor that dial tone was found travels **DSP to
-CPU**, which is the direction whose 20 ms reply cadence was measured earlier and
-which nothing in the harness consumes.
+Thus the CPU-to-DSP direction is correct, and the dial tone is not lost there.
+The data that tells the supervisor that the DSP found dial tone goes **DSP to
+CPU**. We measured the 20 ms reply cadence of that direction above, and nothing
+in the harness reads it.
 
 ### And that leaves one gap, in the resident rather than the plumbing
 
-The real 3.1.2 hears dial tone and its board proceeds. The emulated 3.1.2, given
-a known tone through the codec's serial port with everything else held identical,
-[says exactly what it says to silence](board-verified-403.md#answered-the-tone-was-wrong-and-the-resident-does-detect)
-- 134 messages, the same three tags, the same `drr_reads`.
+The real 3.1.2 hears dial tone, and its board continues. We gave the emulated
+3.1.2 a known tone through the serial port of the codec and kept all other
+items the same. It
+[says exactly what it says to silence](board-verified-403.md#answered-the-tone-was-wrong-and-the-resident-does-detect):
+134 messages, the same three tags, the same `drr_reads`.
 
-Both ends of the supervisor's side are now accounted for: it sends what the
-board sends, and it waits for a report the board's DSP evidently produces. The
-remaining difference is what the emulated resident *does* with audio it
-demonstrably receives, which is a question about the C52 core and the resident's
-own detector, not about the mailbox.
+Now we know the two ends of the supervisor side. It sends what the board
+sends, and it waits for a report that the DSP of the board clearly produces.
+The difference that remains is what the emulated resident *does* with audio that
+it clearly receives. That is a question about the C52 core and the detector of
+the resident, not about the mailbox.
