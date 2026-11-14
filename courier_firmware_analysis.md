@@ -1826,25 +1826,25 @@ completely.
 
 ## How the DSP is loaded and run
 
-Established 2026-09-05 by diffing the two board captures (`artifacts/
-courier-board-21210-capture-01`, supervisor 7.3.14 / DSP 3.0.13, against
-`-capture-403`, 7.4.16 / 3.1.2) and disassembling the supervisor with capstone in
-16-bit mode. The diff is what makes this checkable: the DSP payload start moved
-`0x29080` -> `0x29140` between the two, so every constant that points at DSP code
-had to move with it, and each one below does.
+We found this on 2026-09-05. We made a diff of the two board captures (`artifacts/
+courier-board-21210-capture-01`, supervisor 7.3.14 / DSP 3.0.13, and
+`-capture-403`, 7.4.16 / 3.1.2), and we disassembled the supervisor with capstone in
+16-bit mode. The diff makes it possible to check the results. The start of the DSP payload moved from
+`0x29080` -> `0x29140` between the two. Thus each constant that points to DSP code
+must also move, and each constant below does move.
 
-**Segment `0x8000` maps linearly to physical `0x80000`, i.e. file offset 0.** So
-`8000:e447` is file `0xe447`. This resolves the "segment 0x8000 does not map
-linearly" note elsewhere in this file for the DSP loader at least.
+**Segment `0x8000` maps linearly to physical `0x80000`, that is file offset 0.** Thus
+`8000:e447` is file `0xe447`. This answers the "segment 0x8000 does not map
+linearly" note at other locations in this file, at least for the DSP loader.
 
 ### The loader routines
 
-File offsets; in 7.4.16 the whole block shifted **`+0x30`**.
+These are file offsets. In 7.4.16, the full block moved **`+0x30`**.
 
 | routine | 7.3.14 | 7.4.16 | job |
 |---|---|---|---|
 | `dsp_bootstrap` | `0xe370` | `0xe3a0` | `fff8` request, 8x `0x0083` window words, strobes 1 then 2 |
-| `dsp_reset_entry` | `0xe3aa` | `0xe3da` | latch an address, pulse reset, poll for the DSP's ack |
+| `dsp_reset_entry` | `0xe3aa` | `0xe3da` | latch an address, pulse reset, poll for the ack from the DSP |
 | `dsp_checksum` | `0xe447` | `0xe477` | 16-bit word sum of a payload range |
 | `dsp_dl_win40` | `0xe46e` | `0xe49e` | bulk downloader, window `0x40` (**no callers**) |
 | `dsp_dl_win50` | `0xe47b` | `0xe4ab` | bulk downloader, window `0x50` |
@@ -1853,8 +1853,8 @@ File offsets; in 7.4.16 the whole block shifted **`+0x30`**.
 
 ### Cold boot
 
-Three sites do this (`0x47b`, `0x4ac`, and the reinit path at `0x7516`/`0x7567`),
-all with identical immediates:
+Three sites do this (`0x47b`, `0x4ac`, and the reinit path at `0x7516`/`0x7567`).
+All three use identical immediates:
 
 ```asm
 call dsp_bootstrap
@@ -1865,27 +1865,27 @@ mov  cx, 0xdd4e        ; source end   (0xd87c in 7.3.14)
 call dsp_dl_win50
 ```
 
-`dsp_checksum`/`dsp_dl_*` treat `ax`/`cx` as byte offsets and derive the word
-count as `(cx-ax)/2`. Note `mov ax, 0` disassembles as `ax, 0`, not `ax, 0x0` — a
-filter that only accepts `0x`-prefixed immediates silently picks up the *entry
-address* from two instructions earlier and yields a wrong source base. That
-mistake was made and caught during this analysis.
+`dsp_checksum`/`dsp_dl_*` use `ax`/`cx` as byte offsets and calculate the word
+count as `(cx-ax)/2`. Note: `mov ax, 0` disassembles as `ax, 0`, not `ax, 0x0`. A
+filter that accepts only immediates with a `0x` prefix gets the *entry
+address* from two instructions before, without a warning, and gives an incorrect source base.
+We made that error during this analysis, and we found it.
 
 ### The overlay descriptor table
 
-`overlay_dispatch` indexes the table by the **low nibble of the request byte at
-`[0xe3c]`**, stride 6:
+`overlay_dispatch` uses the **low nibble of the request byte at
+`[0xe3c]`** as the table index, with stride 6:
 
 | field | meaning |
 |---|---|
-| `+0` | source start offset within the overlay's segment |
+| `+0` | source start offset in the segment of the overlay |
 | `+2` | source end offset; word count = `(end - start) / 2` |
 | `+4` | **DSP destination word address** |
 
 The source segment comes from a hardcoded compare chain immediately before the
-table: indices 6, 7 and 8 each carry their own segment, anything else falls
-through to the DSP base segment. Entries 0-4 are zeroed and 9-15 are past the end
-of the real table (they decode as garbage — the table is 9 entries, 54 bytes).
+table. Indices 6, 7 and 8 each have their own segment. All other indices use
+the DSP base segment. Entries 0-4 are zero, and 9-15 are after the end
+of the real table (they decode as garbage. The table has 9 entries, 54 bytes).
 
 **The map, 7.4.16** (7.3.14 in parentheses where it differs):
 
@@ -1896,53 +1896,53 @@ of the real table (they decode as garbage — the table is 9 entries, 54 bytes).
 | 7 | `bd10` (`bc2f`) | `0x3d100-0x40b94` | 7498 (7499) | `0xb000-0xcd49` |
 | 8 | `c0ba` (`bfd9`) | `0x40ba0-0x44634` | 7498 (7350) | `0xdc00-0xf949` |
 
-Entry 5 is the resident kernel — its three fields reproduce the cold-boot
-immediates exactly, so **the cold boot is just overlay 5 pushed through the other
-transfer engine**. Overlays 6, 7 and 8 are demand-loaded and deliberately overlap
-the resident range; overlay 8 overlays the top of the kernel from `0xdf70` up and
-extends past its end.
+Entry 5 is the resident kernel. Its three fields are exactly the cold-boot
+immediates. Thus **the cold boot is only overlay 5, sent through the other
+transfer engine**. The code loads overlays 6, 7 and 8 on demand. They overlap
+the resident range intentionally. Overlay 8 overlays the top of the kernel from `0xdf70` and up, and
+continues after its end.
 
-Requesting overlay **6 chains to 8**: the dispatcher loads 6, then writes `8` to
-`[0xe3c]` and falls back into the loader, so those two always arrive as a pair.
+A request for overlay **6 chains to 8**. The dispatcher loads 6, then writes `8` to
+`[0xe3c]` and goes back into the loader. Thus those two always come as a pair.
 
 Four checks, all exact, in both images:
 - entry 5 == the cold-boot immediates;
-- the four images partition the payload with only 2-12 byte alignment gaps;
+- the four images divide the payload with only 2-12 byte alignment gaps;
 - overlay 8 ends exactly at the payload end (`0x44634`, and `0x436fc` in 7.3.14);
-- overlay 8's base `0xdc00` + 880 words == `0xdf70`, independently derived as the
-  load base of the 3.1.2 tail at file `0x41280` by branch-target scoring.
+- the base of overlay 8, `0xdc00` + 880 words == `0xdf70`. Branch-target scoring independently gives the same value as the
+  load base of the 3.1.2 tail at file `0x41280`.
 
-Cumulative growth ahead of overlay 8 is `617 + 1084 - 1 = 1700` words, matching
-the `-1700..-1704` word relocation delta measured independently by diffing the
+The total growth before overlay 8 is `617 + 1084 - 1 = 1700` words. This agrees with
+the `-1700..-1704` word relocation delta that we measured independently with a diff of the
 payloads. **Most of the DSP 3.1.2 work is in overlay 6** (+1084 words), not in
 the tail.
 
 ### The DSP receive side
 
-The host->DSP direction, traced 2026-09-05. Three facts shape it:
+We traced the host->DSP direction on 2026-09-05. Three facts control it:
 
-**The resident kernel contains no `in` instruction at all.** A linear sweep of
+**The resident kernel contains no `in` instruction.** A linear sweep of
 overlay 5 finds `out` to DSP-side I/O `005e`/`005f` (the sender at `83d3`-`83de`)
-and `0060` (the streamer emit at `849e`), but no port reads. The mailbox is not
-polled through an I/O port; it is read from **MMR `0x57`** via the datapump's own
-`23f0` accessor, and a status bit gates it — `bit 15, @7d` in 3.0.13, `bit 14`
+and `0060` (the streamer emit at `849e`), but no port reads. The code does not poll the
+mailbox through an I/O port. It reads it from **MMR `0x57`** through the
+`23f0` accessor of the datapump, and a status bit gates it: `bit 15, @7d` in 3.0.13, `bit 14`
 in 3.1.2.
 
 **The interrupt vector table is not in flash.** The init at `0x8012` does
-`apl @07, #07f8` then `opl @07, #00b0` with `DP = 0` (set at `0x8004`, no
-intervening `ldp`), so `@07` is genuinely PMST. Neither mask sets bits 15-11, so
-those end up clear; on the standard C5x PMST layout that field is **IPTR**, which
-puts the vector table at program `0x0000`. That is outside every loaded overlay —
-the supervisor never writes it. So the *first-level* mailbox ISR lives in memory
-the flash image does not supply (on-chip ROM, or low memory populated by
-something else), while the handler bodies below are in the loaded kernel. This is
-the same low window the DSP ROM probe samples as "thirty-two words at program
-addresses `0x0000..0x001f`", and it is squarely the open C52 mask-ROM question.
-The IPTR reading depends on the standard PMST bit assignment, which has not been
-confirmed against a datasheet here; the masks themselves are exact.
+`apl @07, #07f8` and then `opl @07, #00b0` with `DP = 0` (set at `0x8004`, with no
+`ldp` between). Thus `@07` is really PMST. Neither mask sets bits 15-11. Thus
+those bits become clear. On the standard C5x PMST layout, that field is **IPTR**, which
+puts the vector table at program `0x0000`. That address is outside all loaded overlays.
+The supervisor never writes it. Thus the *first-level* mailbox ISR is in memory
+that the flash image does not supply (on-chip ROM, or low memory that a different source fills).
+The handler bodies below are in the loaded kernel. This is
+the same low window that the DSP ROM probe samples as "thirty-two words at program
+addresses `0x0000..0x001f`". It is directly the open C52 mask-ROM question.
+The IPTR interpretation depends on the standard PMST bit assignment. We did not
+confirm this assignment with a datasheet here. The masks are exact.
 
-**Dispatch is a table-indexed computed goto**, and its base is *per firmware
-build*. In 3.1.2 the chain at `0x839e` reads:
+**Dispatch is a table-indexed computed goto**, and its base is *different for each firmware
+build*. In 3.1.2, the chain at `0x839e` reads:
 
 ```
 839e  lacl @7d          ; the received tag
@@ -1958,65 +1958,64 @@ build*. In 3.1.2 the chain at `0x839e` reads:
 | capture-01 | 3.0.13 | **`0x8401`** (pinned by `tests/test_dsp_window_stream.py`, 8/8 tags) |
 | capture-403 | 3.1.2 | **`0x83e9`** (from the arithmetic above, 8/8 tags) |
 
-Both were verified by reading the table and checking each entry lands on the
-documented arm idiom — `ldp #007 ; retd ; splk @1e, #<stub>`, or `ldp #1ff` for
-the tags that point `fff8`. **Do not carry a table base between builds**: the two
-differ by `0x18` words and the handlers they point at by `0x19`, and comparing
-403's table against 3.0.13's handler list produces a spurious uniform offset. That
-mistake was made and caught here.
+We verified both. We read the table and checked that each entry goes to the
+documented arm idiom: `ldp #007 ; retd ; splk @1e, #<stub>`, or `ldp #1ff` for
+the tags that point `fff8`. **Do not use a table base from one build in a different build**. The two
+bases are different by `0x18` words, and the handlers that they point to by `0x19`. If you compare
+the table of 403 with the handler list of 3.0.13, you get a false uniform offset. We
+made that error here, and we found it.
 
-So the full receive path is: mask-ROM vector at `0x0000` -> kernel ISR -> read MMR
-`0x57` through the `23f0` accessor -> tag into `@7d` -> `tblr` the per-build
-dispatch table -> handler arms a streamer or acts on the command. The host's
-`0xff00`-framed pair (command, then destination) arrives through this path, but
-**the kernel code that consumes a `0xff00` frame specifically has not been
-identified** — that claim remains open.
+Thus the full receive path is: mask-ROM vector at `0x0000` -> kernel ISR -> read MMR
+`0x57` through the `23f0` accessor -> tag into `@7d` -> `tblr` the dispatch table of the build
+-> handler arms a streamer or does the command. The `0xff00`-framed pair
+of the host (command, then destination) comes through this path. But **we did not
+identify the kernel code that consumes a `0xff00` frame**. That claim is still open.
 
 ### Cross-check against the DSP-side streamer work
 
-The overlay-5 map is confirmed independently, from the opposite direction, by the
-handler addresses in `tests/test_dsp_window_stream.py` and
-[the DSP ROM probe notes](docs/dsp-rom-probe.md) — those were derived by executing
-the datapump on the native C52 core, with no reference to any flash offset. Every
+The handler addresses in `tests/test_dsp_window_stream.py` and
+[the DSP ROM probe notes](docs/dsp-rom-probe.md) independently confirm the overlay-5 map, from the opposite direction.
+We got those addresses when we executed
+the datapump on the native C52 core, with no reference to a flash offset. Each
 address in that table (`8401` jump table, handlers `8489`-`8678`, engine `8684`,
-resume `847a`) falls inside overlay 5's DSP range, and reading them through
-`flash = 0x29140 + 2*(dsp - 0x8000)` produces exactly the documented code:
+resume `847a`) is in the DSP range of overlay 5. When we read them through
+`flash = 0x29140 + 2*(dsp - 0x8000)`, we get exactly the documented code:
 
 - arm stub `8617` (tags 45/46/57) decodes as `splk *, #ff90 ; xc 2, tc ;
-  splk *, #ff00` — the runtime `ff90`/`ff00` selection on `tc` that the probe
-  notes describe. This is effectively a signature; it is not a coincidence.
-- handler `8489` decodes with `lar ar1, #030f` and its stub `848d` with
-  `lar ar1, #031c` — two of the six live call-state cells listed for tag `06`.
-- stub `8642` (tag 47) decodes with `splk *, #0019`; stub `8665` (tag 73) with
+  splk *, #ff00`. This is the runtime `ff90`/`ff00` selection on `tc` that the probe
+  notes describe. This is almost a signature. It is not a coincidence.
+- handler `8489` decodes with `lar ar1, #030f`, and its stub `848d` with
+  `lar ar1, #031c`. These are two of the six live call-state cells in the list for tag `06`.
+- stub `8642` (tag 47) decodes with `splk *, #0019`. Stub `8665` (tag 73) decodes with
   `splk @79, #f992`, adjacent to the documented `f993` source for tag `78`.
 
-Caveat on that last group: a *linear* decode started exactly at a labelled stub
-address is not always instruction-aligned, because several stubs sit in `retd`
-delay slots (as the probe notes themselves record), so some count immediates read
-a word off. The addressing is what is confirmed here, not each count — the counts
-are pinned by the emulator run in the probe notes.
+Caveat for that last group: a *linear* decode that starts exactly at a labelled stub
+address is not always aligned on an instruction. The reason is that some stubs are in `retd`
+delay slots (the probe notes also record this). Thus some count immediates are
+one word off. This confirms the addressing, not each count. The emulator run in the probe notes
+gives the counts.
 
 ### The dial-digit handoff
 
-Traced 2026-09-05, and the answer has two halves that must not be confused.
+We traced this on 2026-09-05. The answer has two parts. Do not mix them.
 
-**In the emulator, digits do not touch the mailbox.** A differential run settles
-it: `ATDT111` and `ATDT999` on `main211.xmf` produce **byte-identical** mailbox
-streams - 1628 messages, same seven tags, same counts, same arguments, same
-order - while the line audio correctly differs, 451 windows detecting `1` against
-452 detecting `9`. The tap is working; the digits are simply not on that path.
-The cause is known and already recorded elsewhere in this file: `begin_dialing`
-in `courier_emu/bridge.py` calls `core.set_dtmf_digits`, handing the digits
-straight to the C52 and bypassing the supervisor's own dial code. That is the
-board-side model standing in for the unrecovered handoff, so this result says
-nothing about real firmware - it only proves the model short-circuits the path.
+**In the emulator, digits do not go through the mailbox.** A differential run shows
+this: `ATDT111` and `ATDT999` on `main211.xmf` give **byte-identical** mailbox
+streams (1628 messages, the same seven tags, the same counts, the same arguments, the same
+order). But the line audio is correctly different: 451 windows detect `1`, and
+452 detect `9`. The tap operates correctly. The digits are not on that path.
+We know the cause, and this file records it at another location: `begin_dialing`
+in `courier_emu/bridge.py` calls `core.set_dtmf_digits`. This gives the digits
+directly to the C52 and bypasses the dial code of the supervisor. That is the
+board-side model that replaces the unrecovered handoff. Thus this result gives
+no information about the real firmware. It only proves that the model bypasses the path.
 
-What the mailbox carries during dialing is a **periodic service exchange**: per
-cycle, three of `{0x01, 0x0f, 0x84}` and one of `{0x82, 0x83, 0x67}`, repeated
-about 135 times. A plain `AT` control run emits the same seven tags with the same
-arguments and only 12 messages, so the cycle is not dial-specific either.
+During dialing, the mailbox carries a **periodic service exchange**. In each
+cycle, there are three of `{0x01, 0x0f, 0x84}` and one of `{0x82, 0x83, 0x67}`. The cycle repeats
+about 135 times. A plain `AT` control run sends the same seven tags with the same
+arguments and only 12 messages. Thus the cycle is also not specific to dialing.
 
-**Statically, the real handoff looks like mailbox commands `0x20`/`0x21`.** In
+**In static analysis, the real handoff looks like mailbox commands `0x20`/`0x21`.** In
 the 7.4.16 capture:
 
 | file | role |
@@ -2026,7 +2025,7 @@ the 7.4.16 capture:
 | `0x21f49` | emitter reached from A |
 | `0x21fa0` | emitter reached from B |
 
-Both emitters run the same selector, so the mode cell picks the command:
+Both emitters run the same selector. Thus the mode cell selects the command:
 
 ```asm
 mov  ax, 0x20
@@ -2040,20 +2039,20 @@ mov  [0x2b4], bl
 lcall 8f46:01e4        ; the three-word {0xff00, tag, arg} sender
 ```
 
-The two entries are called from four sites in the dial code in segment `0x9efe`
-- `0x20f14`, `0x20f70` (entry A) and `0x20fa5`, `0x213d5` (entry B) - each
-passing a far callback pointer (`mov dx, cs` with `si = 0x1be` or `di = 0x24f`;
-both offsets are code, not tables) and a selector in `ah`. `[0xd74]` is written
-with an immediate in only three places: those two entries and `0x0b80f`.
+Four sites in the dial code in segment `0x9efe` call the two entries:
+`0x20f14`, `0x20f70` (entry A) and `0x20fa5`, `0x213d5` (entry B). Each site
+gives a far callback pointer (`mov dx, cs` with `si = 0x1be` or `di = 0x24f`.
+Both offsets are code, not tables) and a selector in `ah`. Only three locations write
+an immediate to `[0xd74]`: those two entries and `0x0b80f`.
 
-**This is a candidate, not a proof**, and an attempt to execute it failed -
-usefully. What is established is that `0x20`/`0x21` are the per-dial-mode DSP
-commands on the dial path, and that neither appears in any emulator run: the tap
+**This is a candidate, not a proof**. An attempt to execute it failed, but
+the failure gave useful information. We know that `0x20`/`0x21` are the DSP
+commands for each dial mode on the dial path. We also know that neither occurs in an emulator run. The tap
 saw only `0x01`, `0x0f`, `0x67`, `0x7d`, `0x82`, `0x83`, `0x84`.
 
 #### The firmware never reaches that code, and removing the injection does not help
 
-The same selector is in every image, so the site can be followed across them:
+The same selector is in each image. Thus we can follow the site across the images:
 
 | image | selector | mode cell |
 |---|---|---|
@@ -2061,47 +2060,47 @@ The same selector is in every image, so the site can be followed across them:
 | capture-01 (7.3.14), `IDSDL302.ROM` | file `0x21e92`, `0x21ed8` | `[0xe88]` |
 | `main211.xmf` | file `0x46555`, `0x4659b` (physical `0x86555`) | `[0x2006]` |
 
-Neutralizing `core.set_dtmf_digits` and re-running `ATDT123` on `main211.xmf`
-confirmed the short-circuit was live - one interception, `'123'` - and changed
-nothing else: the same 1628 messages and the same seven tags, no `0x20`/`0x21`,
-and the DTMF audio gone (451 detections of `1` became one spurious window).
+We disabled `core.set_dtmf_digits` and ran `ATDT123` on `main211.xmf` again.
+This confirmed that the bypass was active (one interception, `'123'`). Nothing
+else changed: the same 1628 messages and the same seven tags, no `0x20`/`0x21`.
+The DTMF audio stopped (451 detections of `1` became one false window).
 
-That is a definite negative, and it needs no PC hook to read. Between the
-selector and the `lcall` that sends the message there is **no branch out** - the
-`jne` skips a single instruction - so reaching the selector implies sending. No
-`0x20`/`0x21` on the wire therefore means the firmware never reached `0x86555`.
+That is a definite negative result, and you do not need a PC hook to see it. Between the
+selector and the `lcall` that sends the message, there is **no branch out**. The
+`jne` skips one instruction. Thus if the code gets to the selector, it sends the message.
+Thus no `0x20`/`0x21` on the wire means that the firmware never got to `0x86555`.
 
-The reason is that the interception is not at `begin_dialing` at all. The bridge
-parses the AT command text itself (`courier_emu/bridge.py`, `text.find("D")`,
-strip `T`/`P`, filter to dial characters), seizes the DAA, and feeds the detector
-window. Dialing is modelled at the **DTE-command level**, above both the mailbox
-and the firmware's own dial sequencer, so the firmware is never asked to dial and
-`set_dtmf_digits` is only the audio half of a larger stand-in.
+The reason is that the interception is not at `begin_dialing`. The bridge
+parses the AT command text (`courier_emu/bridge.py`, `text.find("D")`,
+remove `T`/`P`, keep only dial characters), seizes the DAA, and supplies the detector
+window. The model does the dialing at the **DTE-command level**, above the mailbox
+and above the dial sequencer of the firmware. Thus the firmware never gets a request to dial, and
+`set_dtmf_digits` is only the audio half of a larger replacement.
 
-So firmware-generated tones need the dial modelled at the line rather than at the
-command parser - letting the supervisor drive the DAA itself - not a one-line
-change. Until then `0x20`/`0x21` stay a static candidate: what the `cs:[si]`
-parameter is, and whether one message carries one digit, is still unexecuted.
+Thus, for tones that the firmware generates, the dial must be modelled at the line, not at the
+command parser. The supervisor must drive the DAA. This is not a one-line
+change. Until then, `0x20`/`0x21` stay a static candidate. We did not execute the code that shows what the `cs:[si]`
+parameter is, or if one message carries one digit.
 
-Note tags `0x82`, `0x83` and `0x84` exceed the DSP dispatcher's `0x7f` bound, so
-they are not dispatch tags and their meaning is unaccounted for. They are the
-only unexplained traffic in the service cycle.
+Note: tags `0x82`, `0x83` and `0x84` are more than the `0x7f` limit of the DSP dispatcher. Thus
+they are not dispatch tags, and we do not know their meaning. They are the
+only traffic in the service cycle that we cannot explain.
 
 ### What the dial sequencer is waiting on
 
-Traced 2026-09-05 on `main211.xmf` with `ATDT123`, using range-limited
-`UC_HOOK_CODE` probes installed by wrapping `Uc.hook_add` (the machine adds its
-own hooks inside `run`, so there is no other extension point). Every probe below
-was validated against a known-live region first: the same harness pointed at the
-mailbox consumer records 102,272 instructions and hits `0x6ad5b` 816 times,
+We traced this on 2026-09-05 on `main211.xmf` with `ATDT123`. We used range-limited
+`UC_HOOK_CODE` probes, which we installed with a wrapper around `Uc.hook_add` (the machine adds its
+own hooks in `run`, thus there is no other extension point). We first validated each probe below
+on a region that we know is active. The same harness, when it monitors the
+mailbox consumer, records 102,272 instructions. It records `0x6ad5b` 816 times,
 `0x6aea5` 812 times and the three-word sender `0x6b05f` 25 times.
 
-**The dial code is never entered at all.** Zero instructions execute in
-`0x85000`-`0x87000`, and of the 25 far-call sites elsewhere in the image that
-target that region, **none executes**. The firmware reaches the `main-loop`
+**The code never enters the dial code.** Zero instructions execute in
+`0x85000`-`0x87000`. There are 25 far-call sites in other parts of the image that
+target that region, and **none of them executes**. The firmware gets to the `main-loop`
 milestone and stays there.
 
-**But the AT handler does arm the dial.** Two cells differ from a plain `AT`
+**But the AT handler does arm the dial.** Two cells are different from a plain `AT`
 control run:
 
 | cell | `ATDT123` | `AT` |
@@ -2109,45 +2108,45 @@ control run:
 | `[0x298]` | `0x1d9f` | `0` |
 | `[0x1cf0]` | `1` | `0` |
 
-`[0x298]` holds a **near** callback pointer. It is read at `0x5beb3` with
-`CS = 0x5b5e`, which resolves to physical **`0x5d37f`** - and a probe over that
-routine shows it **never executes**. So the sequencer is armed and then never
-advanced.
+`[0x298]` holds a **near** callback pointer. The code reads it at `0x5beb3` with
+`CS = 0x5b5e`, which resolves to physical **`0x5d37f`**. A probe over that
+routine shows that it **never executes**. Thus the sequencer is armed, but it never
+continues.
 
-(Note `supervisor_call_cells` in a run result is the *final value* of each cell,
-not an invocation count. `"0298": 7583` is decimal `0x1d9f`, the pointer itself.)
+(Note: `supervisor_call_cells` in a run result is the *final value* of each cell.
+It is not a count of calls. `"0298": 7583` is decimal `0x1d9f`, the pointer.)
 
-**What it is waiting for.** The DAA state at the end of the run:
+**What it waits for.** The DAA state at the end of the run:
 
 ```
 operation=dialing  off_hook=True  line_state=dial-tone
 detector_qualified=True   dial_tone_present=False   dial_tone_qualified=False
 ```
 
-The supervisor's five-hit detector is satisfied (`detector_qualified`), but
-dial tone is not present and never qualified. That is by construction: the
-behavioral DAA supplies 350+440 Hz only long enough to qualify the detector,
-then **removes central-office tone and starts the parsed digits on the C52
-itself**. So the condition that would advance the armed callback never arrives,
-and the firmware waits forever while the model completes the call around it.
+The five-hit detector of the supervisor is satisfied (`detector_qualified`). But
+the dial tone is not present and it is never qualified. The design of the model causes this. The
+behavioral DAA supplies 350+440 Hz only for sufficient time to qualify the detector.
+Then it **removes the central-office tone and starts the parsed digits on the C52
+directly**. Thus the condition that would advance the armed callback never occurs,
+and the firmware waits without end while the model completes the call without it.
 
-This is the full extent of the stand-in. It is not one short-circuit but three
-layers: the bridge parses the `ATD` text at the DTE level, the DAA fakes the
-line transition, and `set_dtmf_digits` supplies the audio. Removing only the
-third produces silence, which is what an earlier experiment showed.
+This is the full scope of the replacement. It is not one bypass, but three
+layers: the bridge parses the `ATD` text at the DTE level, the DAA simulates the
+line transition, and `set_dtmf_digits` supplies the audio. If you remove only the
+third layer, you get silence. An earlier experiment showed this.
 
-**To reach `0x20`/`0x21` the line has to be modelled, not the call.** Concretely:
-keep dial tone present and qualified until the firmware removes it, let the armed
-callback at `CS:0x1d9f` fire, and do not inject digits. Then the sequencer runs,
-the dial-mode entries are reached, and whether `0x20`/`0x21` carry one digit per
-message becomes an observation instead of an inference. What has *not* been
-established is which code invokes the callback and what exact predicate it
-tests - only that the callback is armed, is never entered, and that dial-tone
-qualification is the state the model withholds.
+**To get to `0x20`/`0x21`, model the line, not the call.** Specifically:
+keep the dial tone present and qualified until the firmware removes it, let the armed
+callback at `CS:0x1d9f` run, and do not inject digits. Then the sequencer runs,
+the code gets to the dial-mode entries, and we can observe if `0x20`/`0x21` carry one digit for each
+message. We do not have to infer it. We do *not* know
+which code calls the callback, or what exact predicate it
+tests. We know only that the callback is armed, that the code never enters it, and that dial-tone
+qualification is the state that the model does not supply.
 
 ### Two transfer engines
 
-Cold boot and runtime swap use different hardware paths:
+The cold boot and the runtime swap use different hardware paths:
 
 | | cold boot (`dsp_dl_win50`) | runtime (`overlay_dispatch`) |
 |---|---|---|
@@ -2155,10 +2154,10 @@ Cold boot and runtime swap use different hardware paths:
 | commit strobe | `out 0x18, 1` / `out 0x18, 2` | `out 0x1e, 1` / `out 0x1e, 2` |
 | checksum | `out 0x18, 4`, poll bit 2 | none |
 | finish | poll `in 0x18` bit 2 | `out 0x1e, 4` |
-| preemptible | no | yes — re-tests `[0xe3c]` every group |
+| preemptible | no | yes. Tests `[0xe3c]` again for each group |
 
-Runtime state bytes: `[0xe3c]` request (low nibble = index; nonzero = pending,
-cleared on completion), `[0xe3b]` watchdog countdown (`0xc8` at start, `0xfe`
+Runtime state bytes: `[0xe3c]` request (low nibble = index. Nonzero = pending.
+Cleared on completion), `[0xe3b]` watchdog countdown (`0xc8` at start, `0xfe`
 after ack), `[0xe39]` checksum accumulator, `[0xe36]`/`[0xe37]` boot-downloader
 window selector.
 
