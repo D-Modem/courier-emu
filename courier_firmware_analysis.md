@@ -2163,41 +2163,41 @@ window selector.
 
 ### What actually loads DSP RAM
 
-Nothing loads a DSP *ROM*. The DSP's on-chip mask ROM **is** the loader, and
-every word that comes out of flash lands in DSP **program RAM**:
+Nothing loads a DSP *ROM*. The on-chip mask ROM of the DSP **is** the loader. Each
+word that comes from flash goes into DSP **program RAM**:
 
-1. `dsp_reset_entry` latches the destination address through ports `0x40`/`0x42`,
-   clears bit 1 of the GPIO word at `[0xff56]`, blasts `0xffff` at `0x18`/`0x1a`
-   and `0x1c`/`0x1e`, delays `0x1f4` loops, then toggles `[0xff56]` bit 1 back to
-   release reset.
-2. It then polls `in 0x1a:0x18` and `in 0x1e:0x1c` for `0xffff`/`0xffff` — an
-   **acknowledgement from the DSP** — and answers `out 0x1c, 2`.
-3. Only then does the supervisor stream any code.
+1. `dsp_reset_entry` latches the destination address through ports `0x40`/`0x42`.
+   It clears bit 1 of the GPIO word at `[0xff56]`, writes `0xffff` to `0x18`/`0x1a`
+   and `0x1c`/`0x1e`, and waits for `0x1f4` loops. Then it toggles `[0xff56]` bit 1 again to
+   release the reset.
+2. Then it polls `in 0x1a:0x18` and `in 0x1e:0x1c` for `0xffff`/`0xffff` (an
+   **acknowledgement from the DSP**), and answers `out 0x1c, 2`.
+3. Only after this does the supervisor stream code.
 
-Step 2 is the load-bearing observation: something on the DSP is already executing
-and answering *before a single word of firmware has been sent*, so the responder
-must be on-chip — mask ROM or hardware bootstrap. The supervisor never writes DSP
-program memory directly; it hands words to that resident responder, which places
-them at the address given in step 1. Destination addresses are `0x8000-0xf949`,
-i.e. program space, and the kernel demonstrably executes from `0x8000`.
+Step 2 is the important observation. A device on the DSP already executes
+and answers *before the supervisor sends one word of firmware*. Thus the responder
+must be on the chip: mask ROM or hardware bootstrap. The supervisor never writes DSP
+program memory directly. It gives words to that resident responder, which puts
+them at the address from step 1. The destination addresses are `0x8000-0xf949`,
+that is program space. The evidence shows that the kernel executes from `0x8000`.
 
-For runtime overlays the DSP is already running, so the destination is delivered
-as a **mailbox message** rather than through the reset latches. `overlay_dispatch`
+For runtime overlays, the DSP already runs. Thus the destination comes
+as a **mailbox message**, not through the reset latches. `overlay_dispatch`
 loads the destination into `bx` and calls `8f43:0224` (file `0xf654`) with
-`ax = 2`, which enqueues three words — `{0xff00, 2, dest}` — into a 24-word
-circular queue at `0x29e-0x2cc`, head `[0x29a]`, tail `[0x29c]`, initialised at
-`0x1dce`. The bulk words then follow through the port-`0x1e` engine.
+`ax = 2`. This puts three words, `{0xff00, 2, dest}`, into a 24-word
+circular queue at `0x29e-0x2cc` (head `[0x29a]`, tail `[0x29c]`, initialised at
+`0x1dce`). Then the bulk words follow through the port-`0x1e` engine.
 
 ### The queue consumer and the `0x58`-`0x5e` mailbox
 
-Resolved 2026-09-05 by searching for *writes to the queue head* `[0x29a]` — the
-producer advances the tail, so only the consumer touches the head. That yields 14
+We found this on 2026-09-05. We searched for *writes to the queue head* `[0x29a]`. The
+producer advances the tail. Thus only the consumer changes the head. The search found 14
 sites: the initialiser at `0x1dce`, three copies of a two-word drainer
-(`0xf521`, `0x12cbb`, `0x139bc`), two interrupt-context single-word variants
-(`0x12d99`, `0x13ab4`, both ending `mov [0xff02], 0x8000` — the 80188 EOI
-register — then `iret`), and a dequeue-one-or-fail helper at `0xfd77`.
+(`0xf521`, `0x12cbb`, `0x139bc`), two single-word variants that run in interrupt context
+(`0x12d99`, `0x13ab4`. Both end with `mov [0xff02], 0x8000` (the 80188 EOI
+register) and then `iret`), and a helper at `0xfd77` that removes one word from the queue or fails.
 
-Handoff runs through a **staging word at `[0x289]`**, whose idle sentinel is
+The handoff goes through a **staging word at `[0x289]`**. Its idle sentinel is
 `0x7f3f`:
 
 ```asm
@@ -2210,10 +2210,10 @@ jne  send_single
 call 0xf521            ; high byte 0xff -> two-word drainer
 ```
 
-That is what the `0xff00` word the overlay dispatcher enqueues is for: **a frame
-marker, consumed by the staging logic and never transmitted**. It selects the
-two-word drainer, which sends the message's remaining two words — the command and
-the destination — as a pair:
+This is the function of the `0xff00` word that the overlay dispatcher puts in the queue: **a frame
+marker. The staging logic consumes it and never transmits it**. It selects the
+two-word drainer. The drainer sends the remaining two words of the message (the command and
+the destination) as a pair:
 
 | queued word | destination |
 |---|---|
@@ -2221,102 +2221,102 @@ the destination — as a pair:
 | command (`2` for an overlay load) | low byte `out 0x58`, high byte `out 0x5a` |
 | DSP destination address | low byte `out 0x5c`, high byte `out 0x5e` |
 
-Ordinary traffic (high byte not `0xff`) is sent one word at a time through
-`0x58`/`0x5a` only. When the staging slot is found idle, `0x11f49` refills it from
-the queue via `0xfd77`, which returns carry set when head == tail. The whole pump
-is gated on bit 0 of `[0x285]`, set in the ISR from `in 0x1e`/`in 0x1c` bit 2 —
-the DSP's "I can accept a word" signal.
+Usual traffic (high byte not `0xff`) goes one word at a time, through
+`0x58`/`0x5a` only. When the staging slot is idle, `0x11f49` fills it again from
+the queue through `0xfd77`. `0xfd77` returns carry set when head == tail. Bit 0 of `[0x285]` gates the full pump.
+The ISR sets this bit from `in 0x1e`/`in 0x1c` bit 2. This bit is
+the "I can accept a word" signal of the DSP.
 
-This also settles that `0x5c`/`0x5e` is **bidirectional**: written here as the
-high half of a host->DSP message, and read at file `0x13d00` (high byte `0x5e`,
-low byte `0x5c`) as DSP->host status. Byte order is consistent in both
-directions — low byte on the even port, high byte on the odd one.
+This also shows that `0x5c`/`0x5e` is **bidirectional**. The code writes it here as the
+high half of a host->DSP message. The code at file `0x13d00` reads it (high byte `0x5e`,
+low byte `0x5c`) as DSP->host status. The byte order is the same in both
+directions: low byte on the even port, high byte on the odd port.
 
-So the destination address reaches the DSP as mailbox word 2 of a `0xff00`-framed
-message, and the resident kernel — already running — receives it and places the
+Thus the destination address goes to the DSP as mailbox word 2 of a `0xff00`-framed
+message. The resident kernel, which already runs, receives it. Then it puts the
 overlay words that follow through the port-`0x1e` bulk engine.
 
 ## The supervisor's time base is not driven
 
-The supervisor hangs its timeouts off a chain of countdowns serviced in one
-routine: `[0x15b]`, `[0x15d]`, `[0x174]`, `[0x738]`, `[0x73a]`, `[0x742]`,
-`[0x84f]`, `[0x1d74]`, `[0x2d4]` and `[0x32d]` are each decremented once per
-pass, several with a call when they reach zero. The chain is entered at
-`5b5e:0b1a` (physical `0x5c0fa`), which is the handler on **vector 0x0f** —
+The timeouts of the supervisor use a chain of countdowns that one routine
+services: the routine decrements each of `[0x15b]`, `[0x15d]`, `[0x174]`, `[0x738]`, `[0x73a]`, `[0x742]`,
+`[0x84f]`, `[0x1d74]`, `[0x2d4]` and `[0x32d]` one time in each
+pass. For some of them, it makes a call when they become zero. The chain entry is
+`5b5e:0b1a` (physical `0x5c0fa`), which is the handler on **vector 0x0f**:
 INT3 on the 80186.
 
-In a payload run that routine never executes. `ATI11` is where it shows:
+In a payload run, that routine never executes. `ATI11` shows this:
 `0x62d63` sets `[0x328]`, `0x62d68` arms `[0x32d]` with 20 ticks, and
-`0x62d6d` spins until either the flag clears or the count reaches zero. The
-command is written to give up gracefully; with no tick it waits forever, and
-the page stops after "Modulation". `ATI10` stops the same way.
+`0x62d6d` loops until the flag clears or the count becomes zero. The
+command is designed to stop correctly. With no tick, it waits without end, and
+the page stops after "Modulation". `ATI10` stops in the same way.
 
-Delivering a periodic edge on vector `0x0f` does complete both pages — and is
-wrong. The interrupt controller shows `int3` **masked** for the entire run,
-while `int0` and the timer are unmasked, so that edge is one the board cannot
-take. Injecting it anyway changes call behavior: two linked instances answer
-`OK` where an undriven run reports `NO CARRIER`, and `NO CARRIER` is the
-correct answer for an `ATA` with no modelled DAA. The harness therefore
-honours the mask: no edge is delivered on vector `0x0f` while `int3` is masked,
-and `ATI10`/`ATI11` remain unfinished rather than finished by a fabricated one.
+A periodic edge on vector `0x0f` does complete both pages, but it is
+incorrect. The interrupt controller shows that `int3` is **masked** for the full run,
+while `int0` and the timer are unmasked. Thus the board cannot
+accept that edge. If we inject it, the call behavior changes: two linked instances answer
+`OK`, but a run without the edge reports `NO CARRIER`. `NO CARRIER` is the
+correct answer for an `ATA` with no modelled DAA. Thus the harness
+obeys the mask. It does not send an edge on vector `0x0f` while `int3` is masked.
+`ATI10`/`ATI11` stay unfinished. A fabricated edge does not finish them.
 
-The DSP interrupt looked like the real source for a while: vector `0x0c` —
-INT0, unmasked — enters at `0x6ad00` and begins with what reads as a divider,
-`inc byte [0x176]`, compare against 25, and on reaching it
-`mov byte [0x66c], 0x80`. Tracing that flag settles it, and not in favour of
-the hypothesis: `[0x66c]` bit `0x80` is a watchdog alarm rather than a tick,
-and it is never tested to decide whether to run the chain. See "The two
+For some time, the DSP interrupt looked like the real source. Vector `0x0c`
+(INT0, unmasked) enters at `0x6ad00`. It starts with code that looks like a divider:
+`inc byte [0x176]`, a compare with 25, and when the count gets to 25,
+`mov byte [0x66c], 0x80`. A trace of that flag gives the answer, and it does not support
+the hypothesis. `[0x66c]` bit `0x80` is a watchdog alarm, not a tick.
+No code tests it to decide if the chain runs. Refer to "The two
 handlers watch each other" below. The chain still has exactly one entry, the
 masked vector.
 
 ### The mask is set at boot and never cleared
 
-`int3` is not masked by a condition the harness fails to meet. The peripheral
-control block's setup table, written a word at a time by the `out` at
-`0x5ba06`, masks it outright:
+The mask on `int3` does not come from a condition that the harness does not satisfy. The setup table of the peripheral
+control block, which the `out` at
+`0x5ba06` writes one word at a time, masks it directly:
 
 ```
 out 0xff1e = 0x000b     INT3 control: priority 3, MSK (bit 3) set
 out 0xff08 = 0x0068     IMASK: INT0, INT2 and INT3 masked
 ```
 
-Nothing writes either register again. Once the block is relocated into memory
-the firmware touches only `0xff16` (DMA1), `0xff18` (INT0, ten times) and
-`0xff1a` (INT1) — never `0xff1e`, never `0xff08`. The only post-boot accesses
-to IMASK anywhere in the image are two read-modify-writes, at `0x5f3b5` and
-`0x7a619`, and both are `or ax, 0x0004`: they set the DMA1 bit and preserve
-INT3's.
+Nothing writes these registers again. After the block moves into memory,
+the firmware changes only `0xff16` (DMA1), `0xff18` (INT0, ten times) and
+`0xff1a` (INT1). It never changes `0xff1e` or `0xff08`. In the full image, the only accesses
+to IMASK after boot are two read-modify-writes, at `0x5f3b5` and
+`0x7a619`. Both are `or ax, 0x0004`: they set the DMA1 bit and keep the bit
+of INT3.
 
-The handler has no other way in, either. A byte-exhaustive sweep for `rel16`
-references across its whole 64 KiB segment finds no `call` and no `jmp` to
-`0x5c0fa`, nor to the second prologue at `0x5c178`. It is reachable only as a
-vector.
+The handler also has no other entry. A sweep of each byte for `rel16`
+references across its full 64 KiB segment finds no `call` and no `jmp` to
+`0x5c0fa`, and none to the second prologue at `0x5c178`. Only a vector can get
+to it.
 
-Register offsets here are the **80C186EB/EC** map rather than the original
-80186's — IMASK at `+0x08`, the interrupt controls at `+0x18`..`+0x1e`, timer 0
+The register offsets here are from the **80C186EB/EC** map, not the map of the original
+80186: IMASK at `+0x08`, the interrupt controls at `+0x18`..`+0x1e`, timer 0
 at `+0x30`..`+0x36`, and the chip selects at `+0xa0`..`+0xa8` as start/stop
-pairs, which is the shape `rom.py` decodes from the reset stub. Base `0xff00`
-is confirmed arithmetically: timer 0's max count of `0x7e00` is written to
-`0xff32`, and that is the 32,256 the timer model reports as `compare_a`.
+pairs. This is the shape that `rom.py` decodes from the reset stub. Arithmetic confirms the base `0xff00`:
+the code writes the max count of timer 0, `0x7e00`, to
+`0xff32`, and that is the 32,256 that the timer model reports as `compare_a`.
 
 ### The one enabled periodic source is a stub
 
-Timer 0 *is* unmasked, and fires — 2,842 timer interrupts in a 14 M-instruction
-run. Its handler, vector `0x08` at `5b5e:1246` (physical `0x5c826`), is:
+Timer 0 *is* unmasked, and it fires: 2,842 timer interrupts in a run of 14 M
+instructions. Its handler, vector `0x08` at `5b5e:1246` (physical `0x5c826`), is:
 
 ```
 0x5c826   c70602ff0080   mov word ptr [0xff02], 0x8000    EOI
 0x5c82c   cf             iret
 ```
 
-Acknowledge and return. So the payload has no live periodic service at all:
-the source wired to the countdown chain is masked, and the source left enabled
-goes nowhere.
+It acknowledges and returns. Thus the payload has no active periodic service.
+The source that connects to the countdown chain is masked, and the source that is enabled
+has no effect.
 
 ### The same table is in every image here, including a boot block
 
-This is not an artifact of an update payload lacking its boot block. The
-identical setup table appears in every Courier firmware in the tree, with the
+The cause is not an update payload without its boot block. The
+identical setup table is in each Courier firmware in the tree, with the
 same `1eff 0b00` entry:
 
 | image | table at |
@@ -2326,28 +2326,28 @@ same `1eff 0b00` entry:
 | `MAIN_2.3.12/15/31.XMF`, `2_3_33.XMF` | `0x17ed8` |
 | `IDSDL302.ROM` | `0x326` |
 
-`IDSDL302.ROM` is a complete flash part, and `0x326` is inside its boot block.
-So the boot block masks INT3 too, unchanged from 2.1.1 through 2.3.33 and
-across two products. What the two images share is only this table: the
-byte-identical window around it is 62 bytes (−40..+22), and two entries just
-outside it already differ — `[0xff70]` is `0x8102` in the ROM against `0x814f`
-in `main211`, `[0xff60]` is `0x8082` against `0x80a7`. Same registers,
-board-specific values; the interrupt configuration is what does not vary.
+`IDSDL302.ROM` is a complete flash part, and `0x326` is in its boot block.
+Thus the boot block also masks INT3. This did not change from 2.1.1 through 2.3.33, and it is the same
+in two products. The two images share only this table. The
+byte-identical window around it is 62 bytes (−40..+22). Two entries immediately
+outside it are already different: `[0xff70]` is `0x8102` in the ROM and `0x814f`
+in `main211`, and `[0xff60]` is `0x8082` and `0x80a7`. The registers are the same, and the values are
+specific to the board. Only the interrupt configuration does not change.
 
-For contrast, the ISDN Courier's **386** payload has everything this one lacks.
-`Ie030002.nac` initialises the 8259 pair and takes 2,894 delivered interrupts
-in a 20 M-instruction run, programs all three 8254 counters as mode 2 rate
-generators at 641.5 Hz, 133.6 Hz and 33.4 Hz, and runs VRTX on top of them —
-5,822 `int 0x30` kernel calls in the same run. That is what a live time base on
-this hardware family looks like.
+For comparison, the **386** payload of the ISDN Courier has all the items that this one does not have.
+`Ie030002.nac` initialises the 8259 pair and accepts 2,894 delivered interrupts
+in a run of 20 M instructions. It programs all three 8254 counters as mode 2 rate
+generators at 641.5 Hz, 133.6 Hz and 33.4 Hz, and it runs VRTX on them, with
+5,822 `int 0x30` kernel calls in the same run. That is an example of a live time base on
+this hardware family.
 
 ### The two handlers watch each other
 
-`[0x66c]` is a bitfield, not a flag — 335 accesses across the image use every
-bit from `0x01` to `0x80`. Bit `0x80` is the one both interrupt handlers write,
-and each writes it when the *other* has stopped.
+`[0x66c]` is a bitfield, not a flag. 335 accesses in the image use each
+bit from `0x01` to `0x80`. Both interrupt handlers write bit `0x80`,
+and each handler writes it when the *other* handler has stopped.
 
-The tick's side sits at `0x5c18f`, inside the countdown chain:
+The tick side is at `0x5c18f`, in the countdown chain:
 
 ```
 test byte [0x1fb9], 1
@@ -2363,18 +2363,17 @@ or   byte [0x1fb9], 2
 0x5c1b7:  mov byte [0x176], 0    ; and reset the DSP counter every tick
 ```
 
-The DSP's side is the divider above: `inc byte [0x176]`, and once it reaches 25
-without a tick having cleared it, the same `mov byte [0x66c], 0x80`. So the
-tick fires the alarm when the DSP goes quiet, and the DSP fires it when the
-tick does. The bit carries no timing — it means "my counterpart has stopped" —
-and the code that waits treats it as an abort. `0x5dbe0` tests it immediately
-before the detector wait and jumps to the timeout at `0x5dc53` when it is set;
-there are around a hundred `test byte [0x66c], 0x80` sites.
+The DSP side is the divider above: `inc byte [0x176]`. When it gets to 25
+and no tick has cleared it, the same `mov byte [0x66c], 0x80` occurs. Thus the
+tick sets the alarm when the DSP stops, and the DSP sets it when the
+tick stops. The bit has no timing information. It means "the other handler has stopped".
+The code that waits uses it as an abort. `0x5dbe0` tests it immediately
+before the detector wait, and jumps to the timeout at `0x5dc53` when it is set.
+There are about a hundred `test byte [0x66c], 0x80` sites.
 
-In this harness that watchdog is permanently tripped. `[0x176]` is only ever
-cleared at `0x5c1b7`, inside the handler that never runs, so it free-runs as a
-byte and spends 231 counts in every 256 at or above 25. Over a 30 M-instruction
-`ATDT` run:
+In this harness, that watchdog is always tripped. Only `0x5c1b7` clears `[0x176]`, and
+`0x5c1b7` is in the handler that never runs. Thus the byte counts without limit,
+and for 231 of each 256 counts it is at or above 25. Over an `ATDT` run of 30 M instructions:
 
 | site | executions |
 |---|---:|
@@ -2383,16 +2382,16 @@ byte and spends 231 counts in every 256 at or above 25. Over a 30 M-instruction
 | `0x5c0fa` INT3 entry | 0 |
 | `0x5c1b7` `mov byte [0x176], 0` | 0 |
 
-Nine DSP interrupts in ten stamp the alarm. The instruction is a `mov`, not an
-`or`, so each of those ~6,000 stores also wipes bits `0x01`..`0x40` — six other
-flags that hundreds of sites across the image read and write. The masked
-interrupt does not merely withhold the countdowns; its absence actively
-corrupts a shared byte several thousand times per run, and any behaviour read
-off a run has to be weighed against that.
+Nine of ten DSP interrupts set the alarm. The instruction is a `mov`, not an
+`or`. Thus each of those approximately 6,000 stores also clears bits `0x01`..`0x40`. These are six other
+flags that hundreds of sites in the image read and write. The masked
+interrupt does more than stop the countdowns. Because it is absent, a shared byte
+becomes corrupt several thousand times in each run. Consider this effect when you interpret behaviour
+from a run.
 
 ### What the mask costs
 
-The handler's last act before its EOI is a call into the DAA:
+The last action of the handler before its EOI is a call into the DAA:
 
 ```
 0x5c69d   e86c1d         call 0x5e40c
@@ -2403,36 +2402,36 @@ The handler's last act before its EOI is a call into the DAA:
 0x5c6bc   cf             iret
 ```
 
-`0x5e40c` is a prescaler — `inc [0x642]`, compare against `[0x640]`, and on
-wrap `call word ptr [0x65e]` — driving the state chain armed at `0x5db6c`
+`0x5e40c` is a prescaler: `inc [0x642]`, a compare with `[0x640]`, and on
+wrap, `call word ptr [0x65e]`. It drives the state chain that is armed at `0x5db6c`
 (period 3), `0x5dbb2` (4) and `0x5dc11` (20). Those states send `0x7c00` and
-`0x8000` to the board and consume the replies, which arrive as mailbox tags
-`0x7c` into `[0x285]`/`[0x283]` and `0x7e` into `[0x281]`. `[0x285]` is banded
-zero / `1..0x60` / above `0x60`, and the low band is what increments `[0x649]`
-— the five-hit detector byte the originate contract above depends on.
+`0x8000` to the board and consume the replies. The replies come as mailbox tags:
+`0x7c` into `[0x285]`/`[0x283]` and `0x7e` into `[0x281]`. `[0x285]` has three bands:
+zero / `1..0x60` / above `0x60`. The low band increments `[0x649]`.
+This is the five-hit detector byte that the originate contract above uses.
 
-So the harness's stand-ins are not filling in for a missing device. `[0x649]`,
-`[0x8d6]` and the `[0x14e]`/`[0x152]` delay pair are all counters this one
-handler services, and they are forged because the interrupt that would service
-them is switched off. Driving `int3` faithfully would retire all of them
-together; forging `[0x649]` in particular also keeps the poller from ever
-running, so no run has yet sent a `0x7c00` request or received a `0x7c` reply.
+Thus the replacements in the harness do not replace a missing device. `[0x649]`,
+`[0x8d6]` and the `[0x14e]`/`[0x152]` delay pair are all counters that this one
+handler services. The harness forges them because the interrupt that would service
+them is disabled. An accurate drive of `int3` would make all of these replacements unnecessary
+together. Also, the forged `[0x649]` keeps the poller from
+running. Thus no run has sent a `0x7c00` request or received a `0x7c` reply yet.
 
-`[0x289]` does **not** belong on that list, though an earlier revision of this
-section put it there. Its servicer is alive; see below.
+`[0x289]` is **not** part of that list, but an earlier revision of this
+section put it in the list. Its servicer is active. Refer to the text below.
 
 ### Two clocks, not one
 
-Every countdown named above is decremented at exactly one site, and for all but
-one of them that site is inside the masked handler. Scanning the whole image
-for `inc`/`dec` against each of them gives a single exception:
+The code decrements each countdown above at exactly one site. For all countdowns except
+one, that site is in the masked handler. A scan of the full image
+for `inc`/`dec` on each of them gives a single exception:
 
 ```
 [0x289]   sites in the INT3 handler: 0    elsewhere: 1  (0x6ade5)
 ```
 
-`0x6ade5` is in the tail of the **DSP** interrupt, vector `0x0c`, which is
-unmasked and runs:
+`0x6ade5` is in the tail of the **DSP** interrupt, vector `0x0c`. This vector is
+unmasked, and it runs:
 
 ```
 0x6add3   cmp word [0x161], 0
@@ -2446,12 +2445,12 @@ unmasked and runs:
 0x6adf1   iret
 ```
 
-That handler advances exactly three things: `[0x176]`, the watchdog counter
+That handler advances exactly three items: `[0x176]`, the watchdog counter
 above, and the two countdowns `[0x161]` and `[0x289]`. Nothing else.
 
-`[0x289]` is the detector wait — armed at `0x5db8d`, tested at `0x5dbe7`, and
-the interval the originate path spends waiting on the line. It is therefore on
-a **live** clock, and is being advanced in every run today. Over the same 30 M
+`[0x289]` is the detector wait. It is armed at `0x5db8d` and tested at `0x5dbe7`. It is
+the interval that the originate path waits on the line. Thus it is on
+a **live** clock, and each run now advances it. Over the same 30 M
 `ATDT` run as above:
 
 | site | executions |
@@ -2461,24 +2460,24 @@ a **live** clock, and is being advanced in every run today. Over the same 30 M
 | `0x5dbe7` the detector wait's compare | 15,416 |
 | `0x5dc4a` that wait timing out | 0 |
 
-`[0x161]` is a real timer too, armed from eleven sites and compared at
-fourteen; a dial simply does not use it.
+`[0x161]` is also a real timer. Eleven sites arm it and fourteen sites
+compare it. A dial does not use it.
 
-The split this implies fits the board better than a single time base would: the
-tick handles supervisor housekeeping, and the DSP frame interrupt handles what
-has to track line time. It is also a point in favour of the countdown chain
-being genuinely dormant in these builds rather than something the harness
-merely fails to trigger, since the parts of the firmware that must keep line
+This division agrees with the board better than one time base: the
+tick does the supervisor housekeeping, and the DSP frame interrupt does the tasks that
+must follow line time. It is also evidence that the countdown chain is
+really dormant in these builds, and not only something that the harness
+does not trigger. The reason is that the parts of the firmware that must keep line
 time are not on it.
 
 ### Pacing the chain from the DSP interrupt
 
-If the DSP frame interrupt is what keeps line time, the obvious thing to try is
-letting it pace the countdown chain too — deliver vector `0x0f` once per DSP
-interrupt and see what the firmware makes of it. This now ships as
-`--tick-source dsp`, off by default, on both `run` and `link`.
+If the DSP frame interrupt keeps line time, the next test is clear:
+let it also pace the countdown chain. Send vector `0x0f` one time for each DSP
+interrupt, and monitor the result in the firmware. This is now available as
+`--tick-source dsp`, disabled by default, on both `run` and `link`.
 
-It runs, and the firmware's own consistency check is what says so:
+It runs, and the consistency check of the firmware confirms this:
 
 | site | with the tick paced | before |
 |---|---:|---:|
@@ -2487,42 +2486,42 @@ It runs, and the firmware's own consistency check is what says so:
 | `0x5c1b7` `mov byte [0x176], 0` | 6,691 | 0 |
 | `0x6ad11` the watchdog stamp | **0** | 5,969 |
 
-The mutual watchdog goes quiet for the first time. That is not luck: its two
-limits *bound the legal ratio*. The DSP interrupt has to arrive at least once
-in three ticks or the tick's side alarms, and the tick has to arrive at least
-once in twenty-five DSP interrupts or the DSP's side does. So ticks per DSP
-interrupt must lie between 1/25 and 3, and 1:1 sits inside that. The band is
-read out of the firmware; the choice of 1:1 within it is not, and remains a
+The mutual watchdog stops its alarms for the first time. This is not an accident. Its two
+limits *set the permitted ratio*. The DSP interrupt must come at least one time
+in three ticks, or the tick side sets the alarm. The tick must come at least
+one time in twenty-five DSP interrupts, or the DSP side sets the alarm. Thus the number of ticks for each DSP
+interrupt must be between 1/25 and 3, and 1:1 is in that range. The firmware gives the range.
+The firmware does not give the choice of 1:1 in the range. That choice is still a
 guess.
 
-Downstream, things that had never happened started happening. Host-to-board
-traffic gained `0084:3100` — the revision-gated register write at `0x5e551` —
-alongside `0080:0000` and `007c:0000`, the `si` read and the detector request.
-With the forged `[0x649]` still in place `ATDT5551234` answered `OK` where
-every previous run answered `NO CARRIER`.
+Downstream, events that had never occurred started to occur. The host-to-board
+traffic now included `0084:3100` (the revision-gated register write at `0x5e551`),
+and also `0080:0000` and `007c:0000` (the `si` read and the detector request).
+With the forged `[0x649]` still in place, `ATDT5551234` answered `OK`. All
+previous runs answered `NO CARRIER`.
 
-Removing the forgery is where it gets informative. With the poller asking and
-nothing answering, the firmware reports `NO DIAL TONE` — the correct answer for
-a line it cannot hear, reached through its own code rather than through ours.
-Answering `0x7c00` with a reading in the `1..0x60` band then increments
-`[0x649]` through the firmware's own path for the first time.
+When we removed the forgery, we got useful information. The poller sent requests and
+nothing answered. The firmware reported `NO DIAL TONE`. This is the correct answer for
+a line that it cannot hear, and the firmware got it through its own code, not through our code.
+Then we answered `0x7c00` with a value in the `1..0x60` band. This increments
+`[0x649]` through the path of the firmware for the first time.
 
-Both halves of that are now in the tree. The bridge answers the detector
-request whenever the DAA has something on the line — `dsp_bridge`
-`detector_replies` counts them, 44 in a 40 M-instruction linked run — and
-pacing the chain switches the harness's two forgeries off together: it neither
-writes `[0x649]` at `0x5dbe7` nor zeroes the `[0x289]` wait that count runs
-inside, because both are the firmware's own once the poller is alive. A linked
-pair then leaves command mode, swapping the DTE callback table `acdf,1fce,a8d9`
-for `50ad,18e3,4cac`, and answers `OK`. `OK` is not a call result code and the
-line behind it is still silent on both sides, so this is the supervisor acting
-on state the harness supplied rather than two modems that trained.
+Both parts of this are now in the tree. The bridge answers the detector
+request each time that the DAA has a signal on the line. `dsp_bridge`
+`detector_replies` counts these answers: 44 in a linked run of 40 M instructions. When
+the chain is paced, the two forgeries of the harness are disabled together. The harness does not
+write `[0x649]` at `0x5dbe7`, and it does not set to zero the `[0x289]` wait in which that count runs.
+The reason is that the firmware controls both after the poller is active. Then a linked
+pair leaves command mode. It changes the DTE callback table from `acdf,1fce,a8d9`
+to `50ad,18e3,4cac`, and answers `OK`. `OK` is not a call result code, and the
+line is still silent on both sides. Thus the supervisor operates
+on state that the harness supplied. These are not two modems that trained.
 
 ### What parks the state chain
 
-It does not reach five hits, and the reason is not a stall. State `0x3023` —
-physical `0x5e603` — is a bare `ret`, a do-nothing idle state, and the chain is
-pointed at it deliberately. Of 1,657 dispatches in that run:
+It does not get to five hits, and the reason is not a stall. State `0x3023`
+(physical `0x5e603`) is only a `ret`. It is an idle state that does nothing, and the code
+points the chain at it intentionally. Of 1,657 dispatches in that run:
 
 ```
 3023 (idle ret)          1,644
@@ -2535,112 +2534,111 @@ pointed at it deliberately. Of 1,657 dispatches in that run:
 2ed5 consume      (loop B)   1
 ```
 
-So the chain armed, cycled through both request/consume loops, and was then
-parked. Fifteen sites write `0x3023` into `[0x65e]`, and two of them account for
-it: `0x65512`, the supervisor's main loop, and `0x5dbfa`, immediately after the
-detector wait. The chain is **scoped to a line operation** — armed at
-`0x5db6c`, `0x5dbb2` and `0x5dc11` when one begins, parked the moment the wait
-finishes or the supervisor returns to its command loop.
+Thus the chain armed, went through both request/consume loops, and then
+stopped in the idle state. Fifteen sites write `0x3023` into `[0x65e]`. Two of them cause
+this: `0x65512`, the main loop of the supervisor, and `0x5dbfa`, immediately after the
+detector wait. The chain **applies only during a line operation**. The code arms it at
+`0x5db6c`, `0x5dbb2` and `0x5dc11` when a line operation starts. It parks it immediately when the wait
+ends or the supervisor goes back to its command loop.
 
-That is correct behaviour, and it relocates what is left. The window closed
-because the detector never qualified, not because the pacing is wrong. Inside
-it the chain got about a dozen dispatches and landed one low-band reading
-across two consume passes, because a reply queued when the request is written
-is not necessarily visible when the consume state next runs. The remaining
-problem is therefore delivery timing — the same shape as the `0x02`/`0x03`
-handshake the bridge already models, where a reply has to be on the bus when
-the consumer polls rather than merely queued. Five hits inside the 500-decrement
-window is otherwise comfortable: at 1:1 with a prescaler of 3 they cost about
+That is correct behaviour, and it moves the remaining problem. The window closed
+because the detector never qualified. The pacing is not incorrect. In
+the window, the chain got about twelve dispatches and got one low-band value
+in two consume passes. The reason is that a reply that goes into the queue when the request is written
+is possibly not visible when the consume state runs next. Thus the remaining
+problem is the delivery timing. It has the same shape as the `0x02`/`0x03`
+handshake that the bridge already models: a reply must be on the bus when
+the consumer polls. It is not sufficient to put it in the queue. Otherwise, five hits in the 500-decrement
+window is easy: at 1:1 with a prescaler of 3, they need about
 fifteen dispatches.
 
-Two things this does not establish. The 1:1 ratio is a choice inside the legal
-band, not a measurement. And the experiment used revision `0x33`; with the
-default 4 the gate at `0x5e547` fails and `0084:3100` never fires, so the
-revision question is now load-bearing rather than cosmetic.
+This does not show two items. The 1:1 ratio is a choice in the permitted
+band, not a measurement. Also, the experiment used revision `0x33`. With the
+default 4, the gate at `0x5e547` fails and `0084:3100` never occurs. Thus the
+revision question is now important. It is not only cosmetic.
 
 ### Why this is the blocker for placing and answering calls
 
-Most of what a call needs is downstream of this one interrupt. Qualifying what
-comes back from a seizure is the `[0x649]` path; ring qualification is the
-`[0x647]`/`[0x648]` debounce on the tag `0x7e` ring bits, counted against the
-S-register at `[0x92a]`; the pre-dial interval is `[0x8d6]`; call progress runs
-through the same `[0x65e]` state chain. Those are serviced by the handler on
-the masked vector, and every one the harness forges is a place where the
-firmware stops telling us what the board would do and starts telling us what we
-told it.
+Most of the items that a call needs are downstream of this one interrupt. The qualification of the
+response after a seizure is the `[0x649]` path. Ring qualification is the
+`[0x647]`/`[0x648]` debounce on the ring bits of tag `0x7e`, counted against the
+S-register at `[0x92a]`. The pre-dial interval is `[0x8d6]`. Call progress goes
+through the same `[0x65e]` state chain. The handler on
+the masked vector services all of these. At each item that the harness forges, the
+firmware stops to show us what the board would do. Instead, it shows us what we
+gave it.
 
-The exception narrows the problem usefully. The wait the originate path spends
-on the line, `[0x289]`, is on the live clock, so the call path is not uniformly
-dark: what is missing inside a wait that already works is the counter that wait
-is waiting on. That makes `[0x649]` the single counter standing between here
-and an originate that runs on the firmware's own terms.
+The exception makes the problem smaller in a useful way. The wait of the originate path
+on the line, `[0x289]`, is on the live clock. Thus not all of the call path is
+dark. In a wait that already operates, the missing item is the counter for which the wait
+waits. Thus `[0x649]` is the only counter between the current state
+and an originate that runs fully under the control of the firmware.
 
-Four explanations for the mask have been tested and three are closed. It is not
-a condition the harness fails to meet: nothing in the image writes the register
-a second time. It is not a misread register map: timer 0's max count
-cross-checks the base. It is not an update payload inheriting a boot block's
-work: the one complete flash ROM here masks it inside its own boot block. What
-remains is that the countdown chain is dormant in every build we have and the
-shipping modem keeps time somewhere we have not looked — which cannot be
-settled from these images alone. A RAM or state dump from a physical Courier,
-already the highest-leverage item under "Possible next steps", would settle it
-directly: read `[0x176]`, `[0x177]`, `[0x66c]` and the interrupt controller's
-mask on a running modem and the question answers itself.
+We tested four explanations for the mask, and we closed three. It is not
+a condition that the harness does not satisfy: nothing in the image writes the register
+a second time. It is not an incorrect reading of the register map: the max count of timer 0
+confirms the base. It is not an update payload that depends on the work of a boot block:
+the one complete flash ROM here masks it in its own boot block. The remaining explanation
+is that the countdown chain is dormant in all builds that we have, and that the
+shipping modem keeps time at a location that we did not examine. These images alone cannot
+answer this. A RAM or state dump from a physical Courier
+(already the item with the highest leverage under "Possible next steps") would answer it
+directly: read `[0x176]`, `[0x177]`, `[0x66c]` and the mask of the interrupt controller
+on a running modem, and the answer is clear.
 
-The pacing experiment above weakens one reading of that, though. If the chain
-were vestigial in these builds, running it should have produced nonsense;
-instead it put both watchdogs into their healthy state, sent the register write
-its own revision gate asks for, and answered a dial through its own code. That
-is not proof the board drives it from the DSP frame — only that no other
-configuration tried here leaves the firmware's own consistency checks
-satisfied.
+But the pacing experiment above makes one interpretation of that less probable. If the chain
+were vestigial in these builds, it would give nonsense when it runs.
+Instead, it put both watchdogs into their healthy state, sent the register write
+that its revision gate requests, and answered a dial through its own code. That
+is not proof that the board drives it from the DSP frame. It shows only that no other
+configuration that we tried here satisfies the consistency checks of the firmware.
 
 ## The DTE front end the harness stands in for
 
-The board's UART front end is absent from a payload run, so the harness
-installs its callbacks at the main-loop milestone. Four further pieces of that
-same contract were recovered by driving a live console:
+A payload run does not have the UART front end of the board. Thus the harness
+installs its callbacks at the main-loop milestone. We recovered four more parts of that
+same contract when we operated a live console:
 
 - **Attention prefix.** `0x65f03` receives the assembled line, and the harness
-  strips the `AT`/`at` prefix there. The other half of the contract was
-  missing: a line with no prefix was passed through unchanged, so `I3` ran as
-  `ATI3`. The terminator advances the command state whatever was typed,
-  because that state machine sits downstream of the detector, so a completed
-  line without the prefix is now returned to command-line-ready with the
-  parser uncalled — no result code, nothing executed. `A/` and `A>` are the
-  detector's own two-character forms and are left alone.
+  removes the `AT`/`at` prefix there. The other half of the contract was
+  missing: a line with no prefix went through without change. Thus `I3` ran as
+  `ATI3`. The terminator advances the command state for all input,
+  because that state machine is downstream of the detector. Thus a completed
+  line without the prefix now goes back to command-line-ready, and the harness does not call the
+  parser: no result code, nothing executed. `A/` and `A>` are the
+  two-character forms of the detector, and the harness does not change them.
 
 - **One command line at a time.** The state machine publishes itself as the
-  callback pointer at `0x02ac`: `a8d9` collects a line a character at a time,
-  the terminator advances it to `a910`, which parses and prints, and the
-  end-of-command path at `a8b1` clears the collector and returns to `a8d9`.
-  Bytes delivered into the `a910` window are assembled into a buffer nothing
-  goes on to parse — the firmware's own type-ahead flag at `0x1cf2` is what
-  carries a line across, and it is set by the front end. Holding input until
-  `a8d9` is what makes a second and third command answer.
+  callback pointer at `0x02ac`. `a8d9` collects a line one character at a time.
+  The terminator advances it to `a910`, which parses and prints. The
+  end-of-command path at `a8b1` clears the collector and goes back to `a8d9`.
+  Bytes that come in the `a910` window go into a buffer that nothing
+  parses. The type-ahead flag of the firmware at `0x1cf2` carries a line to the next state,
+  and the front end sets it. When the harness holds input until
+  `a8d9`, a second and third command answer.
 
-- **Collect versus keystroke.** At `0x662d0` the receive path tests the
-  collect flag `0x1cee` bit `0x40`: armed, it appends to the command buffer at
-  `0x1cf5`; clear, it takes `0x662d7` instead and sets bit `0x20`, the flag a
-  running command waits on for a keystroke. The help pages spin on that flag —
-  `test byte [0x1cee], 0x20`, nine sites in `main211`, one of them the
-  `0x73824` loop behind "Strike a key when ready". Arming the collector for
-  every delivered byte swallows those keystrokes as command text and the pager
-  never wakes.
+- **Collect versus keystroke.** At `0x662d0`, the receive path tests the
+  collect flag `0x1cee` bit `0x40`. If it is armed, the path adds the byte to the command buffer at
+  `0x1cf5`. If it is clear, the path goes to `0x662d7` and sets bit `0x20`. A
+  running command waits on this flag for a keystroke. The help pages loop on that flag:
+  `test byte [0x1cee], 0x20`, nine sites in `main211`. One of them is the
+  `0x73824` loop for "Strike a key when ready". If the harness arms the collector for
+  each delivered byte, those keystrokes become command text and the pager
+  never continues.
 
-- **A reset rebuilds the table.** `ATZ` reloads the profile and rewrites the
-  callbacks to the board-less defaults. Installing the stand-in only once left
-  the DTE deaf afterwards: the next typed byte entered the receive ISR at
-  `0x5d5b0`, dispatched through the nulled callback into the fatal entry at
-  `5b5e:0000`, and blinked error `0x0b` for the rest of the session.
+- **A reset builds the table again.** `ATZ` loads the profile again and writes the
+  callbacks again with the defaults for no board. When we installed the replacement only one time,
+  the DTE did not respond after `ATZ`. The next typed byte entered the receive ISR at
+  `0x5d5b0`, went through the null callback into the fatal entry at
+  `5b5e:0000`, and flashed error `0x0b` for the remaining session.
 
-Echo belongs to the same layer. The setting is `[0x092d]`, which `ATE0`/`ATE1`
-change and which the `no-echo` option switch leaves clear at `0x63e93`, so the
-harness echoes from the firmware's own byte rather than a flag of its own.
+Echo is part of the same layer. The setting is `[0x092d]`. `ATE0`/`ATE1`
+change it, and the `no-echo` option switch keeps it clear at `0x63e93`. Thus the
+harness echoes from the byte of the firmware, not from its own flag.
 
 ## The parameter flash service the update image does not carry
 
-`AT&W` assembles a sector image in RAM and then calls the boot block through
+`AT&W` assembles a sector image in RAM. Then it calls the boot block through
 `int 0x0a` with an ASCII service letter in `BL`:
 
 | service | meaning |
@@ -2650,39 +2648,39 @@ harness echoes from the firmware's own byte rather than a flag of its own.
 | `S` (0x53) | firmware-update path |
 | `L` (0x4c) | block lock/select |
 
-The writer at `0x7dfa8` blank-checks the destination at `0x7e0e3` — 2,048
-words against `0xffff` — erases when that fails, then walks the assembled
-image a word at a time. An update payload has no boot block, so every one of
-those calls lands on a vector that is not there and `AT&W` stops on the first.
-The harness answers `E` and `W` against a modelled part; `S` and `L` still
-stop the run rather than continue on a guess.
+The writer at `0x7dfa8` does a blank check of the destination at `0x7e0e3`: 2,048
+words against `0xffff`. If that check fails, it erases. Then it writes the assembled
+image one word at a time. An update payload has no boot block. Thus each of
+those calls goes to a vector that does not exist, and `AT&W` stops on the first call.
+The harness answers `E` and `W` with a modelled part. `S` and `L` still
+stop the run. The harness does not continue on a guess.
 
-That the answers match the part is checked by the firmware itself: the sector
-it writes passes the CRC computed independently by `parameters.py`, its own
-reader finds the value again after a fresh boot, repeated stores rotate the
-four sectors and erase one to wrap, and no program ever tries to set a bit in
-an unerased word.
+The firmware itself checks that the answers agree with the part. The sector
+that it writes passes the CRC that `parameters.py` calculates independently. Its own
+reader finds the value again after a new boot. Repeated stores rotate the
+four sectors and erase one to wrap. No program tries to set a bit in
+a word that is not erased.
 
-`ATY15` is gated on this store rather than missing. `0x8339f` tests
-`[0x0a03]` bit `0x04` before the `cmp al, 0x0f` case is even reachable, and
-`[0x0a03]` is loaded at `0x7e05c` from sector offset `0x04` — type1 — only
-when the sector's flags bit 3 is clear. With a sector built that way the
-command prints the factory switch page, which reports all ten option switches
-and is an independent read on the board model.
+`ATY15` is not missing. This store gates it. `0x8339f` tests
+`[0x0a03]` bit `0x04` before the code can get to the `cmp al, 0x0f` case.
+`0x7e05c` loads `[0x0a03]` from sector offset `0x04` (type1) only
+when flags bit 3 of the sector is clear. With a sector of that type, the
+command prints the factory switch page. That page reports all ten option switches.
+It is an independent check of the board model.
 
 ## Emulator core corrections
 
-Two defects in the C52 core were found by following the serial path:
+We found two defects in the C52 core when we followed the serial path:
 
 - **Indirect addressing modes 8 and 9 were missing.** The ARU field is bits
-  6-4 with bit 3 selecting the ARP update, so `100` is `*BR0-`, the
-  bit-reversed form. The service overlay reaches it at program `0xe581` once
-  the serial port answers a transmit-ready poll, and the core stopped dead
+  6-4, and bit 3 selects the ARP update. Thus `100` is `*BR0-`, the
+  bit-reversed form. The service overlay gets to it at program `0xe581` after
+  the serial port answers a transmit-ready poll, and the core stopped completely
   there. The core had `*BR0-` at modes `0x6`/`0x7`, which that encoding
   reserves.
-- **The serial port had no status bits.** `SPC` read back exactly as written,
-  so `XRDY` and `RRDY` never set and a transmit handshake could not complete.
-  They are now answered from the port's state.
+- **The serial port had no status bits.** `SPC` read back exactly the written value.
+  Thus `XRDY` and `RRDY` never set, and a transmit handshake could not complete.
+  The core now answers them from the state of the port.
 
 ## Possible next steps
 
