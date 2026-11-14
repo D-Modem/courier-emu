@@ -1,10 +1,10 @@
 # What the ROM dump proves about the host/DSP mailbox
 
-The on-chip ROM was read off the live board by downloading a kernel to the DSP
-and having it mail 2048 words back to the 80186, which printed them. That run
-**worked on hardware**, so both halves of it are a verified description of the
-mailbox - not an inference. This is the only hardware-confirmed traffic through
-this interface we have, and it is worth reading closely.
+We read the on-chip ROM from the live board. We downloaded a kernel to the DSP, and
+the kernel sent 2048 words back to the 80186, which printed them. That run
+**worked on hardware**. Thus, its two halves are a verified description of the
+mailbox. They are not an inference. This is the only traffic through
+this interface that hardware confirmed, so read it carefully.
 
 Sources: `build_rom_dump_probe` in `courier_emu/dsp_probe.py` (the DSP half) and
 `build_diagnostic` in `courier_emu/probe_transport.py` (the 80186 half).
@@ -49,52 +49,52 @@ rx_ready: e45a       in   al, 0x5a     ; tag  high
 | PA15, data `0x5f` | ports `0x5c` low, `0x5e` high | message data |
 | PA7, data `0x57` | port `0x1c` | the status flag |
 
-The 80186's ports are byte-wide and little-endian in pairs; the DSP's are single
-16-bit ports. So four 80186 ports carry the two DSP words.
+The ports of the 80186 are byte-wide, and little-endian in pairs. The ports of the DSP are single
+16-bit ports. Thus, four 80186 ports carry the two DSP words.
 
 ## The polarity, which is the part worth having
 
-**Both sides spin waiting for bit 1 to be set.** They cannot be reading the same
-bit with the same sense, so the flag is one mailbox interlock read with opposite
-meaning from each side:
+**The two sides both wait in a loop until bit 1 is set.** They cannot read the same
+bit with the same sense. Thus, the flag is one mailbox interlock, and each side reads it with the opposite
+meaning:
 
-* the DSP's PA7 bit 1 means **"the send window is free"**;
-* the 80186's `0x1c` bit 1 means **"a word is waiting for you"**.
+* bit 1 of PA7 on the DSP means **"the send window is free"**;
+* bit 1 of `0x1c` on the 80186 means **"a word is waiting for you"**.
 
-and the two writes drive it:
+The two writes control it:
 
-* the DSP writing `2` to PA7 deposits its word - clearing its own "free" and
-  raising the host's "waiting";
-* the 80186 writing `2` to `0x1c` acknowledges - clearing its "waiting" and
-  restoring the DSP's "free".
+* When the DSP writes `2` to PA7, it deposits its word. This clears its own "free" and
+  sets the "waiting" of the host.
+* When the 80186 writes `2` to `0x1c`, it acknowledges. This clears its "waiting" and
+  restores the "free" of the DSP.
 
-`bridge.py` already suspected this. Its comment on the `0x1c` read says the
+`bridge.py` already suspected this. Its comment on the `0x1c` read says that the
 model "commits on the `0x5e` write instead and uses the bit only to pace the
-C52's next quantum; the two agree on ordering, not polarity." The dump settles
-the polarity.
+C52's next quantum; the two agree on ordering, not polarity." The dump gives the
+polarity.
 
-The consequence for any transparent port mapping is that `0x1c` and PA7 must not
-be copied to each other. A host write to `0x1c` is an acknowledgement and has to
-*set* the DSP's bit, which is why `_mirror_port` ORs rather than assigns.
+The result for each transparent port mapping is this: do not copy `0x1c` and PA7
+to each other. A host write to `0x1c` is an acknowledgement, and it must
+*set* the bit of the DSP. For this reason, `_mirror_port` uses OR and not an assignment.
 
 ## What it does not tell us
 
-Two limits, and both matter.
+There are two limits, and the two are important.
 
-**It only exercises DSP -> host.** The kernel sends; the 80186 receives. Nothing
-in this run carries a message the other way, so bit 0 - the host-to-DSP
-"message pending" the resident's dispatcher at `0x839b` polls - is not covered
-by it. That direction is still inferred.
+**It only exercises DSP -> host.** The kernel sends, and the 80186 receives. Nothing
+in this run carries a message in the other direction. Thus, the run does not cover bit 0, the host-to-DSP
+"message pending" bit that the dispatcher of the resident polls at `0x839b`.
+That direction is still an inference.
 
-**It never ran the resident.** The dump downloads its own kernel to `0x8000` and
-that kernel is the whole program: a `RPT`/`TBLR` block read and this sender.
-The resident's main loop, its `@1a`/`@1b` dispatch, its receive ring at
-`0x0bd0` and the `ARCR` comparison that gates all of its block-level work were
-never involved. So this run cannot say what initialises `ARCR`, which is the
+**It never ran the resident.** The dump downloads its own kernel to `0x8000`, and
+that kernel is the full program: a `RPT`/`TBLR` block read and this sender.
+These items of the resident had no part in the run: its main loop, its `@1a`/`@1b` dispatch, its receive ring at
+`0x0bd0`, and the `ARCR` comparison that gates all of its block-level work.
+Thus, this run cannot say what initialises `ARCR`. That is the
 open blocker in
-[what-runs-and-what-blocks.md](what-runs-and-what-blocks.md) - it proves the
-mailbox works on hardware while telling us nothing about why the resident never
-reaches its poll.
+[what-runs-and-what-blocks.md](what-runs-and-what-blocks.md). The run proves that the
+mailbox operates on hardware, but it tells us nothing about why the resident never
+gets to its poll.
 
-That is a useful split to keep straight: **the transport is confirmed, the
+Keep this split clear: **the transport is confirmed, the
 resident's use of it is not.**
