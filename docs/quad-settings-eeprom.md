@@ -1,17 +1,17 @@
 # Quad QF060003: the settings EEPROM and what each record controls
 
-`ATI7` on the Quad reported `V32bis,Terbo,V.FC,V34+` — no HST, no x2, no V90.
-None of that list was read from anything. It is the firmware's own XOR constant
-surfacing as data when the settings part is absent.
+`ATI7` on the Quad reported `V32bis,Terbo,V.FC,V34+`. It did not report HST, x2 or V90.
+The firmware did not read any item of that list from a device. It is the XOR constant of the firmware,
+which shows as data when the settings part is not installed.
 
-The store is the same 93C66 Microwire part the 302 and 403 carry, at the same
-EEPROM word, in the same layout, reached over the same 186EB PIO lines
-`machine.py` already translates. Seeding one is all the Quad ever needed.
+The store is the same 93C66 Microwire part that the 302 and the 403 have. It is at the same
+EEPROM word, in the same layout, and the firmware accesses it through the same 186EB PIO lines that
+`machine.py` already translates. The Quad only needed a seeded part.
 
 ## The store
 
-Six settings, three redundant differently-obfuscated bytes each, eighteen bytes
-at **EEPROM word 94**, cached in modem RAM at `0x86ee..0x86ff`.
+There are six settings, with three redundant bytes for each, and each copy uses a different obfuscation. The eighteen bytes are
+at **EEPROM word 94**, and the firmware caches them in modem RAM at `0x86ee..0x86ff`.
 
 | | |
 |---|---|
@@ -22,16 +22,16 @@ at **EEPROM word 94**, cached in modem RAM at `0x86ee..0x86ff`.
 | validator | `0xceba7`, 2-of-3 majority, `AH` names the dissenting copy |
 | far wrapper | `0xc041:0x0e5d` — how other segments read any index |
 
-The three copies are `ror(b,2)+5`, `rol(b,1)-0x0f`, and `b xor 0x1d` — byte for
-byte the transforms `courier_emu.ram_dump.decode_settings` already implements
-for the 302's `e237`. The storage order is `IDSDL302_RECORD_ORDER`. The word is
-`IDSDL302_SETTINGS_WORD`. This is not a Quad-specific store; it is the Courier
+The three copies are `ror(b,2)+5`, `rol(b,1)-0x0f`, and `b xor 0x1d`. These are byte
+for byte the transforms that `courier_emu.ram_dump.decode_settings` already implements
+for the `e237` of the 302. The storage order is `IDSDL302_RECORD_ORDER`. The word is
+`IDSDL302_SETTINGS_WORD`. This is not a store that is specific to the Quad. It is the Courier
 settings part on a Quad card.
 
 ## The transport
 
-Bit-banged Microwire on the 80C186EB PIO registers — not an I/O port, which is
-why scanning for `out 0x10` finds nothing:
+The transport is bit-banged Microwire on the 80C186EB PIO registers. It is not an I/O port. This is
+why a scan for `out 0x10` finds nothing:
 
 | line | register | bit |
 |---|---|---|
@@ -39,11 +39,11 @@ why scanning for `out 0x10` finds nothing:
 | DO | `[0xff5a]` | 7 |
 | CS | `[0xff56]` | `0x20` |
 | CLK | `[0xff56]` | `0x04` |
-| DO direction | `[0xff58]` | 7 — cleared for the frame, restored after |
+| DO direction | `[0xff58]` | 7 — cleared for the frame, then restored |
 
-Twelve command bits are shifted MSB-first out of `BX` by the
-`rol al,1 / rcl bx,1 / rcr al,1` sequence; sixteen data bits are shifted back in
-from `[0xff5a]` bit 7 at `0xc1753`. Frame builders:
+The `rol al,1 / rcl bx,1 / rcr al,1` sequence shifts twelve command bits MSB-first out of `BX`.
+At `0xc1753`, sixteen data bits are shifted back in
+from `[0xff5a]` bit 7. Frame builders:
 
 | routine | opcode | frame |
 |---|---|---|
@@ -51,36 +51,36 @@ from `[0xff5a]` bit 7 at `0xc1753`. Frame builders:
 | `0xc15e4` | `AH=5` write | same address arithmetic |
 | `0xc1588` / `0xc158d` | — | fixed `bx = 0x4000` / `0x4c00` |
 
-`(di - 0x8632) >> 1` puts RAM `0x8632` at EEPROM word 0, so the record block at
-`di = 0x86ee` is word **94** exactly. `machine.py` already maps every one of
-these lines onto the 93C66 model, so no new transport code was required.
+`(di - 0x8632) >> 1` puts RAM `0x8632` at EEPROM word 0. Thus, the record block at
+`di = 0x86ee` is exactly word **94**. `machine.py` already maps each of
+these lines to the 93C66 model. Thus, no new transport code was necessary.
 
 ## The failure mode when no part is fitted
 
-Every record reads back zero, the majority vote fails, and the decoder returns
-`0x00 xor 0x1d = 0x1d`. The boot decode at `0xc0940` takes the carry-set path,
-which skips only the first two bits and then reads that `0x1d` as the feature
-mask. `0x1d` carries bits 2 and 3, and those two bits are the entire reported
+Each record reads back zero, the majority vote fails, and the decoder returns
+`0x00 xor 0x1d = 0x1d`. The boot decode at `0xc0940` uses the carry-set path.
+That path skips only the first two bits, and then it reads `0x1d` as the feature
+mask. `0x1d` has bits 2 and 3, and those two bits give the full reported
 options list.
 
-So the pre-seed `V32bis,Terbo,V.FC,V34+` was not a wrong feature set. It was the
-XOR constant. `ATY14` printing `,,,,,` is the same fact on a different command:
+Thus, the `V32bis,Terbo,V.FC,V34+` before the seed was not an incorrect feature set. It was the
+XOR constant. When `ATY14` prints `,,,,,`, this is the same fact on a different command:
 six failed reads.
 
 ## What each setting controls
 
-Measured, one record at a time against an otherwise-zeroed part, reading the
-`ATI7` profile the firmware renders. Reproduce with
-`PYTHONPATH=. .venv/bin/python tools/probe_quad_settings.py`; results in
+We measured one record at a time against a part with all other values at zero. We read the
+`ATI7` profile that the firmware shows. To reproduce, use
+`PYTHONPATH=. .venv/bin/python tools/probe_quad_settings.py`. The results are in
 `artifacts/quad-settings-20260910/results.json`.
 
-Baseline with all six zero: `Product type US/Canada Rackmount`,
+The baseline with all six at zero: `Product type US/Canada Rackmount`,
 `Options V32bis`, no fax or cellular line.
 
 ### Setting 1 — country index → `[0x81c4]`
 
-A plain index, not a bit field, into the 118-byte-per-entry country table at
-`0xe6560`. Indices 0..22 are populated; 23 and above walk off the end and render
+This is a plain index, not a bit field, into the country table at
+`0xe6560`. Each entry has 118 bytes. Indices 0..22 are populated. Indices 23 and higher go past the end and show
 garbage.
 
 | | | | | | | |
@@ -92,14 +92,14 @@ garbage.
 
 ### Setting 2 — feature mask → `[0x8838]`, `[0x8839]`, raw in `[0x81d2]`
 
-`0xc0940` fans the bits out: bit 0 → `0x8838 |= 0x04`, bit 1 → `0x08`,
+`0xc0940` distributes the bits: bit 0 → `0x8838 |= 0x04`, bit 1 → `0x08`,
 bit 2 → `0x40`, bit 3 → `0x80`, bit 5 → `0x20`, bit 6 → `0x8839 |= 0x01`.
-Bits 4 and 7 are not tested there.
+The code there does not test bits 4 and 7.
 
-The options printer at `0xdf363` walks a single null-terminated string list
-(`NONE HST V32bis Terbo V.FC V34+ x2,V90` at `0xdf45b`), so each set mask bit
-emits the *next* string rather than a fixed one. That makes the list positional,
-and worth reading as measured pairs rather than a bit-per-feature table:
+The options printer at `0xdf363` goes through one null-terminated string list
+(`NONE HST V32bis Terbo V.FC V34+ x2,V90` at `0xdf45b`). Thus, each set mask bit
+prints the *next* string, not a fixed string. That makes the list positional.
+Thus, read it as measured pairs, and not as a table with one bit for each feature:
 
 | setting 2 | `[0x8838]` | Options |
 |---|---|---|
@@ -115,20 +115,20 @@ and worth reading as measured pairs rather than a bit-per-feature table:
 | `0x3f` | `0xef` | `HST,V32bis,Terbo,V.FC,V34+,x2,V90` |
 | `0x7f`, `0xff` | `0xef` | unchanged from `0x3f` |
 
-**Bit 5 is the x2/V90 bit**, and `x2,V90` is one combined list entry, not two —
-this firmware cannot report x2 without V90 or the reverse. Bit 6 switches the
-ISDN line to `V.110, V.120, SYNC, PPP, X.75, & PIAFS`. Bits 4 and 7 produced no
-visible change on their own; bit 1 moves `[0x8838]` but changes nothing printed.
+**Bit 5 is the x2/V90 bit**, and `x2,V90` is one combined list entry, not two.
+This firmware cannot report x2 without V90, or V90 without x2. Bit 6 changes the
+ISDN line to `V.110, V.120, SYNC, PPP, X.75, & PIAFS`. Bits 4 and 7 alone caused no
+visible change. Bit 1 changes `[0x8838]`, but it does not change the printed text.
 
 ### Setting 3 — fax → `[0x862e]`
 
-Only bit 0 is observable: set, `Fax Options Class 1/Class 2.0` appears; clear,
-the line is omitted entirely. Bits 1..7 changed nothing.
+Only bit 0 has a visible effect. When it is set, `Fax Options Class 1/Class 2.0` shows.
+When it is clear, the line is not shown. Bits 1..7 changed nothing.
 
-The list at `0xdf47f` also holds `Class 1` and `Class 2.0` as standalone
-strings, but the three tests at `0xdf4c8`, `0xdf4d4` and `0xdf4e0` all test the
-same bit 0, and no path reaches either one. They are dead, in the same way the
-211's `x2` string is dead.
+The list at `0xdf47f` also has `Class 1` and `Class 2.0` as standalone
+strings. But the three tests at `0xdf4c8`, `0xdf4d4` and `0xdf4e0` all test the
+same bit 0, and no path gets to either string. They are dead, in the same way as the
+`x2` string of the 211.
 
 ### Setting 4 — → `[0x862d]`, raw in `[0x81d3]`
 
@@ -140,36 +140,36 @@ same bit 0, and no path reaches either one. They are dead, in the same way the
 | 5+6 | `Cellular Options MNP10,MNP10EC & ETC` |
 | 1,2,3,4,7 | no visible change |
 
-`0xc09a6` forces `[0x862d] |= 0x04` immediately after the read, so that bit is
-never the record's to control.
+`0xc09a6` forces `[0x862d] |= 0x04` immediately after the read. Thus, the record
+never controls that bit.
 
 ### Settings 5 and 6 — no observable effect
 
-Neither is read by the boot decode at `0xc0940`, and sweeping all eight bits of
-each changed nothing in the `ATI7` profile. They are still stored, still
-majority-checked, and still printed by `ATY14`; whatever consumes them is
-reached through the far wrapper rather than at boot.
+The boot decode at `0xc0940` reads neither setting. A sweep of all eight bits of
+each setting changed nothing in the `ATI7` profile. They are still stored, still
+majority-checked and still printed by `ATY14`. The code that uses them
+gets to them through the far wrapper, and not at boot.
 
 ## `ATY14`
 
-`0xf0c7b` loops `cx` from 6 down to 1, calling the getter with the index in `AL`
-and printing each value separated by commas. So `ATY14` reports settings
-**6,5,4,3,2,1** in that order, and the bare `,,,,,` is six failed reads rather
-than six empty values.
+`0xf0c7b` loops `cx` from 6 down to 1. It calls the getter with the index in `AL`
+and prints each value, separated by commas. Thus, `ATY14` reports the settings in the sequence
+**6,5,4,3,2,1**. The bare `,,,,,` is six failed reads, not
+six empty values.
 
 ## A second writer: parameter `0x1f2`
 
-`0xf88fc` sets the same derived bits from a byte it reads with `lodsb`, not from
+`0xf88fc` sets the same derived bits from a byte that it reads with `lodsb`, not from
 the EEPROM: bit 7 → `[0x8839] |= 1`, bits 6 and 5 → `[0x8838] |= 0x20`,
-bit 1 → `[0x862d] |= 0x60`. It uses the cached raw settings `[0x81d2]` and
-`[0x81d3]` as the baseline to fall back to when clearing those same bits, and
-tracks in `[0x882e]` which bits it rather than the EEPROM last set.
+bit 1 → `[0x862d] |= 0x60`. When it clears those bits, it uses the cached raw settings `[0x81d2]` and
+`[0x81d3]` as the baseline. It records in `[0x882e]` which bits it set last
+(and not the EEPROM).
 
-It is one handler in a **message-driven parameter interpreter** occupying
-`0xf3b20..0xfffff` (one segment, base `0xf3b20`, whose first instruction is
-`mov byte [0x9bab], 0`). This is not the AT parser: across a full `ATI7` run
+It is one handler in a **message-driven parameter interpreter** at
+`0xf3b20..0xfffff` (one segment, base `0xf3b20`, with the first instruction
+`mov byte [0x9bab], 0`). This is not the AT parser. During a full `ATI7` run,
 none of `0xf3d24`, `0xf3e08`, `0xf3bb0`, `0xf784e`, `0xf88a3` or `0xf88db`
-executes even once. AT commands go through the `0xc97a9` dispatcher instead.
+executes, not one time. AT commands go through the `0xc97a9` dispatcher.
 
 | | |
 |---|---|
@@ -180,9 +180,9 @@ executes even once. AT commands go through the `0xc97a9` dispatcher instead.
 | header | eight bytes — `0xf3bad` does `add bx,8` before seeding the cursor |
 | id dispatch | 200-entry table at `cs:0x12e4` = `0xf4e04`, plus explicit ranges |
 
-The identifier arrives in `AX` with `0x8000`/`0x4000` as flags. Most ids index
+The identifier comes in `AX`, with `0x8000`/`0x4000` as flags. Most ids index
 the table at `0xf4e04` (152 of its 200 entries are the unsupported stub). The
-feature handler is **not** in that table — it is selected explicitly:
+feature handler is **not** in that table. The code selects it explicitly:
 
 ```
 f4889  cmp ax, 0x1f2
@@ -191,32 +191,32 @@ f488e  mov ax, 0x4dbb          ; 0xf3b20 + 0x4dbb = 0xf88db
 f4891  mov [0x9c2e], ax
 ```
 
-So **parameter id `0x1f2` is what raises or lowers x2/V90, PIAFS and cellular**
-at runtime. Its value field is 1..4 bytes: `0xf88e3` reads the length, then a
-ladder of `lodsb` skips forward so that only the **last** byte of the field
-reaches the bit tests. A one-byte field and a four-byte field with the same
-final byte behave identically.
+Thus, **parameter id `0x1f2` sets or clears x2/V90, PIAFS and cellular**
+at runtime. Its value field is 1..4 bytes. `0xf88e3` reads the length, then a
+ladder of `lodsb` skips forward. Thus, only the **last** byte of the field
+gets to the bit tests. A one-byte field and a four-byte field with the same
+last byte have the same effect.
 
-So the EEPROM is the provisioning floor and parameter `0x1f2` is the override on
-top of it — which is why a card can be shipped with setting 2 bit 5 clear and
-still be turned up in the field without rewriting the part.
+Thus, the EEPROM gives the base provisioning, and parameter `0x1f2` is the override on
+it. This is why a card can ship with setting 2 bit 5 clear, and the field can
+still enable it without a change to the part.
 
-**The transport underneath is not established.** The interpreter core is
-jump-threaded — no near call and no far pointer targets it — so the binding
-between it and a wire was not recovered. The eight-byte header it skips does
-match the backplane framing in [nmc-sdl-protocol.md](nmc-sdl-protocol.md)
-(`attention`, eight-byte header, body, CRC), which points at the chassis NMC as
+**The transport under it is not established.** The interpreter core is
+jump-threaded. No near call and no far pointer goes to it. Thus,
+we did not recover the connection between it and a wire. The eight-byte header that it skips does
+agree with the backplane framing in [nmc-sdl-protocol.md](nmc-sdl-protocol.md)
+(`attention`, eight-byte header, body, CRC). This points to the chassis NMC as
 the sender, but that is a structural match and not a measurement.
 
 ## What is not established
 
-- **What a real x2-provisioned Quad carries.** `0x3f` above is synthetic — it
-  demonstrates that bit 5 is the x2/V90 knob and nothing more. The 403 part
+- **What a real Quad with x2 provisioning has.** The `0x3f` above is synthetic. It
+  shows only that bit 5 is the x2/V90 control. The 403 part
   ships setting 2 as `0x1f`, with bit 5 clear.
-- **Whether the Quad's power-on self test validates the part the way the 302's
-  boot block does.** The 403 part is accepted without complaint, but
-  `CHECKSUM_BYTE`/`CHECKSUM_SPAN` being the Quad's layout too is assumed, not
-  measured.
-- **The transport that delivers parameter `0x1f2`.** The handler and its
-  identifier are recovered; what carries the message to the interpreter is not.
-- **What consumes settings 5 and 6.**
+- **If the power-on self test of the Quad validates the part in the same way as the boot block of the 302.**
+  The 403 part is accepted without errors, but we
+  assume that `CHECKSUM_BYTE`/`CHECKSUM_SPAN` is also the layout of the Quad. We did not
+  measure it.
+- **The transport that delivers parameter `0x1f2`.** We recovered the handler and its
+  identifier, but not what carries the message to the interpreter.
+- **What uses settings 5 and 6.**
