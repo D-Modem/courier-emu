@@ -3021,23 +3021,23 @@ We probed two Couriers over serial to get these values. Both report
 
 | Unit | `ATI7` Clock Freq | `ATI1` | Matching image family |
 |---|---|---|---|
-| 20.16 MHz, US/Canada External | `20.16Mhz` | `1A11` | `IDSDL302.ROM` (carries `20.16Mhz`, no `25 Mhz`) |
+| 20.16 MHz, US/Canada External | `20.16Mhz` | `1A11` | `IDSDL302.ROM` (contains `20.16Mhz`, no `25 Mhz`) |
 | 25 MHz, US/Canada External | `25 Mhz` | `49E2` | `SV25.XMD` family |
 
-`ATI7` on the 20.16 MHz unit matches `IDSDL302.ROM` on every field it prints, and
-those strings sit in one template block at `0x1a97a..0x1a9be`: `20.16Mhz`
-(108922), `512k` (108951), `7.3.14` (109069), `3.0.13` (109086), plus `03/13/98`
-(4197) and `US/Canada` (131118). That establishes the ROM as the correct *build*
-for that unit. It does **not** establish that the flash contents are identical —
-see the open question at the end of this section.
+`ATI7` on the 20.16 MHz unit agrees with `IDSDL302.ROM` on each field that it prints.
+Those strings are in one template block at `0x1a97a..0x1a9be`: `20.16Mhz`
+(108922), `512k` (108951), `7.3.14` (109069), `3.0.13` (109086), and also `03/13/98`
+(4197) and `US/Canada` (131118). This shows that the ROM is the correct *build*
+for that unit. It does **not** show that the flash contents are identical.
+Refer to the open question at the end of this section.
 
 ### The dispatch table
 
-A table of 16-bit near offsets at file `0x25D9B`, immediately after the
-`[ ACCESS DENIED ]` string. Entries are `0xFFFF` for unimplemented commands. The
-bank base is `0x24D20`, derived by anchoring `ATI0`'s handler at file `0x25E05` —
-the code that tests bit `0x20` of `[0x089d]` to choose between the inline strings
-`5607` and `3367`, which is the same product-code selector noted earlier for
+This is a table of 16-bit near offsets at file `0x25D9B`, immediately after the
+`[ ACCESS DENIED ]` string. The entries for commands that are not implemented are `0xFFFF`. The
+bank base is `0x24D20`. We found it from the known location of the `ATI0` handler at file `0x25E05`.
+That code tests bit `0x20` of `[0x089d]` to select one of the inline strings
+`5607` and `3367`. This is the same product-code selector that we found before at
 `0x82e7d`.
 
 | Index | Offset | File | Index | Offset | File |
@@ -3051,24 +3051,24 @@ the code that tests bit `0x20` of `[0x089d]` to choose between the inline string
 | `ATI6` | `0x10af` | `0x25dcf` | `ATI16` | `0x10dc` | `0x25dfc` |
 | `ATI7` | `0x10b8` | `0x25dd8` | | | |
 
-Probing `ATI0..ATI16` on the 20.16 MHz unit returns `OK` for
-`0,1,2,3,4,5,6,7,10,11,15` and `ERROR` for `8,9,12,13,14,16`. That matches the
-table's `0xFFFF` pattern on 15 of 17 entries; `ATI8` and `ATI16` have handlers
-that exist but gate at runtime. The hardware pattern is what fixes the table's
-alignment — reading it from the wrong offset produces a plausible-looking but
-wrong table, so the support pattern should be used to re-confirm any similar
-table found in another image.
+A probe of `ATI0..ATI16` on the 20.16 MHz unit returns `OK` for
+`0,1,2,3,4,5,6,7,10,11,15` and `ERROR` for `8,9,12,13,14,16`. That agrees with the
+`0xFFFF` pattern of the table on 15 of 17 entries. `ATI8` and `ATI16` have handlers,
+but a runtime gate stops them. The hardware pattern gives the
+alignment of the table. If you read the table from an incorrect offset, you get a table that looks
+correct but is incorrect. Thus use the support pattern to confirm again each similar
+table that you find in another image.
 
 `ATI4`, `ATI5`, `ATI6`, `ATI10`, `ATI11`, `ATI15` and `ATI16` are 9-byte stubs of
 the form `mov bx, 0x3560; call far 0x971b:0x59ce; ret`. `ATI7` has the same shape
-and the same `BX` but calls `0xc800:0x000c` instead. `BX` holds the *same
-constant* in all eight, so it is not the report selector; whatever distinguishes
-the reports is passed some other way (most likely the already-parsed command
-number in a variable) and is not established here.
+and the same `BX`, but it calls `0xc800:0x000c` instead. `BX` holds the *same
+constant* in all eight. Thus it is not the report selector. The value that selects
+the report comes through a different path (most probably the parsed command
+number in a variable). We did not find it.
 
 ### The `ATI1` routine
 
-`ATI1`'s handler at file `0x25E24` is a thin wrapper:
+The handler of `ATI1` at file `0x25E24` is a thin wrapper:
 
 ```
 push cx
@@ -3080,51 +3080,51 @@ pop cx
 ret
 ```
 
-Segment `0x8000` is the ROM base (physical `0x80000`), so `0x8000:0x0836` is file
-offset `0x836`. `ATI2`, the RAM test, calls the neighbouring `0x808`.
+Segment `0x8000` is the ROM base (physical `0x80000`). Thus `0x8000:0x0836` is file
+offset `0x836`. `ATI2`, the RAM test, calls the adjacent `0x808`.
 
-The routine at `0x836` is a far wrapper around `0x83a`, which zeroes `BX` and
-calls the helper at `0x860` once per segment for `0xC000`, `0xD000`, `0xE000` and
-`0xF000`, returning `BX` in `AX`. The helper walks `0x8000` words (64 KiB) per
-segment, except `0xF000` where `CX` is loaded with `0x3FFF` so it stops two bytes
-short. Each word is read with `lodsw`, split by `xor dx,dx; xchg dl,ah` into its
-low byte in `AX` and high byte in `DX`, and both are added to `BX`. There is no
+The routine at `0x836` is a far wrapper around `0x83a`. `0x83a` sets `BX` to zero and
+calls the helper at `0x860` one time for each segment `0xC000`, `0xD000`, `0xE000` and
+`0xF000`. Then it returns `BX` in `AX`. The helper reads `0x8000` words (64 KiB) in each
+segment. For `0xF000`, it loads `CX` with `0x3FFF`, thus it stops two bytes
+early. It reads each word with `lodsw`, and `xor dx,dx; xchg dl,ah` divides the word into its
+low byte in `AX` and high byte in `DX`. It adds both to `BX`. There is no
 CRC and no final transform:
 
 > **`ATI1` = (sum of every byte over flash `0x40000..0x77FFD`) mod 2^16**
 
-The region is identical to the download CRC's, including the two-byte shortfall
+The region is identical to the region of the download CRC, and it also stops two bytes early
 at the end of the `0xF000` segment.
 
 ### Open: no image reproduces a unit's `ATI1`
 
-`IDSDL302.ROM` sums to `0xBD4A` against the 20.16 MHz unit's `1A11`, and
-`SV25.XMD` sums to `0x4828` against the 25 MHz unit's `49E2`. None of the ten
-`.XMD` payloads matches either unit either. Two explanations remain open:
+The sum of `IDSDL302.ROM` is `0xBD4A`, and the 20.16 MHz unit gives `1A11`. The sum of
+`SV25.XMD` is `0x4828`, and the 25 MHz unit gives `49E2`. Also, none of the ten
+`.XMD` payloads agrees with either unit. Two explanations are still open:
 
-1. The summed region contains per-unit data — a serial number, country or
-   configuration bytes — in which case `ATI1` differs per unit by construction and
-   can never validate a generic image. `SV25.XMD` landing within 442 of its unit
-   is weakly consistent with this, though byte-sum distances are not reliable
+1. The summed region contains data that is different for each unit (a serial number, country or
+   configuration bytes). In that case, `ATI1` is always different for each unit and
+   can never validate a generic image. `SV25.XMD` is within 442 of its unit.
+   This agrees a little with this explanation, but byte-sum distances are not reliable
    evidence.
-2. The images genuinely differ from the units' flash contents.
+2. The images are really different from the flash contents of the units.
 
-Distinguishing them is cheap: locate where the serial number (`0009540034268322`
-on the 20.16 MHz unit) is stored. If it falls inside `0x40000..0x77FFD`,
-explanation 1 is confirmed and `ATI1` is unusable for image validation.
+It is easy to find which explanation is correct: find the location of the serial number (`0009540034268322`
+on the 20.16 MHz unit). If it is in `0x40000..0x77FFD`,
+explanation 1 is confirmed, and you cannot use `ATI1` for image validation.
 
-Until that is settled, `ATI7` agreement should be read as "same firmware build",
+Until we know the answer, read `ATI7` agreement as "same firmware build",
 not "same flash contents".
 
 ## Why a ROM run emits nothing: the tick chain
 
-A `courier run IDSDL302.ROM` produces no serial output at all. The cause is not
-the UART model. Across 40M instructions the character emitter at `0x8000:0x15f0`,
-the hex-word printer at `0x9d76` and the newline routine at `0x9e11` are each
-entered **zero** times: the firmware never attempts to print, because boot never
-gets that far.
+A `courier run IDSDL302.ROM` gives no serial output. The cause is not
+the UART model. In 40M instructions, the code enters the character emitter at `0x8000:0x15f0`,
+the hex-word printer at `0x9d76` and the newline routine at `0x9e11`
+**zero** times each. The firmware never tries to print, because the boot never
+gets to that point.
 
-The stall is a delay routine at `0x8000:0x0a52`:
+The stall is in a delay routine at `0x8000:0x0a52`:
 
 ```
 mov ah, byte ptr [0x12a]   ; tick counter
@@ -3134,100 +3134,100 @@ jne  -6
 ```
 
 Five entry points at `0x0a40`, `0x0a44`, `0x0a48`, `0x0a4c` and `0x0a50` select
-delays of `0x14`, `5`, `4`, `2` and `1` ticks. With the counter frozen the compare
-never succeeds: the two instructions at `0x0a59`/`0x0a5d` execute 17,233,307 times
-each, about 85% of the whole run.
+delays of `0x14`, `5`, `4`, `2` and `1` ticks. When the counter does not change, the compare
+never succeeds. The two instructions at `0x0a59`/`0x0a5d` execute 17,233,307 times
+each, about 85% of the full run.
 
-The counter chain, end to end:
+The full counter chain:
 
 | Step | Evidence |
 |---|---|
 | `[0x12a]` is incremented at `0x0ae5` (`inc word ptr [0x12a]`) | the only such instruction in the image |
-| `0x0ae5` sits inside the ISR beginning `0x8000:0x0a70` (`sti; cld; pushaw; push es`) | — |
+| `0x0ae5` is in the ISR that starts at `0x8000:0x0a70` (`sti; cld; pushaw; push es`) | — |
 | That ISR is installed on IVT vector `0x0F` | emulated IVT: `0x0f -> 8000:0a70` |
 | The harness gates this edge on its `int3` source | `SOURCE_CONTROL[0xFF1E]` in `timers.py` |
-| The boot block masks INT3 | `OUT 0xFF1E, 0x000B` at `pc=0xfda3e`; `0x08` is the mask bit |
-| The harness honours the mask and withholds the edge | `machine.py`, the `enabled("int3")` guard |
+| The boot block masks INT3 | `OUT 0xFF1E, 0x000B` at `pc=0xfda3e`. `0x08` is the mask bit |
+| The harness obeys the mask and does not send the edge | `machine.py`, the `enabled("int3")` guard |
 
-Nothing else can reach the ISR: the image contains no `INT 0Fh` instruction, no
+Nothing else can get to the ISR. The image contains no `INT 0Fh` instruction, no
 near call or jump to `0x0a70`, and no stored far pointer to it (the single byte
-match for `70 0a 00 80` at file `0x3f1` falls inside unrelated code).
+match for `70 0a 00 80` at file `0x3f1` is in unrelated code).
 
-**The harness's mask handling is correct here, and so is the standing observation
-that this firmware masks INT3.** Two traps are worth recording because both cost
-time:
+**The mask handling of the harness is correct here. The observation
+that this firmware masks INT3 is also correct.** Two errors are easy to make. We record them because both used
+much time:
 
-- **The peripheral control block is reached through I/O port space, not memory.**
-  The firmware programs it with `OUT`, so a Unicorn `UC_HOOK_MEM_WRITE` over
-  `0xFF00..0xFFFF` observes nothing and makes it look as though registers such as
-  `0xFF1E` are never written. Use the I/O hooks, or `io_events`, to see them.
+- **Access to the peripheral control block is through I/O port space, not memory.**
+  The firmware programs it with `OUT`. Thus a Unicorn `UC_HOOK_MEM_WRITE` over
+  `0xFF00..0xFFFF` sees nothing, and it looks as if the firmware never writes registers such as
+  `0xFF1E`. Use the I/O hooks, or `io_events`, to see them.
 - **The part is an 80C186EB, not an original 80186, and its peripheral layout
-  differs.** Timers sit at `0xFF30..0xFF46` and the interrupt controller at
-  `0xFF08..0xFF1E`, where the original part puts timers at `0xFF50` and the
-  interrupt controller at `0xFF20..0xFF3E`. So `0xFF3E` is timer 1's control
-  register here (`0xE001` = EN|INH|INT|CONT), *not* INT3 control, and `0xFF1E` is
-  the int3 control register, not a timer. The map in `timers.py` is right;
-  reading these addresses against an original-80186 datasheet is a trap, and an
-  easy one to fall into twice.
+  is different.** The timers are at `0xFF30..0xFF46` and the interrupt controller is at
+  `0xFF08..0xFF1E`. The original part puts the timers at `0xFF50` and the
+  interrupt controller at `0xFF20..0xFF3E`. Thus `0xFF3E` here is the control register of timer 1
+  (`0xE001` = EN|INH|INT|CONT), *not* INT3 control, and `0xFF1E` is
+  the int3 control register, not a timer. The map in `timers.py` is correct.
+  Do not read these addresses with an original-80186 datasheet. This error is
+  easy to make two times.
 
-**Open question.** Because the vector assignments of the EB are not confirmed
-here, it is not established that IVT vector `0x0F` — where the tick ISR is
-installed — is in fact the source whose mask lives at `0xFF1E`. If on this part
-vector `0x0F` belongs to some other, unmasked source, then gating this edge on
-`int3` is the wrong gate and would explain why the emulated boot stalls where real
-hardware does not. Settle this from the 80C186EB documentation before changing
-`machine.py`: the guard there is deliberate and load-bearing for the XMF paths.
+**Open question.** We did not confirm the vector assignments of the EB
+here. Thus we do not know if IVT vector `0x0F` (where the tick ISR is
+installed) is really the source that has its mask at `0xFF1E`. If, on this part,
+vector `0x0F` is for a different, unmasked source, then the gate of this edge on
+`int3` is incorrect. That would explain why the emulated boot stalls but real
+hardware does not. Find the answer in the 80C186EB documentation before you change
+`machine.py`. The guard there is intentional, and the XMF paths depend on it.
 
 ### What forcing the counter shows
 
-Advancing `[0x12a]` artificially from a code hook drops the spin from 17,233,307
-executions to 384, and boot then runs to completion: it reaches the main service
-loop, `0x9237` calling `0xb3bc` and `0xb402` round-robin, ~781,000 times, idling
-normally. So the machine is far closer to working than "no serial output"
-suggests — one frozen counter accounts for the entire silence.
+When a code hook advances `[0x12a]` artificially, the spin decreases from 17,233,307
+executions to 384. Then the boot runs to completion. It gets to the main service
+loop, where `0x9237` calls `0xb3bc` and `0xb402` in turn, about 781,000 times, and idles
+normally. Thus the machine is much closer to correct operation than "no serial output"
+shows. One counter that does not change causes all of the silence.
 
-It still prints nothing in that state because nothing prompts it. Queued serial
-input is never consumed: with `--serial-input-hex 415449310d` (`ATI1\r`) the run
+In that state, it still prints nothing, because nothing gives it input. The code never consumes queued serial
+input. With `--serial-input-hex 415449310d` (`ATI1\r`), the run
 ends with `serial_input_remaining: 5` and `serial_interrupts: 0`. Serial input
 delivery is a second, independent gap.
 
 ### The second gap: the serial front end is XMF-only
 
-Supplying the tick is necessary but not sufficient. Even with boot running to the
-main service loop, a ROM run still prints nothing and still consumes no input:
-`serial_interrupts` stays `0` and every queued byte remains (`--serial-input-hex
+The tick is necessary, but it is not sufficient. When the boot runs to the
+main service loop, a ROM run still prints nothing and still consumes no input.
+`serial_interrupts` stays `0` and all queued bytes remain (`--serial-input-hex
 415449310d` ends with `serial_input_remaining: 5`).
 
-The cause is a scope boundary in the harness rather than a defect. The serial
-front end in `machine.py` is keyed entirely to XMF images:
+The cause is a scope limit in the harness, not a defect. The serial
+front end in `machine.py` is set up only for XMF images:
 
 | Component | Keyed to | Reached by a ROM? |
 |---|---|---|
-| arming triggers `0x65F03`, `0x65D42`, `0x5CE66`, `0x5CE6A` | XMF payload mapped at `0x40000` | no — a ROM maps at `0x80000` |
+| arming triggers `0x65F03`, `0x65D42`, `0x5CE66`, `0x5CE6A` | XMF payload mapped at `0x40000` | no. A ROM maps at `0x80000` |
 | arming writes `0x1D26`, `0x1CEE`, `0x2AC` | XMF supervisor RAM layout | no |
-| `ready_callback` `0xA420` / `0xA7A0` / `0xA8D9` | `_alternate_supervisor` / `_supervisor_23`, both derived from `supervisor_offset` | no — `CourierRom` has no such attribute |
+| `ready_callback` `0xA420` / `0xA7A0` / `0xA8D9` | `_alternate_supervisor` / `_supervisor_23`, both derived from `supervisor_offset` | no. `CourierRom` does not have this attribute |
 
-`_serial_started` therefore never latches, so the interrupt injector never runs.
-Confirmed directly: on `IDSDL302.ROM`, `_serial_started` is `False` both before and
-after a 20M-instruction run, `serial_interrupts` is `0`, and all five input bytes
-are still queued. The two lone reads of port `0x00` in such a run are explained by
-the same fact — the firmware never reaches the point where it would poll the UART.
+Thus `_serial_started` never latches, and the interrupt injector never runs.
+We confirmed this directly. On `IDSDL302.ROM`, `_serial_started` is `False` before and
+after a run of 20M instructions, `serial_interrupts` is `0`, and all five input bytes
+are still in the queue. The same fact explains the only two reads of port `0x00` in such a run:
+the firmware never gets to the point where it would poll the UART.
 
-So "a ROM run emits nothing" has **two** independent causes, not one: the frozen
-tick above, and this. Interactive AT operation on a ROM image is unimplemented
-rather than broken; the ROM path was built for boot and CRC analysis, which it
-does correctly. Supporting it means porting the front end: arming triggers at ROM
-addresses, and the ROM's own equivalents of those three RAM variables and the
+Thus "a ROM run emits nothing" has **two** independent causes, not one: the
+tick that does not change (refer to the text above), and this. Interactive AT operation on a ROM image is not implemented.
+It is not broken. We built the ROM path for boot and CRC analysis, and it
+does these correctly. To support AT operation, port the front end: arming triggers at ROM
+addresses, and the ROM equivalents of those three RAM variables and the
 parser callback.
 
 ### The ROM's own serial front end
 
-Porting the front end needs the ROM-side equivalents of the XMF variables above.
-These are now located.
+To port the front end, the ROM-side equivalents of the XMF variables above are necessary.
+We found them.
 
-**Character sink.** `0x8000:0x15f0` is the emit-one-character primitive (`AL` holds
-the byte); its send path falls through to `0xf11a`, which is not a UART write at
-all but a gated buffer append:
+**Character sink.** `0x8000:0x15f0` is the primitive that sends one character (`AL` holds
+the byte). Its send path continues to `0xf11a`, which is not a UART write.
+It is a gated buffer append:
 
 ```
 test byte ptr [0xea7], 1     ; output enabled?
@@ -3240,92 +3240,91 @@ inc  word ptr [0x3ca4]
 clc / ret
 ```
 
-So `[0xea7]` bit 0 and `[0x3424] == 1` gate all output, and `[0x3ca4]` is the write
-pointer. On a harness run both gates are clear (`00` and `00`), so every character
-is silently dropped.
+Thus `[0xea7]` bit 0 and `[0x3424] == 1` gate all output, and `[0x3ca4]` is the write
+pointer. On a harness run, both gates are clear (`00` and `00`). Thus the code discards each character
+without a message.
 
 This is **not** an independent fault. Exactly one instruction in the image sets
-that bit — `or byte ptr [0xea7], 1` at file `0x2171f` — and a 20M-instruction run
-never executes it, nor any instruction in the surrounding routine. The gate is
-downstream of the boot stall: get boot far enough and the firmware opens it
-itself. So a silent ROM run has two causes, not three — the frozen tick, and the
-XMF-only input path.
+that bit: `or byte ptr [0xea7], 1` at file `0x2171f`. A run of 20M instructions
+never executes it, and it executes no instruction in the routine around it. The gate is
+downstream of the boot stall. If the boot gets sufficiently far, the firmware opens the gate
+itself. Thus a silent ROM run has two causes, not three: the tick that does not change, and the
+input path that is only for XMF.
 
-**Init state machine.** Dispatched through the function pointer at `[0x298]`
-(`call word ptr [0x298]` at `0xf564`). Each state enqueues a command word into a
-ring buffer via `0xf65c` — write pointer `[0x29c]`, read pointer `[0x29a]`, buffer
-`0x29e..0x2cd`, wrapping at `0x2ce`, returning carry set when full — then waits
-some ticks and advances `[0x298]`. With the tick forced, a run reaches
-`[0x298] = 0x0150` with the ring write pointer advanced to `0x02a6`, i.e. the
-sequence really does progress; it is only ever the tick that stops it.
+**Init state machine.** The function pointer at `[0x298]` dispatches it
+(`call word ptr [0x298]` at `0xf564`). Each state puts a command word into a
+ring buffer through `0xf65c` (write pointer `[0x29c]`, read pointer `[0x29a]`, buffer
+`0x29e..0x2cd`, wrap at `0x2ce`, carry set when full). Then it waits
+some ticks and advances `[0x298]`. With the tick forced, a run gets to
+`[0x298] = 0x0150`, and the ring write pointer advances to `0x02a6`. Thus the
+sequence does progress. Only the tick stops it.
 
-**Receive side.** The timer 2 ISR (vector `0x13`) assembles input a bit at a time:
-it reads `[0xff5a]`, rotates, and shifts the bit into `[0xb59]` (`rcl al,3` then
-`rcr byte ptr [0xb59],1`), branching once a full byte has shifted through. Timer 1
+**Receive side.** The timer 2 ISR (vector `0x13`) assembles input one bit at a time.
+It reads `[0xff5a]`, rotates, and shifts the bit into `[0xb59]` (`rcl al,3` and then
+`rcr byte ptr [0xb59],1`). It branches when a full byte has shifted through. Timer 1
 (vector `0x12`) calls the periodic service at segment offset `0x133`.
 
-**Tick calibration.** Vector `0x0D` — INT1, which is what `--int1-after` delivers —
-is the calibration ISR: it sets timer 2's control (`[0xff46] = 0xE001`), derives a
-compare value from timer 1's count (`[0xff38]`) and stores it to `[0xff42]`, then
-writes `[0xff12] = 0`, unmasking the timer. This is the "external interrupt that
-calibrates its tick" referred to in `InterruptController`'s docstring, now located.
+**Tick calibration.** Vector `0x0D` (INT1, which `--int1-after` sends)
+is the calibration ISR. It sets the control of timer 2 (`[0xff46] = 0xE001`), calculates a
+compare value from the count of timer 1 (`[0xff38]`) and stores it to `[0xff42]`. Then it
+writes `[0xff12] = 0`, which unmasks the timer. This is the "external interrupt that
+calibrates its tick" in the docstring of `InterruptController`. We now know its location.
 
 ### Why boot still stops short: the settings EEPROM
 
 With the tick supplied (`--tick-ms`), a ROM run boots past the delay loops and
-idles in its main service loop, but still prints nothing. The reason is not a
-stall. The firmware has no valid configuration and correctly refuses to open its
+idles in its main service loop. But it still prints nothing. The reason is not a
+stall. The firmware has no valid configuration, and it correctly does not open its
 DTE port.
 
-The chain, every step of which was confirmed to execute:
+The chain. We confirmed that each step executes:
 
-1. `0xe2e9` fills the nine-word block at `0x752` by calling the settings reader
-   nine times.
-2. `0xe237` decodes one setting: it indexes the pointer table at `0xe2a0`, reads a
+1. `0xe2e9` calls the settings reader nine times to fill the nine-word block at `0x752`.
+2. `0xe237` decodes one setting. It uses the pointer table at `0xe2a0`, reads a
    three-byte record, and validates it.
-3. On failure it returns carry. At `0x0923` the boot does `mov al, 3; call ...;
-   jb skip; mov [0x695], al`, so a failed read leaves `[0x695]` zero.
-4. At `0x216f2`, `test byte ptr [0x695], 1` gates the whole block that ends in
-   `or byte ptr [0xea7], 1` at `0x2171f` - the instruction that opens output.
-5. `[0xea7]` bit 0 clear means the emitter at `0xf11a` discards every character.
+3. On failure, it returns carry. At `0x0923`, the boot does `mov al, 3; call ...;
+   jb skip; mov [0x695], al`. Thus a failed read leaves `[0x695]` at zero.
+4. At `0x216f2`, `test byte ptr [0x695], 1` gates the full block that ends in
+   `or byte ptr [0xea7], 1` at `0x2171f`. This is the instruction that opens output.
+5. When `[0xea7]` bit 0 is clear, the emitter at `0xf11a` discards each character.
 
-In a harness run the block at `0x752` reads back as all zeros, the four validation
-calls all fail, and output is never enabled. Supplying `--nvram` or
-`--parameter-sector` does not help, because neither feeds this path.
+In a harness run, the block at `0x752` reads back as all zeros, all four validation
+calls fail, and output is never enabled. `--nvram` and
+`--parameter-sector` do not help, because neither supplies this path.
 
-**The chip is the one the harness already models, reached by a different driver.**
-`nvram.py` models a 93C66 (256 x 16 Microwire) on board latch 0, I/O port `0x10`,
-which is the driver an XMF uses (`5b5e:1801`). The ROM's driver, at `0x1401`, bangs
+**The chip is the chip that the harness already models, but a different driver gets access to it.**
+`nvram.py` models a 93C66 (256 x 16 Microwire) on board latch 0, I/O port `0x10`.
+This is the driver that an XMF uses (`5b5e:1801`). The driver of the ROM, at `0x1401`, bit-bangs
 the 80C186EB port pins instead:
 
 | Signal | Register and bit |
 |---|---|
-| chip select | `0xff56`, bit `0x20` - asserted once and held |
-| clock | `0xff56`, bit `0x04` - data is clocked on the rising edge |
-| data pin direction | `0xff58`, bit `0x80` - cleared to drive, set to sample |
+| chip select | `0xff56`, bit `0x20`. Asserted one time and held |
+| clock | `0xff56`, bit `0x04`. Data is clocked on the rising edge |
+| data pin direction | `0xff58`, bit `0x80`. Cleared to drive, set to sample |
 | data to the chip | `0xff5e`, bit `0x80` (the port 2 latch) |
 | data from the chip | `0xff5a`, bit `0x80` (the port 2 pin register) |
 
 These are one bidirectional data line on port 2 pin 7, not separate DI and DO
-pins: the driver writes it through the latch while `0xff58` bit `0x80` is clear,
-then sets that bit and samples the same pin through `0xff5a`. The bit numbers are
-`0x80` and not `0x01` - `rol al, 1` / `rcl bx, 1` moves the *top* bit of the port
-byte, which a casual reading of the routine gets backwards. Per command bit the
-driver writes the data bit, sets `0x20`, raises `0x04`, then lowers it.
+pins. The driver writes it through the latch while `0xff58` bit `0x80` is clear.
+Then it sets that bit and samples the same pin through `0xff5a`. The bit numbers are
+`0x80` and not `0x01`. `rol al, 1` / `rcl bx, 1` moves the *top* bit of the port
+byte. A quick reading of the routine can give the opposite order. For each command bit, the
+driver writes the data bit, sets `0x20`, raises `0x04`, and then lowers it.
 
 It clocks 12 bits out (`cx = 0x0c`) and 16 bits in (`cx = 0x10`): a dummy `0`, the
-start bit, opcode `10`, and eight address bits - a standard 93C66 read.
+start bit, opcode `10`, and eight address bits. This is a standard 93C66 read.
 
-**Address mapping.** The command word is built as `ax = 0x0600 | index` then
-`rol ax, 4`, where `index = (di - 0x696) / 2`. So RAM mirrors the EEPROM from
+**Address mapping.** The code builds the command word as `ax = 0x0600 | index` and then
+`rol ax, 4`, where `index = (di - 0x696) / 2`. Thus RAM is a copy of the EEPROM from
 `0x696`:
 
 ```
 eeprom word = (ram address - 0x696) / 2
 ```
 
-The settings block `0x752..0x763` is therefore EEPROM words 94..102. Those 18
-bytes hold six three-byte records, selected through the table at `0xe2a0`:
+Thus the settings block `0x752..0x763` is EEPROM words 94..102. Those 18
+bytes hold six three-byte records. The table at `0xe2a0` selects them:
 
 | Setting | Record | Setting | Record |
 |---|---|---|---|
@@ -3333,33 +3332,32 @@ bytes hold six three-byte records, selected through the table at `0xe2a0`:
 | 2 | `0x752` | 5 | `0x75b` |
 | 3 | `0x755` (gates output) | 6 | `0x75e` |
 
-The records are obfuscated rather than plain: the decoder at `0xe237` applies
-`ror 2` / `add 5`, `rol 1` / `sub 0x0f`, and `xor 0x1d`, so valid records can be
-constructed by running those backwards.
+The records are obfuscated, not plain. The decoder at `0xe237` applies
+`ror 2` / `add 5`, `rol 1` / `sub 0x0f`, and `xor 0x1d`. Thus you can
+make valid records if you do those steps in the opposite order.
 
-Making a ROM run reach its banner therefore needs two things: the existing 93C66
-model given a second front end on those four pins, and words 94..102 populated
+Thus, for a ROM run to get to its banner, two items are necessary: a second front end for the existing 93C66
+model on those four pins, and words 94..102 filled
 with correctly encoded records. A blank EEPROM reads zeros, which is exactly the
-state that fails today.
+state that fails now.
 
 ### The unresolved part
 
-The boot block masks INT3 early, so if the delay at `0x0a52` genuinely ran before
-something later unmasked it, real hardware would hang in exactly the same place —
-and it does not: the reference 20.16 MHz unit boots and answers `AT` normally.
-The likely reading is therefore **not** a defect in interrupt delivery but an
-earlier divergence: the emulated boot reaches a delay call before the tick source
-is enabled. Forcing the counter papers over that divergence rather than repairing
-it. Finding the branch where the emulated path leaves the hardware path is the
-open task, and it is tractable, because a working unit is available to compare
-against.
+The boot block masks INT3 early. Thus, if the delay at `0x0a52` really ran before
+a later step unmasked it, real hardware would stop at exactly the same location.
+But it does not stop: the reference 20.16 MHz unit boots and answers `AT` normally.
+Thus the probable interpretation is **not** a defect in interrupt delivery. It is an
+earlier divergence: the emulated boot gets to a delay call before the tick source
+is enabled. A forced counter hides that divergence. It does not repair
+it. The open task is to find the branch where the emulated path leaves the hardware path.
+This is possible, because a working unit is available for comparison.
 
 ### Incidental confirmation of the CRC region
 
-The same runs re-confirm the application CRC boundary from an independent
-direction. During power-on the ROM checksums itself with the routine copied into
-low RAM: addresses `0x3e0` and `0x106a` each execute exactly 229,374 times, which
-is `0x37FFE` — precisely the size of the region `0x40000..0x77FFD` recovered from
+The same runs confirm the application CRC boundary again, from an independent
+direction. During power-on, the ROM calculates its own checksum with the routine that it copied into
+low RAM. Addresses `0x3e0` and `0x106a` each execute exactly 229,374 times, which
+is `0x37FFE`. This is exactly the size of the region `0x40000..0x77FFD` that we recovered from
 the loader.
 
 ## Older C51 SDL package and V.8 frame path
