@@ -3550,6 +3550,12 @@ The core now records each entry into the three identical numerical loops at
 and the paired address/value. With the callback held low until native CI/ANSam
 qualification, the first entry that the firmware controls is always:
 
+```text
+loop=c853  ACC=00007fef  source=a51b:0000  pair=d2a8:0001
+```
+
+Then we tried these models at the real read boundary:
+
 - a single `ffff` or Q15 `8000` at `a51b`;
 - the same value in the descending four-word cells `a51b`, `a517`, ...;
 - a contiguous block over the surrounding external-data range;
