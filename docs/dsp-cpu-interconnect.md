@@ -1,56 +1,58 @@
 # How the DSP and the ASIC/CPU are connected
 
-**Update, 2026-09-07:** fresh board probes explain and fix the NDX/PA7 interaction.
+**Update, 2026-09-07:** New board probes explain and correct the NDX/PA7 interaction.
 See [the board comparison and corrections](dsp-mailbox-board-fix.md). The older
-ARCR/INDX blocker conclusions below are historical and superseded.
+ARCR/INDX blocker conclusions below are historical. The new probes replace them.
 
-A synthesis aimed at one question: what is the path by which the 80186
-supervisor and the C5x datapump say anything to each other. It separates what
-is hardware-proven from what is inferred, and it retracts one claim that has
-been steering the debugging in the wrong direction.
+This document is a synthesis for one question: what is the path that the 80186
+supervisor and the C5x datapump use to send data to each other? It keeps the
+items that the hardware proves apart from the items that we infer. It also
+retracts one claim that sent the debug work in the wrong direction.
 
-**The short version.** A *logical* path is proven: on the live board a kernel
-running on the DSP wrote its I/O ports `0x5e`/`0x5f` and 2048 words arrived at
-the 80186. The *physical* arrangement is now settled too, and it
-is the obvious one: the ASIC is on the DSP's 16 data pins, and `IS` - the
-I/O-space strobe, which nothing but an `IN`, an `OUT` or a `PA0`-`PA15` access
-asserts - is connected to it. So the ASIC decodes the DSP's I/O cycles across
-the bus the SRAMs already sit on, and the serial reading is retired. See "The
-physical objection, resolved" below.
+**The short version.** A *logical* path is proven. On the live board, a kernel
+on the DSP wrote its I/O ports `0x5e`/`0x5f`, and 2048 words arrived at the
+80186. The *physical* arrangement is now also known, and it is the simple one.
+The ASIC is on the 16 data pins of the DSP. Also, `IS` is connected to the
+ASIC. `IS` is the I/O-space strobe, and only an `IN`, an `OUT` or a
+`PA0`-`PA15` access asserts it. Thus the ASIC decodes the I/O cycles of the
+DSP on the same bus as the SRAMs, and the serial theory is retired. Refer to
+"The physical objection, resolved" below.
 
 ## The proven part
 
-The evidence is `artifacts/dsp-onchip-rom-01/`, and **only** that one - "read
-from the DSP of a live Courier", 20.16 MHz board, ID_SDL v4.03d, 2026-09-07. A
-kernel placed in supervisor RAM with `ATGLK2W` and started from Timer 0's
-interrupt ran at DSP program `0x8000`, read the on-chip ROM with `RPT`/`TBLR`,
-and returned 2048 words. Its sender is the resident's own outbound pattern, and
-in `build_rom_dump_probe` that is literally `out @7c, 0x005e` / `out *+,
+The evidence is `artifacts/dsp-onchip-rom-01/`, and **only** that directory:
+"read from the DSP of a live Courier", 20.16 MHz board, ID_SDL v4.03d,
+2026-09-07. We put a kernel in supervisor RAM with `ATGLK2W` and started it
+from the Timer 0 interrupt. The kernel ran at DSP program `0x8000`, read the
+on-chip ROM with `RPT`/`TBLR`, and returned 2048 words. Its sender is the
+outbound pattern of the resident. In `build_rom_dump_probe`, that pattern is
+exactly `out @7c, 0x005e` / `out *+,
 0x005f` / `2 -> @57`. The returned image has a plausible reset vector
-(`0000: b 0670`), 1307 distinct values, and two independent runs agree.
+(`0000: b 0670`) and 1307 different values. Two independent runs agree.
 
-So **the DSP's I/O-space writes reach the 80186 on the real board.** That much
-is measured.
+Thus **the I/O-space writes of the DSP get to the 80186 on the real board.**
+We measured this result.
 
-The ROM came off the board **in two halves**, because the watchdog resets it
-before a 2048-word frame can finish. The two real captures are
-`artifacts/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`, and
-`dsp-onchip-rom-01/manifest.json` records how they were joined.
+The ROM came off the board **in two halves**. The cause is that the watchdog
+resets the DSP before a 2048-word frame can complete. The two real captures
+are `artifacts/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`.
+`dsp-onchip-rom-01/manifest.json` records how we joined them.
 
-> **Mind which directory you cite.** The top-level `dsp-rom-half0/`,
-> `dsp-rom-half1/`, `dsp-rom-dump-v*`, `dsp-rom-transport-v*` and
-> `dsp-rom-sample-v1` directories are the **emulator dry-runs** of the same
-> kernel: they carry `hardware_tested: false` and their `serial_text` is a
-> synthetic ramp (`0x1234 + 0x193n`). The hardware captures of the two halves
-> live *inside* `dsp-onchip-rom-01/`, and begin `7980 0670 0860 BE20` - real
-> code, not a ramp. Two earlier versions of this document got this wrong in
-> both directions: first citing a dry-run as the proof, then concluding from
-> the same flag that no half-dump was ever taken on hardware. Both were wrong;
-> the dry-runs and the real runs simply share a kernel and a naming scheme.
+> **Make sure that you cite the correct directory.** The top-level
+> `dsp-rom-half0/`, `dsp-rom-half1/`, `dsp-rom-dump-v*`, `dsp-rom-transport-v*`
+> and `dsp-rom-sample-v1` directories are the **emulator dry-runs** of the
+> same kernel. They have `hardware_tested: false`, and their `serial_text` is
+> a synthetic ramp (`0x1234 + 0x193n`). The hardware captures of the two halves
+> are *in* `dsp-onchip-rom-01/`, and they start with `7980 0670 0860 BE20`.
+> That is real code, not a ramp. Two earlier versions of this document had
+> this wrong in two opposite directions. The first version cited a dry-run as
+> the proof. The second version used the same flag to conclude that nobody
+> took a half-dump on hardware. Both were wrong. The dry-runs and the real
+> runs only use the same kernel and the same names.
 >
-> `artifacts/dsp-boot-word-01/` is real hardware but does not prove this
-> either: its kernel is placed and started the same way, and it establishes
-> what the ASIC presents at DSP data `0xffff`, not the return path.
+> `artifacts/dsp-boot-word-01/` is real hardware, but it also does not prove
+> this. Its kernel is put in memory and started in the same way. It shows
+> what the ASIC supplies at DSP data `0xffff`, not the return path.
 
 The three windows, from `artifacts/io-port-map/board-21210/` and
 `artifacts/cpu-port-map-01/`:
@@ -62,62 +64,64 @@ The three windows, from `artifacts/io-port-map/board-21210/` and
 | download | `0x40`-`0x4e`, eight latches | program RAM, DSP held in reset | no "go" - releasing reset is the go |
 | status | `0x1c`/`0x1e` | `PA7` (`0x57`) | bit 0 host message pending, bit 9 gates `0x80f8` |
 
-On the DSP side the dispatcher reads the tag, rejects tags above `0x7f`, and
+On the DSP side, the dispatcher reads the tag, rejects tags above `0x7f`, and
 branches through a 121-entry jump table. `PA0`-`PA15` are not a peripheral
-block and not reserved space: SPRU056D section 3.5.11 and Table 8-8 make DSP
-data `0x0050`-`0x005F` the sixteen I/O ports, reachable both by ordinary data
-addressing and by `IN`/`OUT`. **The ASIC is the device on the other side of
-them.**
+block and not reserved space. SPRU056D section 3.5.11 and Table 8-8 make DSP
+data `0x0050`-`0x005F` the sixteen I/O ports. Ordinary data addressing and
+`IN`/`OUT` can both get to them. **The ASIC is the device on the other side of
+these ports.**
 
 ### Why a board inspection sees no parallel traces
 
-The objection that stalled this - a board inspection reporting no traces from
-the DSP's address/data pins to anything but its two `CY7C199` SRAMs - is
-weakened by the following, but **not** disposed of by it. See "The physical
-objection".
+A board inspection found no traces from the address/data pins of the DSP to
+any device other than its two `CY7C199` SRAMs. This objection stopped the
+work. The data that follows makes the objection weaker, but it does **not**
+remove it. Refer to "The physical objection".
 
 SPRU056D Table A-8 gives `DS`, `PS` and `IS` as three *space-select strobes*
-sharing **one** address/data bus: "Data, program, and I/O space select signals.
+on **one** address/data bus: "Data, program, and I/O space select signals.
 Always high unless low level is asserted for communicating to a particular
-external space." So an I/O cycle drives the same address and data pins as a
-data cycle, distinguished only by which strobe goes low.
+external space." Thus an I/O cycle drives the same address and data pins as a
+data cycle. Only the strobe that goes low is different.
 
-So an I/O port on the C5x is not a separate parallel port with its own pins.
-If the ASIC is on that bus at all, it is tapped onto the *same nets* that run
-from the DSP to its SRAMs, qualified by `IS`. That removes one form of the
-objection - nobody should be looking for a second, dedicated 32-wire bus - but
-it does not remove the objection itself.
+Thus an I/O port on the C5x is not a separate parallel port with its own pins.
+If the ASIC is on that bus, it connects to the *same nets* that go from the
+DSP to its SRAMs, and `IS` qualifies it. This removes one form of the
+objection, because there is no second, dedicated 32-wire bus to look for. But
+it does not remove the objection.
 
 ## What this does and does not block
 
-Worth separating, because it has been costing time. **The physical medium is
-not on the emulator's critical path.**
+It is important to keep these items apart, because this question used much
+time. **The physical medium is not on the critical path of the emulator.**
 
-The harness never simulates traces. It simulates what `out @7c, 0x5e` does on
-one side and what `in al, 0x5c` returns on the other, and that programming
-model is confirmed twice over: SPRU056D section 3.5.11 and the Table 8-8 note
-put the sixteen I/O ports `PA0`-`PA15` at data `0050h`-`005Fh`, reachable by
-data addressing, MMR addressing and `IN`/`OUT` alike; and the on-chip ROM came
-back off the live board through exactly that protocol - poll `PA7` bit 1, tag
-to `PA14`, word to `PA15`, `2` back to `PA7` - which is the protocol
-`bridge.py` already implements.
+The harness does not simulate traces. It simulates what `out @7c, 0x5e` does
+on one side and what `in al, 0x5c` returns on the other. Two sources confirm
+that programming model:
 
-So whether the ASIC realises those sixteen ports with twenty parallel taps, a
-shift register, or something else entirely, **both processors' instruction
-streams see the same thing, and the emulator is already right about it.**
-Settling the medium is worth doing for the board documentation. It will not
-change a line of code, and it is not what stops a call.
+- SPRU056D section 3.5.11 and the Table 8-8 note put the sixteen I/O ports
+  `PA0`-`PA15` at data `0050h`-`005Fh`. Data addressing, MMR addressing and
+  `IN`/`OUT` can all get to them.
+- The on-chip ROM came off the live board through exactly that protocol: poll
+  `PA7` bit 1, tag to `PA14`, word to `PA15`, `2` back to `PA7`. `bridge.py`
+  already implements this protocol.
 
-What stops CPU-DSP comms in the harness is the *rate*: the DSP's mailbox poll
-is gated behind the `ARCR` compare, so delivered messages overwrite each other
-unconsumed. That is the blocker, and it is in
+The ASIC can make those sixteen ports with twenty parallel taps, a shift
+register, or a different method. In all cases, **the instruction streams of
+the two processors see the same thing, and the emulator is already correct
+about it.** It is useful to find the medium for the board documentation. But
+it will not change a line of code, and it is not what stops a call.
+
+The *rate* is what stops CPU-DSP communication in the harness. The `ARCR`
+compare gates the mailbox poll of the DSP. Thus delivered messages overwrite
+each other before the DSP reads them. That is the blocker, and it is in
 [what-runs-and-what-blocks.md](what-runs-and-what-blocks.md).
 
 ## The channel discipline is a single-word window with ready/ack
 
-This is the part that can be settled from the firmware, and both sides now
-agree on it. **Every DSP-CPU transfer in this firmware moves one word and then
-stops for an acknowledgement.** Nothing anywhere does a block transfer.
+The firmware answers this part, and the two sides now agree on it. **Each
+DSP-CPU transfer in this firmware moves one word and then stops for an
+acknowledgement.** No code does a block transfer.
 
 **DSP side, the mailbox sender** (`0x83eb`):
 
@@ -127,7 +131,7 @@ stops for an acknowledgement.** Nothing anywhere does a block transfer.
 ...            lacl #02 ; samm @57      ; raise "message ready"
 ```
 
-**DSP side, the stream sender** (`0x84b7`) - and this one is a *coroutine*:
+**DSP side, the stream sender** (`0x84b7`). This sender is a *coroutine*:
 
 ```
 8499  ae80 849f      splk *, #849f      ; where to resume next time
@@ -141,10 +145,12 @@ stops for an acknowledgement.** Nothing anywhere does a block transfer.
 ```
 
 Each resume point (`0x8499`, `0x849f`, `0x84a5`, `0x84ab`, `0x84b1`) sends one
-more word from a different address and yields again. The resume poll at
-`0x8462` tests bit 13 - by the `bit` inversion, **bit 2** - before continuing.
+more word from a different address and then yields again. Before it continues,
+the resume poll at `0x8462` tests bit 13. Because of the `bit` inversion, this
+is **bit 2**.
 
-**CPU side, the stream reader** (`0x1fec`), which is the mirror image:
+**CPU side, the stream reader** (`0x1fec`). It is the mirror image of the
+stream sender:
 
 ```
 001fec  e462         in   al, 0x62      ; high byte
@@ -158,31 +164,32 @@ more word from a different address and yields again. The resume poll at
 ```
 
 It assembles **one** 16-bit word from two byte reads, stores it, steps a
-counter, and returns; `[0x2d3]` holds the address to resume at, so the whole
-receiver is a state machine re-entered once per acknowledgement. A second
-variant at `0x2037` does the same into a pointer at `[0x8a2]` with a length
-counter at `[0x8a0]`/`[0x8a1]`.
+counter, and returns. `[0x2d3]` holds the address to resume at. Thus the full
+receiver is a state machine that starts again once for each acknowledgement.
+A second variant at `0x2037` does the same operation into a pointer at
+`[0x8a2]`, with a length counter at `[0x8a0]`/`[0x8a1]`.
 
-So the ASIC presents a **one-word holding register with ready/ack flow
-control**, in both directions, and the CPU's `0x60`/`0x62` window has 27 read
-sites and **zero** write sites in the whole image.
+Thus the ASIC supplies a **one-word holding register with ready/ack flow
+control** in the two directions. In the full image, the `0x60`/`0x62` window
+of the CPU has 27 read sites and **zero** write sites.
 
 ### What that does and does not prove
 
-It **rules out** shared memory or any random-access window between the two
-processors. There is no buffer either side can index into; there is one word in
-flight, and a handshake per word. That is what a serial link looks like from
-software, and it is consistent with the board.
+It **excludes** shared memory or any random-access window between the two
+processors. Neither side has a buffer that it can index into. There is one
+word in transit, and one handshake for each word. Software sees a serial link
+in this way, and this agrees with the board.
 
-It does **not**, on its own, exclude a narrow parallel mailbox register, which
-would need the same discipline for the same reason. Stating it as proof of a
-serial medium would be the third over-reading in this document's history, so it
-is not stated that way here. What is fair to say: **nothing in the firmware
-contradicts a serial link, and the thing that was previously taken to
-contradict it does not.**
+But this result alone does **not** exclude a narrow parallel mailbox register.
+That register must use the same discipline for the same reason. If we call
+this a proof of a serial medium, it is the third over-reading in the history
+of this document. Thus we do not call it a proof here. This statement is
+correct: **no data in the firmware contradicts a serial link, and the item
+that we thought contradicted it does not.**
 
-That thing was "the DSP has a wide parallel window". It does not. The DSP's
-entire I/O footprint is eight ports, touched one word at a time:
+That item was "the DSP has a wide parallel window". This is not true. The full
+I/O footprint of the DSP is eight ports, and the DSP accesses them one word at
+a time:
 
 | port | use |
 |---|---|
@@ -191,16 +198,16 @@ entire I/O footprint is eight ports, touched one word at a time:
 | `0x68`-`0x6c` | written at reset (`0x8048`-`0x8056`) and in the ISR region |
 | `0x57` (`PA7`) | the status latch, read by `lamm` from `0xff57` |
 
-The wide window at `0x40`-`0x4e` is on the **CPU** side only. Note also that
-`0x60` and `0x68`-`0x6c` are **outside** `PA0`-`PA15` (`0x50`-`0x5f`), so
-[what-the-asic-does.md](what-the-asic-does.md)'s "the ASIC presents at most
-sixteen 16-bit registers to the DSP" is too narrow - those are ordinary I/O
-addresses that happen not to alias into data space.
+The wide window at `0x40`-`0x4e` is on the **CPU** side only. Also, `0x60` and
+`0x68`-`0x6c` are **outside** `PA0`-`PA15` (`0x50`-`0x5f`). Thus the statement
+in [what-the-asic-does.md](what-the-asic-does.md), "the ASIC presents at most
+sixteen 16-bit registers to the DSP", is too narrow. Those ports are ordinary
+I/O addresses that do not alias into data space.
 
 ## What the primary port's interrupt actually is
 
-Settled from the residents themselves, and the same sequence appears in all of
-them - 403 and 302 at `0x8090`, 2.1.1 at `0x80bd`, 2.3.31 at `0x109d`:
+The residents themselves answer this question. The same sequence is in all of
+them: 403 and 302 at `0x8090`, 2.1.1 at `0x80bd`, 2.3.31 at `0x109d`:
 
 ```
 lar  ar1, #22        ; SPC
@@ -215,18 +222,18 @@ lacl #2a ; samm @04  ; IMR = INT2 | TINT | XINT
 clrc intm
 ```
 
-`MCM = 0` and `TXM = 0` make the DSP a slave: the AC01/ASIC owns `CLKX` and
-`FSX`, so the frame edge is external, which is what the emulator's frame
-scheduler models. `IMR = 0x002a` is bits 1, 3 and 5 - and bit 5 is **`XINT`**,
-the transmit interrupt. `RINT` is bit 4 and is not enabled.
+`MCM = 0` and `TXM = 0` make the DSP a slave. The AC01/ASIC controls `CLKX` and
+`FSX`, thus the frame edge is external. The frame scheduler of the emulator
+models this. `IMR = 0x002a` is bits 1, 3 and 5. Bit 5 is **`XINT`**, the
+transmit interrupt. `RINT` is bit 4, and it is not enabled.
 
-A cold start of the 403 resident confirms it end to end. Parked at `0x813c`
-the part has `IMR = 002a`, `SPC = 40c8`, and the mask ROM's dispatch cells hold
-`@65 = 8178` (`XINT`) against `@64 = 819d` (`RINT`), which is the same unused
-stub `@6a` holds for NMI. Only `XINT` has a handler.
+A cold start of the 403 resident confirms this from start to end. When the part
+stops at `0x813c`, it has `IMR = 002a` and `SPC = 40c8`. The dispatch cells of
+the mask ROM hold `@65 = 8178` (`XINT`) and `@64 = 819d` (`RINT`). `819d` is the
+same unused stub that `@6a` holds for NMI. Only `XINT` has a handler.
 
-So the frame service is the *transmitter's* interrupt, not the receiver's, and
-what `@6b`/`@6c` at `0x8138` are for is now plain:
+Thus the frame service is the interrupt of the *transmitter*, not of the
+receiver. Now the function of `@6b`/`@6c` at `0x8138` is clear:
 
 ```
 8138: samm @6c    ; the word to hand the codec
@@ -238,16 +245,16 @@ what `@6b`/`@6c` at `0x8138` are for is now plain:
 813f: ret
 ```
 
-The resident's whole AC01 register-load path (`lacc #010a ; call 8138`, then
-`#0214`, `#0300`, `#0409`, `#0505`, `#0620` - register in the high byte, value
-in the low) runs through that `IDLE`. Suppress the frame interrupt and the part
-stops there forever.
+The full AC01 register-load path of the resident goes through that `IDLE`.
+The path is `lacc #010a ; call 8138`, then `#0214`, `#0300`, `#0409`, `#0505`,
+`#0620`, with the register in the high byte and the value in the low byte. If
+you suppress the frame interrupt, the part stops there permanently.
 
 ### `INT2` is the host's doorbell, and its handler does nothing on purpose
 
-The mask ROM's whole vector table is `lamm @6x ; bacc` - every vector
-dispatches through a data cell, and the resident fills them from the table at
-`0x812d`:
+The full vector table of the mask ROM is `lamm @6x ; bacc`. Each vector
+dispatches through a data cell, and the resident fills these cells from the
+table at `0x812d`:
 
 | cell | vector | 403 value |
 |---|---|---|
@@ -258,12 +265,12 @@ dispatches through a data cell, and the resident fills them from the table at
 | `@68` | `TINT` | **`81fb`** |
 | `@69` | - | **`81a6`** - packs two bytes into `TDXR` |
 
-So of the three bits `0x002a` enables, `XINT` and `TINT` have handlers and
-**`INT2` is enabled with a handler that only returns**. That is not an
-oversight, and the board says what it is for: ASIC pin 109 goes to DSP pin 39,
+Thus, of the three bits that `0x002a` enables, `XINT` and `TINT` have handlers,
+and **`INT2` is enabled with a handler that only returns**. This is not an
+error, and the board shows its function. ASIC pin 109 goes to DSP pin 39,
 which is `INT2` ([asic-pinout.md](asic-pinout.md), measured).
 
-The CPU-to-DSP path is *polled*, not interrupt-driven. `0x80ea`:
+The CPU-to-DSP path is *polled*. It is not interrupt-driven. `0x80ea`:
 
 ```
 80ea: setc intm
@@ -275,7 +282,7 @@ The CPU-to-DSP path is *polled*, not interrupt-driven. `0x80ea`:
 80fb: ret
 ```
 
-and the transfer itself at `0x80fc`:
+The transfer itself is at `0x80fc`:
 
 ```
 810e: lar ar1, #58                   ; the ASIC's four-word window
@@ -288,16 +295,16 @@ and the transfer itself at `0x80fc`:
 8127: intr 17
 ```
 
-That is the firmware download, and the command path is the same shape. The
-handler has nothing to do because the work is in the loop; the pin's whole job
-is to **end the `IDLE` at `0x80fa`**. Set the flag without asserting the pin
-and the DSP still gets there, but only when something else happens to wake it
-- the codec frame or the timer - so a transfer advances at the frame rate
-instead of when the host actually has a group ready.
+That is the firmware download, and the command path has the same shape. The
+handler has no work to do, because the work is in the loop. The only function
+of the pin is to **end the `IDLE` at `0x80fa`**. If you set the flag but do not
+assert the pin, the DSP still gets there. But it gets there only when a
+different event wakes it, for example the codec frame or the timer. Thus a
+transfer moves forward at the frame rate, not when the host has a group ready.
 
 #### `INT2` is not always the do-nothing stub
 
-`819d` is only the cold-start value of `@61`. Three routines swap it:
+`819d` is only the cold-start value of `@61`. Three routines change it:
 
 ```
 823d: splk @61, #819d ; splk @68, #81fb ; opl @1f, #0100   ; wake-only
@@ -305,61 +312,65 @@ instead of when the host actually has a group ready.
 824d: splk @61, #819d ; splk @68, #81fb ; apl @1f, #feff   ; wake-only
 ```
 
-`0x81bb` reads the ASIC's phase word at `@52`, masks it to two bits, indexes
-the four-entry table at `0x81e0`, runs a multiply-accumulate chain and writes
-port `0x6a`. So in that mode **every `INT2` edge is a polyphase DAC slot**, and
-the same pin is both the mailbox doorbell and the output tick. The same idiom
-is in every build: 302 swaps `@61` between `81ae` and `81cc` at `0x824e`,
-2.1.1 between `8224` and `8228` at `0x8293`.
+`0x81bb` reads the phase word of the ASIC at `@52` and masks it to two bits.
+Then it indexes the four-entry table at `0x81e0`, runs a multiply-accumulate
+chain and writes port `0x6a`. Thus in that mode, **each `INT2` edge is a
+polyphase DAC slot**. The same pin is both the mailbox doorbell and the output
+tick. The same idiom is in all builds. 302 changes `@61` between `81ae` and
+`81cc` at `0x824e`. 2.1.1 changes it between `8224` and `8228` at `0x8293`.
 
-An earlier version of this section said `INT2`'s handler was a bare `rete` "on
-purpose". That is true of the wake-only mode and of the cold start, and not of
-the part in general.
+An earlier version of this section said that the `INT2` handler was a bare
+`rete` "on purpose". That is true for the wake-only mode and for the cold
+start. It is not true for the part in general.
 
 #### `INT1`: nothing drives it
 
-`@60` holds `81ba`, which is also a bare `rete` - a second stub, one word
-ahead of `0x81bb`. Both ends say the line is dead in this firmware:
+`@60` holds `81ba`, which is also a bare `rete`. It is a second stub, one word
+before `0x81bb`. The two ends show that the line is not used in this firmware:
 
-* **The DSP never enables it.** `IMR` bit 0 is not set by anything. The only
-  writes certain to reach `IMR` are `samm @04`, which is `0x002a` once in the
-  403 and 302, and in the 2.x builds the `and #ffcf ; or #0010` pair that
-  touches bits 4 and 5 only. `@60` is never written after the init table copy
-  at `0x812d` either: every apparent `splk @60` in the images is DP-relative
-  and lands on ordinary data.
+* **The DSP never enables it.** No code sets `IMR` bit 0. The only writes that
+  certainly get to `IMR` are `samm @04` and, in the 2.x builds, the
+  `and #ffcf ; or #0010` pair. `samm @04` writes `0x002a` once in the 403 and
+  302. The pair changes bits 4 and 5 only. Also, no code writes `@60` after the
+  init table copy at `0x812d`. Each apparent `splk @60` in the images is
+  DP-relative and writes ordinary data.
 * **The CPU never asserts it.** The pin is 80186 **P1.7** (CPU pin 50,
-  `P1.7/GCS7`), on the same `P1LTCH` at `0xff56` whose bit 1 is DSP `RS` and
-  bit 3 is DSP `NMI`. Across the whole 403 supervisor that latch is only ever
-  touched by `AND`/`OR` on bits 2, 5 and 6, by `AND AX,00ff ; OR AX,0020`
-  (the EEPROM), by `AND AX,fffd` at `0x8e3f1` (reset) and by `OR AX,0008` at
-  `0x8e445` (NMI). Bit 7 is never driven low, and the latch is initialised to
-  `0xdb` with it high.
+  `P1.7/GCS7`). It is on the same `P1LTCH` at `0xff56`, where bit 1 is DSP `RS`
+  and bit 3 is DSP `NMI`. In the full 403 supervisor, only these instructions
+  change that latch:
+  * `AND`/`OR` on bits 2, 5 and 6.
+  * `AND AX,00ff ; OR AX,0020` (the EEPROM).
+  * `AND AX,fffd` at `0x8e3f1` (reset).
+  * `OR AX,0008` at `0x8e445` (NMI).
 
-So `INT1` is wired, idles deasserted and is masked at both ends. The `f7fe`
-that [board-verified-403.md](board-verified-403.md) reads out of `@60` at the
-end of a dial is an overlay reusing the cell as B2 scratch - the same reuse
-that puts the codec handoff's counter and word in `@6b` and `@6c`, which are
-the `INTR 12` and `INTR 13` cells.
+  No code drives bit 7 low, and the init value of the latch is `0xdb`, with
+  bit 7 high.
+
+Thus `INT1` is wired, stays deasserted, and is masked at the two ends.
+[board-verified-403.md](board-verified-403.md) reads `f7fe` from `@60` at the
+end of a dial. That value is an overlay that uses the cell again as B2 scratch.
+The same reuse puts the counter and word of the codec handoff in `@6b` and
+`@6c`, which are the `INTR 12` and `INTR 13` cells.
 
 ### And the 2.x builds can move it to `RINT`
 
-Immediately after enabling `0x002a`, the 2.1.1 and 2.3.x residents test data
-`0x012f` and, when it is set, do
+Immediately after the 2.1.1 and 2.3.x residents enable `0x002a`, they test data
+`0x012f`. If it is set, they do this:
 
 ```
 lamm @04 ; and #ffcf ; or #0010 ; samm @04
 ```
 
-- clear `XINT`, enable `RINT`. Same frame, the other interrupt, chosen by
-configuration. The 403 and 302 dropped this branch and are `XINT`-only.
+This clears `XINT` and enables `RINT`. It is the same frame, but the other
+interrupt, and the configuration selects it. The 403 and 302 removed this
+branch and use `XINT` only.
 
-Hence the model: **one external frame edge latches both `RINT` and `XINT`**,
-each behind its own half of `SPC`'s reset (`RRST`/`XRST`), with `IMR` and
-`INTM` left to decide recognition the way the part leaves them. Latching only
-one of the pair cannot run both variants, and gating the edge on `RRST` - the
-receiver's reset bit - gated the 403's service on a register the 403 never
-consults.
-
+This gives the model: **one external frame edge latches both `RINT` and
+`XINT`**. Each interrupt is behind its own half of the `SPC` reset
+(`RRST`/`XRST`). `IMR` and `INTM` decide recognition, as on the part. If the
+model latches only one of the two, it cannot run both variants. An older model
+gated the edge on `RRST`, which is the reset bit of the receiver. This gated
+the 403 service on a register that the 403 never reads.
 ## If the link is serial, it is the *primary* port, not the second one
 
 The natural guess - the C50 has two serial ports, one is the codec's, so the
