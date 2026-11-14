@@ -311,12 +311,13 @@ milestone. Because of this, a second and third command also get an answer.
 ## The parameter flash, and storing a profile
 
 `AT&W` writes the working profile to the parameter store. That store is four
-4 KiB sectors at physical `0xf8000`, each ending in a 32-bit version at
-`0xffa` and a CRC-16/CCITT at `0xffe`; the search at `0x7e07c` checksums all
-four and keeps the highest version that verifies. `parameters.py` documents
-the layout, and the `parameters` subcommand builds a sector.
+4 KiB sectors at physical `0xf8000`. Each sector ends in a 32-bit version at
+`0xffa` and a CRC-16/CCITT at `0xffe`. The search at `0x7e07c` calculates the
+checksum of all four sectors. It keeps the highest version that verifies.
+`parameters.py` documents the layout, and the `parameters` subcommand builds a
+sector.
 
-The writer at `0x7dfa8` does not touch the part directly. It calls the boot
+The writer at `0x7dfa8` does not access the part directly. It calls the boot
 block through `int 0x0a` with an ASCII service letter in `BL`:
 
 | service | meaning |
@@ -326,77 +327,85 @@ block through `int 0x0a` with an ASCII service letter in `BL`:
 | `S` (0x53) | firmware-update path, not modelled |
 | `L` (0x4c) | block lock/select, not modelled |
 
-An XMF update image carries the application only, so in a run built from one
-that vector points at nothing and `AT&W` stops on the first call. `E` and `W`
-are answered by the harness when a part is attached, which is what `AT&W`
-needs and no more; `S` and `L` still stop the run rather than continue on a
-guess.
+An XMF update image carries only the application. Thus, in a run that you build
+from one, that vector points at nothing, and `AT&W` stops at the first call.
+When a part is attached, the harness answers `E` and `W`. This is what `AT&W`
+needs, and no more. `S` and `L` still stop the run. The harness does not
+continue on a guess.
 
 ```sh
 ./courier run main211.xmf --parameter-flash board.flash --at ATS0=7 --at 'AT&W'
 ./courier run main211.xmf --parameter-flash board.flash --at 'ATS0?'
 ```
 
-The second run answers `007`. The file is created erased (`0xff`, which is
-what the blank check at `0x7e0e3` scans for), a 4 KiB file is accepted as the
-first sector, and the run reports a `flash` block with the erase and program
-counts and each sector's version and checksum validity. Storing repeatedly
-walks the sectors in turn and erases one to wrap, all driven by the
-firmware's own writer. `refused_bits` counts bits a program would have had to
-set rather than clear: it stays zero while the model and the firmware agree
-about what an erase leaves behind.
+The second run answers `007`. The harness makes the file in the erased state
+(`0xff`). The blank check at `0x7e0e3` looks for this value. The harness
+accepts a 4 KiB file as the first sector. The run reports a `flash` block with
+the erase count, the program count, and the version and checksum validity of
+each sector.
 
-With a stored profile attached, `ATI5` renders it rather than the empty-store
-page.
+If you store many times, the firmware uses the sectors in sequence. To go back
+to the start, it erases one sector. The writer of the firmware itself drives
+all of this. `refused_bits` counts the bits that a program had to set and not
+clear. It stays zero while the model and the firmware agree about the result of
+an erase.
+
+When a stored profile is attached, `ATI5` shows it, and not the page for an
+empty store.
 
 ## The time base, and what waits on it
 
-The supervisor arms countdowns and waits on them - `ATI11` gives itself 20
-ticks at `0x62d68` before printing an empty diagnostics page. Nothing drives
-them: the chain that decrements them is entered on vector `0x0f`, which this
-firmware keeps masked for the whole run, so `ATI10` and `ATI11` stop partway
-and every other firmware timeout waits forever.
+The supervisor arms countdowns and waits for them. For example, `ATI11` gives
+itself 20 ticks at `0x62d68` before it prints an empty diagnostics page. But
+nothing drives these countdowns. The chain that decrements them starts on
+vector `0x0f`, and this firmware keeps that vector masked for the full run.
+Thus, `ATI10` and `ATI11` stop before they are complete. All other firmware
+timeouts wait forever.
 
-`--tick-ms MS` exists to experiment with that edge, but it honours the mask, so
-today it delivers nothing and the `ticks` count stays zero. That is deliberate:
-an edge the firmware has switched off is one the board cannot take.
+`--tick-ms MS` lets you do experiments with that edge. But it obeys the mask.
+Thus, now it delivers nothing, and the `ticks` count stays zero. This is
+intentional: the board cannot accept an edge that the firmware disabled.
 
-`--tick-source dsp` is the other candidate, and it is the one worth running.
-It paces the chain off the DSP frame interrupt instead of off a period, which
-is the only arrangement that leaves both of the firmware's mutual watchdogs
-quiet - they bound the legal ratio to between 1/25 and 3 ticks per frame, and
-1:1 sits inside it. It is still off by default, because 1:1 within that band is
-a choice rather than a measurement. With it the diagnostics pages finish, the
-line-detector poller runs, and the harness stops forging the two counters that
-poller feeds; see "Two instances on one line" for what a linked pair does then.
-`courier_firmware_analysis.md` has the evidence.
+`--tick-source dsp` is the other candidate, and it is the useful one to run. It
+paces the chain from the DSP frame interrupt, not from a period. Only this
+arrangement keeps the two mutual watchdogs of the firmware quiet. These
+watchdogs limit the legal ratio to between 1/25 and 3 ticks for each frame, and
+1:1 is in that range. The option is still disabled by default, because 1:1 in
+that range is a choice, not a measurement.
+
+With this option, the diagnostics pages complete and the line-detector poller
+runs. Also, the harness stops the forgery of the two counters that the poller
+feeds. For the behavior of a linked pair in this condition, see "Two instances
+on one line". `courier_firmware_analysis.md` has the evidence.
 
 ## Talking to it while it runs
 
-`--at` queues commands before boot. `--console` instead attaches this terminal
-to the DTE port for as long as the run lasts: type commands, watch the modem
-answer, `Ctrl-]` to detach. `--instructions` then defaults to effectively
-unbounded, so the session ends when you do.
+`--at` queues commands before boot. `--console` attaches this terminal to the
+DTE port for the full duration of the run. You can type commands and see the
+answers of the modem. To detach, push `Ctrl-]`. With this option,
+`--instructions` has no effective limit by default. Thus, the session ends when
+you end it.
 
 ```sh
 ./courier run main211.xmf --console
 ./courier run main211.xmf --console --daa-line dial-tone --nvram board.eeprom
 ```
 
-When stdout is a terminal, its bottom row shows the front-panel lamps live
-(lit ones in red, from `FRONT_PANEL_LEDS` in `courier_emu/panel.py`); the
-firmware's output scrolls above it.
+When stdout is a terminal, its bottom row shows the live lamps of the front
+panel. The lit lamps are red, from `FRONT_PANEL_LEDS` in
+`courier_emu/panel.py`. The output of the firmware scrolls above that row.
 
-Everything the modem sends goes to stdout and the run's own report goes to
-stderr, so `--console > session.txt` captures exactly what the firmware said.
-Input may also be piped, which is the same live path without a terminal:
+All data that the modem sends goes to stdout. The report of the run goes to
+stderr. Thus, `--console > session.txt` captures exactly the output of the
+firmware. You can also pipe the input. This is the same live path without a
+terminal:
 
 ```sh
 printf 'ATI3\rATI4\r' | ./courier run main211.xmf --console --instructions 9000000
 ```
 
-`--serial-pty` exposes the same port as a pty device instead of attaching this
-terminal, for anything that drives a serial modem:
+`--serial-pty` does not attach this terminal. It makes the same port available
+as a pty device, for each program that drives a serial modem:
 
 ```sh
 ./courier run main211.xmf --serial-pty
@@ -404,32 +413,39 @@ terminal, for anything that drives a serial modem:
 screen /dev/ttys002
 ```
 
-Both report a `console` block counting the bytes each way, what a terminal
-that stopped reading dropped, and whether the far end closed. Typed bytes are
-polled every 8,192 instructions - about a hundred times a second at the speed
-this core runs, which is roughly the real board's.
+The two options report a `console` block with these items: the count of bytes
+in each direction, the bytes that a terminal dropped when it stopped to read,
+and whether the far end closed. The harness polls typed bytes each 8,192
+instructions. At the speed of this core, this is about a hundred times each
+second. This speed is about the same as that of the real board.
 
-Transmit bytes come from the 80186 integrated-UART feed. The routine at
-`5b5e:184b` loads the byte in `AL`, waits for transmit status bit `0x08` at
-`0xff66`, then applies the framing transform at `5b5e:1913` and writes the
-result to `0xff6a`. Both of its wait edges (`5b5e:1874` and `5b5e:1884`) branch
-back to the routine's own entry rather than looping in place, so a byte crosses
-`0x5ce2b` once per spin but is accepted only once, at `0x5ce66`. Two things
-follow, and both are modeled:
+Transmit bytes come from the feed of the integrated UART of the 80186. The
+routine at `5b5e:184b` loads the byte in `AL`. It waits for transmit status bit
+`0x08` at `0xff66`. Then it applies the framing transform at `5b5e:1913` and
+writes the result to `0xff6a`. Its two wait edges (`5b5e:1874` and
+`5b5e:1884`) do not loop in place. They branch back to the entry of the
+routine. Thus, a byte goes through `0x5ce2b` one time for each spin, but the
+routine accepts it only one time, at `0x5ce66`. Two results follow, and the
+harness models the two:
 
-- A CPU-only core never drains the transmit-holding register, so status bit
+- A CPU-only core never empties the transmit-holding register. Thus, status bit
   `0x08` stays clear and the routine spins forever. The modeled DTE reports
-  itself ready at the wait point. This is a missing device rather than a
-  calibrated delay, so it applies regardless of `--real-delays`.
-- `5b5e:1913` recomputes bit 7 as an even-parity bit whenever `[0x26c6]` is
-  zero, then applies the `[0x0936]` framing. In those framings bit 7 carries no
-  data, so capture reports the seven bits a receiving DTE would keep.
+  that it is ready at the wait point. This replaces a missing device, not a
+  calibrated delay. Thus, it applies with or without `--real-delays`.
+- `5b5e:1913` calculates bit 7 again as an even-parity bit when `[0x26c6]` is
+  zero. Then it applies the `[0x0936]` framing. In those framings, bit 7 carries
+  no data. Thus, the capture reports the seven bits that a receiving DTE keeps.
 
-With that in place the diagnostic commands render their real pages. `ATI` and
-`ATI0` return the product code, `ATI1` the ROM checksum, `ATI2` the RAM test
-result, `ATI3` the product banner, `ATI5` the stored-profile page, `ATI6` and
-`ATI11` link diagnostics, `ATI7` the configuration profile, and `ATI4` the full
-settings report:
+With this model, the diagnostic commands show their real pages:
+
+- `ATI` and `ATI0` return the product code.
+- `ATI1` returns the ROM checksum.
+- `ATI2` returns the result of the RAM test.
+- `ATI3` returns the product banner.
+- `ATI5` returns the stored-profile page.
+- `ATI6` and `ATI11` return link diagnostics.
+- `ATI7` returns the configuration profile.
+- `ATI4` returns the full settings report:
 
 ```text
 USRobotics Courier V.Everything Settings...
@@ -443,68 +459,77 @@ USRobotics Courier V.Everything Settings...
 OK
 ```
 
-Note that `ATI5` renders its "NVRAM Settings" page from the RAM shadow at
-`0x095c`, not from the serial EEPROM, which matches the call-graph finding
-below. Commands execute inside the original firmware: `ATQ1` changes its
-quiet-mode profile byte and suppresses the result code, while `ATD123` and `ATA`
-enter the line-control path. With no modeled line, an originating call follows the
-firmware's `NO DIAL TONE` path. DSP results separate completed `bootstraps` and
-`transfer_commands` from runtime
-`mailbox_commands`, with a `mailbox_windows` histogram of the latter.
+`ATI5` shows its "NVRAM Settings" page from the RAM shadow at `0x095c`, not
+from the serial EEPROM. This agrees with the call-graph finding below. Commands
+execute in the original firmware. `ATQ1` changes the quiet-mode profile byte
+and suppresses the result code. `ATD123` and `ATA` go into the line-control
+path. If no line is modeled, an originating call follows the `NO DIAL TONE`
+path of the firmware. The DSP results keep completed `bootstraps` and
+`transfer_commands` separate from runtime `mailbox_commands`. A
+`mailbox_windows` histogram shows the runtime commands.
 
-The line-audio endpoint is the Courier ASIC's external C51 I/O frame, separate
-from both on-chip serial ports and the 80186 download window. Firmware reads
-the held ADC word twice from external I/O port `0x54` at program `0xb300` and
-`0xb304`; the second read is copied into active sample cell `0x007f`. Its
-matching per-frame `OUT` at program `0x8c24` writes the DAC word to external
-port `0xb2e5`, sourced from output cell `0x00cb`. `TRCV` (`0x30`) and `DRR`
-(`0x20`) are part of the ASIC/serial framing and address bookkeeping, not raw
-linear-PCM endpoints. Supply and capture mono signed-16 little-endian words
-after dial/answer activation with:
+The line-audio endpoint is the external C51 I/O frame of the Courier ASIC. It
+is separate from the two on-chip serial ports and from the 80186 download
+window. The firmware reads the held ADC word two times from external I/O port
+`0x54`, at program `0xb300` and `0xb304`. It copies the second read into the
+active sample cell `0x007f`. The related `OUT` for each frame, at program
+`0x8c24`, writes the DAC word to external port `0xb2e5`. The source of that
+word is the output cell `0x00cb`.
+
+`TRCV` (`0x30`) and `DRR` (`0x20`) are part of the ASIC/serial framing and the
+address bookkeeping. They are not raw linear-PCM endpoints. After dial/answer
+activation, supply and capture mono signed-16 little-endian words with this
+command:
 
 ```sh
 ./courier run main211.xmf --instructions 9000000 --with-dsp \
   --dsp-rx-pcm line.s16le --dsp-tx-pcm reply.s16le --at ATDT123 --summary
 ```
 
-`dsp_bridge.serial_port` reports the register values, access counts, last
-firmware PCs, queued/consumed input frames, and line-output counts. The modeled
-missing board-to-DSP dial-command handoff recognizes the firmware's parsed
-`D` command and drives 9.6 kHz DTMF frames through the C51's real `OUT`
-instruction. `ATDT123` produces 697+1209, 697+1336, and 697+1477 Hz bursts.
-This establishes bidirectional waveform transport and reproducible tone output;
-the original datapump's internal command mailbox remains to be recovered.
+`dsp_bridge.serial_port` reports these items: the register values, the access
+counts, the last firmware PCs, the queued/consumed input frames and the
+line-output counts. The board-to-DSP dial-command handoff is missing, so the
+harness models it. The model recognizes the parsed `D` command of the firmware.
+It drives 9.6 kHz DTMF frames through the real `OUT` instruction of the C51.
+`ATDT123` makes bursts of 697+1209, 697+1336 and 697+1477 Hz. This shows
+waveform transport in the two directions and tone output that you can repeat.
+The internal command mailbox of the original datapump is not yet recovered.
 
-The behavioral DAA can attach a disconnected, quiet, dial-tone, or ringing
-line. A dial-tone line seizes the hook relay, supplies 350+440 Hz audio to the
-recovered ASIC ADC, qualifies the supervisor's five-hit detector at RAM
-`0x0649`, removes central-office tone, and starts the parsed digits on the
-already-active C51. `--daa-line` enables the DSP bridge automatically:
+The behavioral DAA can attach a disconnected, quiet, dial-tone or ringing line.
+A dial-tone line does these steps:
+
+1. It seizes the hook relay.
+2. It supplies 350+440 Hz audio to the recovered ASIC ADC.
+3. It qualifies the five-hit detector of the supervisor at RAM `0x0649`.
+4. It removes the central-office tone.
+5. It starts the parsed digits on the C51, which is already active.
+
+`--daa-line` enables the DSP bridge automatically:
 
 ```sh
 ./courier run main211.xmf --instructions 9000000 \
   --daa-line dial-tone --at ATDT123 --summary
 ```
 
-The original firmware then returns `OK` instead of `NO DIAL TONE`, and
-`dsp_bridge.daa` reports hook, line, detector, and generated-sample state. This
-is a firmware-derived behavioral DAA, not a claimed identification of the
-physical line-interface IC. Busy/reorder tone and carrier negotiation remain
-unmodeled.
+The original firmware then returns `OK`, not `NO DIAL TONE`. `dsp_bridge.daa`
+reports the state of the hook, line, detector and generated samples. This DAA
+model comes from the behavior of the firmware. It does not claim to identify
+the physical line-interface IC. Busy/reorder tone and carrier negotiation are
+not yet modeled.
 
-For isolating the DTE online path from datapump completion, the diagnostic
-`--force-online` option publishes the modeled completion edge once the main
-loop is reached and marks the console as data mode:
+To isolate the DTE online path from datapump completion, use the diagnostic
+`--force-online` option. When the main loop starts, this option publishes the
+modeled completion edge one time and sets the console to data mode:
 
 ```sh
 ./courier run main211.xmf --instructions 12000000 --with-dsp \
   --force-online --console
 ```
 
-This does not claim that modem training succeeded. The result reports
-`online_mode`, `data_rx_bytes`, and `data_tx_bytes`; use it to test transparent
-post-CONNECT traffic while the real ASIC completion callback remains under
-investigation.
+This option does not claim that modem training was successful. The result
+reports `online_mode`, `data_rx_bytes` and `data_tx_bytes`. Use it to test
+transparent post-CONNECT traffic while we continue to examine the real
+completion callback of the ASIC.
 
 ### The silicon DAA as a register file
 
