@@ -1,74 +1,86 @@
 # Courier XMF emulator harness
 
-The I-modem's AT interface answers. `isdn-run` now models the 386EX SIO's
-receive side - RBR, IIR, MSR and the IRQ3 line its own ISR at `0xb2aa2`
-names - so commands can be typed at the firmware and its replies read back:
-`--send ATI3` returns `USRobotics Courier I-Modem with ISDN/V.34`, and
-`--terminal` attaches a live console.  For normal interactive use, run:
+The AT interface of the I-modem now answers. `isdn-run` now models the receive
+side of the 386EX SIO: RBR, IIR, MSR and the IRQ3 line that its own ISR at
+`0xb2aa2` names. Thus, you can type commands at the firmware and read back its
+replies. `--send ATI3` returns `USRobotics Courier I-Modem with ISDN/V.34`, and
+`--terminal` attaches a live console. For usual interactive use, run this
+command:
 
 ```sh
 ./courier isdn-run Ie030002.nac --terminal
 ```
 
-Type AT commands normally and press Return; press Ctrl-] to exit. Terminal
-mode runs until detached and does not print the diagnostic JSON report unless
-`--report` is also supplied. During interaction the guest clock is paced to
-the timer model's 5 million instructions per second, so the modem continues
-running without racing hours ahead of the terminal. See
-[the AT interface](docs/imodem-at-interface.md) for the `ATI0`-`ATI30` sweep,
-and [I-modem terminal framing](docs/imodem-terminal-framing.md) for how the
-external board's attention receiver makes consecutive AT commands independent.
+Type AT commands and push Return. To exit, push Ctrl-]. Terminal mode runs
+until you detach it. It does not print the diagnostic JSON report unless you
+also supply `--report`. During interaction, the harness paces the guest clock
+to the 5 million instructions per second of the timer model. Thus, the modem
+continues to run, but it does not go hours ahead of the terminal. For the
+`ATI0`-`ATI30` sweep, see [the AT interface](docs/imodem-at-interface.md).
+[I-modem terminal framing](docs/imodem-terminal-framing.md) tells how the
+attention receiver of the external board makes consecutive AT commands
+independent.
 
-The [I-modem/analogue Courier pair](docs/imodem-analog-pair.md) establishes
-native Bell 103 carrier at 300 bps and transfers terminal data in both
-directions with the paired probe's `--protocol bell103` preset. The I-modem's
-six-word ASIC data window and acknowledgements now carry the payload through
-the original DSP firmware. V.34 carrier remains unresolved.
+The [I-modem/analogue Courier pair](docs/imodem-analog-pair.md) sets up native
+Bell 103 carrier at 300 bps. It transfers terminal data in the two directions
+with the `--protocol bell103` preset of the paired probe. The six-word ASIC data
+window and the acknowledgements of the I-modem now move the payload through the
+original DSP firmware. V.34 carrier is not yet solved.
 
-The captured 20.16 MHz DSP boot ROM is now integrated for the 302/403
-firmware under `--with-dsp`. The DSP executes reset and downloads its resident
-through the ROM loader, with corrected PMST vector decoding and IDLE wakeup.
-See [boot-ROM integration](docs/dsp-onchip-rom.md#bridge-integration-2026-09-07).
+The captured 20.16 MHz DSP boot ROM is now integrated for the 302/403 firmware
+under `--with-dsp`. The DSP executes reset and downloads its resident through
+the ROM loader. The harness now has correct PMST vector decoding and IDLE
+wakeup. See
+[boot-ROM integration](docs/dsp-onchip-rom.md#bridge-integration-2026-09-07).
 
-The [DSP 3.1.2 audio trace](docs/audio-312-path.md) now runs the original
-tone selector, oscillator, mixer and serial ISR to produce all 16 DTMF pairs.
-It fixes square, product-load and normalization instruction errors that
-silenced this path, and emits a listenable WAV. This board image has a
-DRR/DXR sample-buffer path, and it drives the codec itself: the ISR implements
-the AC0x secondary-frame protocol and reset programs six of the part's control
-registers, so claims below based on `main211` do not describe it. Its 7200 Hz is
-the dial path's rate, not the board's; the PCM modulations it advertises force a
-rate change - and it makes one: a six-row table selects 7200, 7578.95 or
-8000 Hz from V.34's negotiated symbol rate. See
-[the codec sample rates](docs/codec-sample-rates.md), and
-[the codec rate](docs/codec-rate-312.md) for how the question stood before.
+The [DSP 3.1.2 audio trace](docs/audio-312-path.md) now runs the original tone
+selector, oscillator, mixer and serial ISR. These produce all 16 DTMF pairs.
+The trace repairs errors in the square, product-load and normalization
+instructions that made this path silent. It also writes a WAV file that you
+can listen to.
+
+This board image has a DRR/DXR sample-buffer path, and it drives the codec
+itself. The ISR implements the AC0x secondary-frame protocol. The reset
+programs six of the control registers of the part. Thus, the claims below that
+come from `main211` do not apply to this image. Its 7200 Hz is the rate of the
+dial path, not of the board. The PCM modulations that it advertises make a rate
+change necessary, and it makes one. A six-row table selects 7200, 7578.95 or
+8000 Hz from the symbol rate that V.34 negotiates. See
+[the codec sample rates](docs/codec-sample-rates.md). For the earlier state of
+this question, see [the codec rate](docs/codec-rate-312.md).
 
 The [DSP 3.1.2 hardware comparison](docs/mailbox-312-comparison.md) records a
-fresh connected-board mailbox sequence and its replay through the original DSP
-dispatcher and sender. It identifies the current firmware's tone selector,
-demonstrates the acknowledgement behavior needed to receive replies, and keeps
-the remaining sample-dependent reply mismatch explicit. Older mailbox no-op
-and stream assumptions must not be applied to this firmware unchanged.
+new mailbox sequence from a connected board. It also records the replay of this
+sequence through the original DSP dispatcher and sender. It identifies the tone
+selector of the current firmware. It shows the acknowledgement behavior that is
+necessary to receive replies. It also shows clearly the remaining reply
+mismatch, which depends on the samples. Do not apply older assumptions about
+mailbox no-ops and streams to this firmware without change.
 
-This repository contains a reproducible dual-core firmware harness for
-`main211.xmf`. It validates and splits the update image, executes the Intel
-80186 supervisor in a 1 MiB instrumented address space, and runs the recovered
-TMS320C51 program with a standalone 16-bit fixed-point DSP core.
+This repository contains a dual-core firmware harness for `main211.xmf`. The
+harness gives the same results each time. It validates and splits the update
+image. It executes the Intel 80186 supervisor in an instrumented address space
+of 1 MiB. It runs the recovered TMS320C51 program with a standalone 16-bit
+fixed-point DSP core.
 
-For the older `SV25.XMD`, `./courier recovery-run SV25.XMD` runs a separate,
-read-only 80188 recovery-loader harness from flash `0x7dbc0` to the complete
-SDL Xmodem prompt. It reports every setup write, mapping observation, serial
-byte and stop condition as JSON. See [SV25 recovery harness](docs/sv25-recovery.md)
-for the recovered XMD block decode, memory map, peripheral assumptions and tests.
-The [DSP ROM-read diagnostic](docs/dsp-rom-probe.md) provides a C5x kernel
-and a RAM supervisor launcher for the 20.16 MHz reference. Its offline test
-executes reset/download, DSP mailbox output and supervisor serial readback.
-Hardware handshakes remain modeled; a physical RAM-load and launch mechanism
-is still unverified. The same document describes the read-only `ATGLK2` serial
-collector for the user's 20.16 MHz, 512 KiB modem. That board now runs
-supervisor 7.4.16 / DSP 3.1.2 - the image under
-`artifacts/courier-board-21210-capture-403/` - having previously reported
-7.3.14 / DSP 3.0.13, which is what the older notes below describe:
+For the older `SV25.XMD`, `./courier recovery-run SV25.XMD` runs a separate
+80188 recovery-loader harness. This harness is read-only. It runs from flash
+`0x7dbc0` to the complete SDL Xmodem prompt. It reports each setup write,
+mapping observation, serial byte and stop condition as JSON. For the recovered
+XMD block decode, the memory map, the peripheral assumptions and the tests, see
+[SV25 recovery harness](docs/sv25-recovery.md).
+
+The [DSP ROM-read diagnostic](docs/dsp-rom-probe.md) gives a C5x kernel and a
+RAM supervisor launcher for the 20.16 MHz reference. Its offline test executes
+reset/download, DSP mailbox output and supervisor serial readback. The harness
+still models the hardware handshakes. A physical mechanism to load RAM and
+launch the kernel is not yet verified.
+
+The same document describes the read-only `ATGLK2` serial collector for the
+20.16 MHz, 512 KiB modem of the user. That board now runs supervisor 7.4.16 /
+DSP 3.1.2. This is the image under
+`artifacts/courier-board-21210-capture-403/`. Before, the board reported
+7.3.14 / DSP 3.0.13, and the older notes below describe that version:
 
 ```sh
 .venv/bin/python -m courier_emu.flash_dump \
@@ -76,74 +88,88 @@ supervisor 7.4.16 / DSP 3.1.2 - the image under
   --output artifacts/courier-board-capture
 ```
 
-It requires a new output directory, checks the modem identity and known reset
-vector, and verifies two matching reads of every 256-byte page before publishing
-a complete image. Raw replies and partial blocks are retained. This captures
-CPU-visible flash; DSP internal ROM requires a separate experiment.
+The command must have a new output directory. It checks the modem identity and
+the known reset vector. It verifies two reads of each 256-byte page, which must
+be the same, before it publishes a complete image. It keeps raw replies and
+partial blocks. This procedure captures the flash that the CPU can see. The DSP
+internal ROM needs a separate experiment.
 
 [The hardware tick, the audio path, and the DSP's low program
-memory](docs/hardware-timebase-and-audio-path.md) settles three things the
-harness had been carrying as assumptions, each from more than one source. One
-firmware tick is 5.000 ms: the board measures 1.000031 seconds per `S18` unit
-over twelve `&T1` runs, both builds convert S-register seconds to ticks by
-multiplying by 200, and both program 80186 Timer 0 for exactly 5 ms on their
-own crystal - `0x6270` at 20.16 MHz and `0x7e00` at 25.8048 MHz, which also
-identifies `main211` as the 25.8048 MHz build. A port sweep during `AT&T8` analogue
-loopback shows no CPU port carrying samples, so the 80186 is not in the audio
-path; where it goes on the DSP side is still open, and an earlier claim here
-that it arrives on the C5x serial port is withdrawn — at run time the DSP polls
-`DRR`, `TRCV` and the ASIC's own ports together, and never transmits on either
-serial port after reset. And the C51's mask ROM is not what the modem
-executes - the firmware supplies program words `0000..75d9`, including the
-reset code, and programs external-memory wait states — and the supervisor's own
-download stream, which the bridge checks rather than assumes, matches that
-segment byte for byte (`bootstrap_match`, 60,344 bytes), so those words are RAM
-the CPU writes.
+memory](docs/hardware-timebase-and-audio-path.md) confirms three items that the
+harness used as assumptions. Each item has more than one source:
+
+- One firmware tick is 5.000 ms. The board measures 1.000031 seconds for each
+  `S18` unit over twelve `&T1` runs. The two builds change S-register seconds
+  to ticks by a multiplication by 200. The two builds program 80186 Timer 0 for
+  exactly 5 ms on their own crystal: `0x6270` at 20.16 MHz and `0x7e00` at
+  25.8048 MHz. This value also identifies `main211` as the 25.8048 MHz build.
+- A port sweep during `AT&T8` analogue loopback shows that no CPU port carries
+  samples. Thus, the 80186 is not in the audio path. Where the audio goes on
+  the DSP side is not yet known. We withdraw an earlier claim here that it
+  arrives on the C5x serial port. At run time, the DSP polls `DRR`, `TRCV` and
+  the ports of the ASIC together. After reset, it never transmits on a serial
+  port.
+- The modem does not execute the mask ROM of the C51. The firmware supplies
+  program words `0000..75d9`, which include the reset code. The firmware also
+  programs the wait states of external memory. The download stream of the
+  supervisor matches that segment byte for byte (`bootstrap_match`, 60,344
+  bytes). The bridge checks this match, and does not assume it. Thus, those
+  words are RAM that the CPU writes.
 
 [What is actually on the board](docs/board-parts.md) identifies the parts from
-a photograph, each checked against the firmware where it can be. The large NEC
-package is `1-016-905` — a USR part number on an NEC-fabricated gate array —
-and it is the "interposed ASIC" these notes model as a black box: the mailbox,
-the DSP download window, the codec bring-up, the line detector and the missing
-tone generator are all in that one package. The `40.320 MHz` oscillator also
-confirms CLKOUT is 20.16 MHz, which is the last thing the tick derivation
-needed.
+a photograph. Where possible, it checks each part against the firmware. The
+large NEC package is `1-016-905`. This is a USR part number on a gate array that
+NEC made. It is the "interposed ASIC" that these notes model as a black box.
+The mailbox, the DSP download window, the codec bring-up, the line detector and
+the missing tone generator are all in that one package. The `40.320 MHz`
+oscillator also confirms that CLKOUT is 20.16 MHz. This was the last item that
+the tick derivation needed.
 
-[Modelling the 20.16 MHz ASIC](docs/asic-port-map.md) reads that gate array's
-port space off the running board with `python -m courier_emu.asic_probe`, which
-writes nothing. Only even addresses are decoded, the decode stops at `0x7f`
-(above it the bus just returns the address), and the idle default is `0x00` -
-where the harness returns `0xff` for any port it does not model. The measured
-map is `courier_emu.asic_ports`; it is published rather than wired in, and it
-does not fix the ROM transmit bug.
+[Modelling the 20.16 MHz ASIC](docs/asic-port-map.md) reads the port space of
+that gate array from the board while it runs. It uses
+`python -m courier_emu.asic_probe`, which writes nothing. The ASIC decodes only
+even addresses. The decode stops at `0x7f`. Above it, the bus only returns the
+address. The idle default is `0x00`, but the harness returns `0xff` for each
+port that it does not model. The measured map is `courier_emu.asic_ports`. It
+is published, but it is not connected into the harness, and it does not repair
+the ROM transmit bug.
 
-The constants that rested on the old calibration have been moved with it:
-`INSTRUCTIONS_PER_MS` 1,111 -> 4,348, `SUGGESTED_TICK_MS` 10 -> 5, and
-`RING_START_MS` 8,000 -> 2,000 ms so the first ring keeps its old instruction
-offset. At equal line time the linked pair's receive backlog falls from 4.88x
-to 1.25x, `codec_rx_consumed` from 66,267 to 271,475, and both sides still
-reach `CONNECT`. Runs now cover about four times less line time per
-instruction, so `link` needs roughly 156M instructions to see what 40M used to.
+We moved the constants that used the old calibration together with it:
+
+- `INSTRUCTIONS_PER_MS` 1,111 -> 4,348
+- `SUGGESTED_TICK_MS` 10 -> 5
+- `RING_START_MS` 8,000 -> 2,000 ms, so that the first ring keeps its old
+  instruction offset
+
+At equal line time, the receive backlog of the linked pair decreases from 4.88x
+to 1.25x. `codec_rx_consumed` changes from 66,267 to 271,475. The two sides
+still get to `CONNECT`. Runs now cover about four times less line time for each
+instruction. Thus, `link` needs about 156M instructions to see what 40M showed
+before.
 
 The [boot-block flash loader](docs/sdl-boot-block.md) documents the downloader
-FreeLSD and SDL.EXE talk to, and `python -m courier_emu.sdl_download` implements
-the host side for a raw 512 KiB image. Building and checking a record stream is
-offline; the report gives the CRC to hand the modem, the blocks the download
-erases, the two parameter blocks it never erases, and the result of replaying
-the stream through a model of the loader's own state machine. The wire exchange
-is transcribed from the disassembly and has not been run against hardware, and
-the loader is only reachable after a reset that fails the flash CRC or matches
-the bootstrap DIP-switch combination.
+that FreeLSD and SDL.EXE talk to. `python -m courier_emu.sdl_download`
+implements the host side for a raw 512 KiB image. The build and check of a
+record stream occur offline. The report gives these items:
+
+- The CRC to give to the modem
+- The blocks that the download erases
+- The two parameter blocks that it never erases
+- The result of a replay of the stream through a model of the state machine of
+  the loader
+
+We transcribed the wire exchange from the disassembly. We did not run it
+against hardware. You can get to the loader only after a reset that fails the
+flash CRC or that matches the bootstrap DIP-switch combination.
 
 For live CPU RAM, use `python -m courier_emu.ram_dump` with the same options
-and a new output directory. It preserves two passes through `00000..0feff`,
-skips the peripheral registers at `0ff00..0ffff`, reports changing bytes,
-and extracts the known EEPROM settings cache. See the same diagnostic document
-for the snapshot limitations and cached-settings layout.
-Add `--window upper` to investigate CPU addresses `10000..1ffff` instead;
-that mode also takes six bracketed comparisons with lower RAM to check for
-possible mirroring, without writing test patterns.
-
+and a new output directory. It keeps two passes through `00000..0feff`. It
+skips the peripheral registers at `0ff00..0ffff`. It reports the bytes that
+change, and it extracts the known EEPROM settings cache. For the limits of the
+snapshot and the layout of the cached settings, see the same diagnostic
+document. To examine CPU addresses `10000..1ffff`, add `--window upper`. That
+mode also makes six bracketed comparisons with lower RAM to look for possible
+mirroring. It does not write test patterns.
 ## Recovered `main211.xmf` layout
 
 | File range | Contents |
@@ -152,13 +178,14 @@ possible mirroring, without writing test patterns.
 | `0x00200..0x1b5df` | 55,792 little-endian TMS320C51 words |
 | `0x1b5e0..0xb7fff` | Intel 80186 supervisor plus erased flash padding |
 
-The image is mapped at physical `0x40000`. The normal supervisor initializer is
-`5b5e:0410` (physical `0x5b9f0`). The six bytes at `5b5e:0000` are instead a
-fatal-error entry: they select error `0x0b` and jump to the LED blinker at
-physical `0x5c74a`. The CPU's immutable reset vector is not present in this
-update payload, so the harness starts at the recovered supervisor initializer.
+The image is mapped at physical `0x40000`. The usual supervisor initializer is
+`5b5e:0410` (physical `0x5b9f0`). The six bytes at `5b5e:0000` are not the
+initializer. They are a fatal-error entry: they select error `0x0b` and jump to
+the LED blinker at physical `0x5c74a`. This update payload does not contain the
+fixed reset vector of the CPU. Thus, the harness starts at the recovered
+supervisor initializer.
 
-The DSP area is a segmented program image rather than one flat load:
+The DSP area is not one flat load. It is a program image in segments:
 
 | File range | C51 program words | Role |
 |---|---:|---|
@@ -168,17 +195,18 @@ The DSP area is a segmented program image rather than one flat load:
 
 ## Usage
 
-Everything runs through the `./courier` launcher. There is nothing to install
-and no environment to activate: on first use it creates `.venv` beside the
-repository, installs the project into it, and from then on just starts the CLI.
+All commands run through the `./courier` launcher. You do not install anything,
+and you do not activate an environment. At the first use, the launcher makes
+`.venv` adjacent to the repository and installs the project into it. After
+that, it only starts the CLI.
 
 ```sh
 ./courier info main211.xmf
 ./courier extract main211.xmf extracted/main211
 ```
 
-CPU execution is selectable. The non-JIT interpreter uses a guarded native
-execution loop with Python fallback, with an 80186EB profile for analog
+You can select the CPU execution. The non-JIT interpreter uses a guarded native
+execution loop with a Python fallback. It has an 80186EB profile for analog
 Courier images and a 386EX profile for I-Modem images:
 
 ```sh
@@ -186,30 +214,36 @@ Courier images and a 386EX profile for I-Modem images:
 ./courier isdn-run Ie030002.nac --cpu-engine interpreter --instructions 10000 --report
 ```
 
-The interpreter shares the existing peripheral, interrupt, flash and I/O
-models and requires no executable-memory/JIT permission. Native execution
-falls back at device accesses, watched addresses and instructions outside its
-supported subset. The Python reference still determines instruction coverage;
-unsupported instructions stop with their opcode, profile and physical address.
-ISDN per-address profiling is enabled by `--report`; ordinary runs use bounded
-instruction-clock callbacks instead. `COURIER_X86_NATIVE=0` selects the Python
-reference for comparison.
+The interpreter shares the current peripheral, interrupt, flash and I/O models.
+It does not need executable-memory/JIT permission. Native execution falls back
+at device accesses, watched addresses and instructions outside its supported
+subset. The Python reference still sets the instruction coverage. An
+unsupported instruction stops the run with its opcode, profile and physical
+address. `--report` enables ISDN profiling for each address. Usual runs use
+bounded instruction-clock callbacks. To compare, set `COURIER_X86_NATIVE=0`.
+This selects the Python reference.
 
-Measure firmware execution with `python tools/benchmark_x86.py Ie030002.nac`
-or `python tools/benchmark_x86.py IDSDL302.ROM --with-dsp`. Add `--profile-exits`
-to identify native fallback addresses (with profiling overhead), or `--python`
-for the reference engine. See [interpreter performance](docs/interpreter-performance.md)
-for measured workloads and remaining limits.
+To measure firmware execution, use `python tools/benchmark_x86.py Ie030002.nac`
+or `python tools/benchmark_x86.py IDSDL302.ROM --with-dsp`. To identify native
+fallback addresses, add `--profile-exits`. This option adds profiling overhead.
+To use the reference engine, add `--python`. For measured workloads and the
+remaining limits, see [interpreter performance](docs/interpreter-performance.md).
 
-It uses `uv` when that is on `PATH` and falls back to `venv` plus `pip`
-otherwise. `PYTHON=<interpreter>` chooses the interpreter it builds the
-environment from (3.10 or later), `COURIER_EMU_VENV=<path>` moves the
-environment, and `make clean-venv` discards it. `./courier` may be run from any
-directory. If you would rather manage the environment yourself, install the
-project with `pip install -e '.[execute,disasm]'` and use
-`python3 -m courier_emu` in place of `./courier` everywhere below.
+The launcher uses `uv` when `uv` is on `PATH`. If not, it falls back to `venv`
+and `pip`. These settings change its behavior:
 
-Execution uses Unicorn's 16-bit x86 core and runs in an isolated child process:
+- `PYTHON=<interpreter>` selects the interpreter (3.10 or later) for the
+  environment.
+- `COURIER_EMU_VENV=<path>` moves the environment.
+- `make clean-venv` deletes the environment.
+
+You can run `./courier` from any directory. If you prefer to manage the
+environment yourself, install the project with
+`pip install -e '.[execute,disasm]'`. Then use `python3 -m courier_emu` in
+place of `./courier` in all the commands below.
+
+Execution uses the 16-bit x86 core of Unicorn and runs in an isolated child
+process:
 
 ```sh
 ./courier run main211.xmf --instructions 250000
@@ -217,13 +251,13 @@ Execution uses Unicorn's 16-bit x86 core and runs in an isolated child process:
 ./courier run main211.xmf --instructions 7000000 --with-dsp --at AT --summary
 ```
 
-The DSP defaults to C51 for Courier. Select `--model c53` for a C53 image;
-raw MICA harnesses can use `NativeC5x.from_program(..., model="c53")`.
-See [DSP memory models](docs/c5x-memory-models.md) for on-chip maps and GREG
-board configuration.
+For Courier, the default DSP is C51. For a C53 image, select `--model c53`. Raw
+MICA harnesses can use `NativeC5x.from_program(..., model="c53")`. For on-chip
+maps and the GREG board configuration, see
+[DSP memory models](docs/c5x-memory-models.md).
 
-The C5x runner has no third-party runtime dependency; it builds with the system
-C++17 compiler on first use:
+The C5x runner has no third-party runtime dependency. At the first use, it
+builds with the C++17 compiler of the system:
 
 ```sh
 ./courier dsp-run main211.xmf
@@ -231,40 +265,48 @@ C++17 compiler on first use:
 ./courier dsp-run main211.xmf --port 0x50=0x1234
 ```
 
-With no supervisor or line-side events injected, `main211.xmf` reaches a
-deterministic 169-address service/polling cycle after 10,241 DSP instructions
-and reports `status: stable-loop`. Use `--instructions` to extend the run or
-`--trace-start` with `--trace` to inspect a later instruction window.
-Opcode forms not exercised by this firmware path fail explicitly with their PC
-instead of silently producing guessed state.
+If you inject no supervisor events or line-side events, `main211.xmf` gets to a
+deterministic 169-address service/polling cycle after 10,241 DSP instructions.
+It then reports `status: stable-loop`. To make the run longer, use
+`--instructions`. To examine a later instruction window, use `--trace-start`
+with `--trace`. If this firmware path does not use an opcode form, that form
+fails clearly with its PC. It does not silently make a guessed state.
 
-The known fatal-blinker calibration loop, initial 80186 timer-ready poll, and
-firmware tick-delay helpers are accelerated by default because a CPU-only core
-cannot supply their hardware timing. Use `--real-delays` when
-instruction-accurate delay counts matter.
+By default, the harness accelerates these items: the known fatal-blinker
+calibration loop, the initial 80186 timer-ready poll and the tick-delay helpers
+of the firmware. It does this because a CPU-only core cannot supply their
+hardware timing. If instruction-accurate delay counts are important, use
+`--real-delays`.
 
-Seed hardware input values with repeatable `--port PORT=VALUE` arguments. Port
-`0x40` is the first recovered board-control latch. The recovered DTE UART model
-accepts `--at COMMAND` (which appends carriage return) or literal
-`--serial-input TEXT`. Its RX ISR is vector `0x0e`, with status/control at port
-`0x00`, data at port `0x0a`, and RX-ready bit `0x08`. `serial_text`,
-`serial_interrupts`, and `serial_trace` report the resulting terminal exchange.
-The modeled DTE attention detector accepts the firmware's all-uppercase or
-all-lowercase `AT` prefix and passes only the remaining command body to the
-banked parser. Captured output is capped at 64 KiB; `serial_truncated` reports
-when a diagnostic command exceeds that limit.
+To seed hardware input values, use repeatable `--port PORT=VALUE` arguments.
+Port `0x40` is the first recovered board-control latch. The recovered DTE UART
+model accepts `--at COMMAND` (this adds a carriage return) or literal
+`--serial-input TEXT`. Its RX ISR is vector `0x0e`. Status/control is at port
+`0x00`, data is at port `0x0a`, and the RX-ready bit is `0x08`. `serial_text`,
+`serial_interrupts` and `serial_trace` report the terminal exchange that
+results.
 
-A command line is offered to the firmware only from its command-line-ready
-state. The state machine publishes that as the callback pointer at `0x02ac`:
-`a8d9` collects a line a character at a time, the terminator advances it to
-`a910`, which parses the line and prints the result, and the end-of-command
-path at `a8b1` clears the collector and returns to `a8d9`. Bytes delivered
-into the `a910` window are assembled into a buffer nothing goes on to parse -
-the firmware's own type-ahead flag at `0x1cf2` is what would carry a line
-across, and it is set by the DTE front-end this harness stands in for. So the
-harness waits for `a8d9` and re-arms the collect flag at `0x1cee` bit `0x40`
-for each line, exactly as it does once at the main-loop milestone. That is
-what makes a second and third command answer.
+The modeled DTE attention detector accepts the `AT` prefix of the firmware in
+all uppercase or all lowercase. It sends only the remaining command body to the
+banked parser. The captured output has a limit of 64 KiB. If a diagnostic
+command is larger than that limit, `serial_truncated` reports it.
+
+The harness gives a command line to the firmware only from its
+command-line-ready state. The state machine publishes that state as the
+callback pointer at `0x02ac`:
+
+1. `a8d9` collects a line, one character at a time.
+2. The terminator advances the pointer to `a910`, which parses the line and
+   prints the result.
+3. The end-of-command path at `a8b1` clears the collector and returns to
+   `a8d9`.
+
+Bytes that arrive in the `a910` window go into a buffer that nothing parses.
+The type-ahead flag of the firmware at `0x1cf2` would carry a line across. But
+the DTE front-end sets this flag, and this harness replaces that front-end.
+Thus, the harness waits for `a8d9`. For each line, it sets the collect flag at
+`0x1cee` bit `0x40` again, exactly as it does one time at the main-loop
+milestone. Because of this, a second and third command also get an answer.
 
 ## The parameter flash, and storing a profile
 
