@@ -1332,22 +1332,23 @@ transition and the digits that the harness makes.
 
 ## Two instances on one line
 
-`link` runs two instances sharing a two-wire line over a UNIX socket. Each side
-hands the far end one 100 ms frame of hook state and line audio and blocks for
-the far end's frame, so two independently executing runs stay on the same
-emulated clock without either knowing how fast the other goes. Both sides enter
-leased-line mode. The opposite option-switch presets leave switch 5 on at side
-A so it answers, and off at side B so it originates:
+`link` runs two instances that share a two-wire line over a UNIX socket. Each
+side gives the far end one 100 ms frame of hook state and line audio. Then it
+blocks until it gets the frame of the far end. Thus, two runs that execute
+independently stay on the same emulated clock, and neither run must know the
+speed of the other. The two sides go into leased-line mode. The opposite
+option-switch presets leave switch 5 on at side A, so that it answers. They
+leave it off at side B, so that it originates:
 
 ```sh
 ./courier link main211.xmf --instructions 40000000 --summary
 ```
 
-By default both sides receive `AT&L1`. `--a-at` and `--b-at` change what each
-side is told to do, and `run` takes
-`--line-link PATH` plus `--line-listen` directly if you would rather drive the
-two processes yourself. The link implies `--with-dsp` and supersedes
-`--daa-line`: the far end's hook state is the line state.
+By default, the two sides receive `AT&L1`. `--a-at` and `--b-at` change the
+commands that each side gets. If you prefer to drive the two processes
+yourself, `run` accepts `--line-link PATH` and `--line-listen` directly. The
+link implies `--with-dsp` and replaces `--daa-line`: the hook state of the far
+end is the line state.
 
 ### A dialled 403 pair that carries data
 
@@ -1359,74 +1360,80 @@ two processes yourself. The link implies `--with-dsp` and supersedes
   --instructions 900000000 --summary
 ```
 
-A prints `CONNECT/ARQ` and then B's text, and B prints `CONNECT 33600/ARQ/V34/MNP/MNP5`
-and then A's, byte for byte. The call holds to the end of the run (about 260 s of line
-audio). `--a-send`/`--b-send` (`run --send-after-connect`) hold their data until the
-modem's CONNECT line ends, as a terminal does: typed earlier, it would abort the dial.
+A prints `CONNECT/ARQ` and then the text of B. B prints
+`CONNECT 33600/ARQ/V34/MNP/MNP5` and then the text of A, byte for byte. The
+call stays connected until the end of the run (about 260 s of line audio).
+`--a-send`/`--b-send` (`run --send-after-connect`) hold their data until the
+CONNECT line of the modem ends, as a terminal does. If you type the data
+before that, it stops the dial.
 
-`ATS27=1` on the caller is required. The `idsdl403` fixture carries S27=48, the real
-answering unit's value. At 48 the caller goes straight to LAPM, but the answerer only
-tests bit 0x20 and waits for an MNP frame. The caller retries its XID three times and
-hangs up (reason `0e`), and B is left with `CONNECT 33600/V34/NONE`. The real pair failed
-the same way when an `AT&W` drift put both ends at 048; the originator's own value is 001.
-`--b-at ATS27=0` instead gives LAPM.
+`ATS27=1` on the caller is necessary. The `idsdl403` fixture has S27=48. This
+is the value of the real answering unit. At 48, the caller goes directly to
+LAPM, but the answerer tests only bit 0x20 and waits for an MNP frame. The
+caller tries its XID again three times and hangs up (reason `0e`). B then has
+`CONNECT 33600/V34/NONE`. The real pair failed in the same way when an `AT&W`
+drift set the two ends to 048. The value of the originator itself is 001. With
+`--b-at ATS27=0`, you get LAPM.
 
 ### The 211 pair
 
-The call comes up at the line layer. Each side reports the other off hook, both
-qualify the line detector, and each exchanges the same frame count:
+The call starts at the line layer. Each side reports that the other is off
+hook. The two sides qualify the line detector, and each side exchanges the same
+frame count:
 
 ```text
 a NO CARRIER  frames=354 peer_off_hook=True
 b NO CARRIER  frames=354 peer_off_hook=True
 ```
 
-It gets no further, but the original all-zero-DAC diagnosis is obsolete. The
-call overlay now loads at the ASIC service boundary, keeps IRQ 7 active, and
-produces role-dependent candidate TDM output while consuming peer words. The
-remaining issue is framing the overlay's `0xfffe/0xfffd` slots (and its native
-`TRCV/TDXR` activity) into the physical codec stream correctly enough for the
-caller to qualify the answer signal. See `courier_firmware_analysis.md` for the
-current slot trace.
+It goes no further, but the original all-zero-DAC diagnosis is now not correct.
+The call overlay now loads at the service boundary of the ASIC. It keeps IRQ 7
+active. It makes candidate TDM output that depends on the role, while it uses
+the words of the peer. One problem remains. The `0xfffe/0xfffd` slots of the
+overlay (and its native `TRCV/TDXR` activity) must go into the physical codec
+stream with sufficiently correct framing. Then the caller can qualify the
+answer signal. For the current slot trace, see `courier_firmware_analysis.md`.
 
 ### Pacing the supervisor's countdown chain
 
-`--tick-source dsp` takes both sides further, and is available on `run` too. It
-drives the supervisor's countdown chain from the DSP frame interrupt, one tick
-per frame, which is the only arrangement tried here that leaves both of the
-firmware's mutual watchdogs quiet. It is off by default: the 1:1 ratio is a
-choice inside the band those watchdogs allow rather than a measurement, and the
-edge it delivers is one the interrupt controller has masked.
+`--tick-source dsp` takes the two sides further. You can also use it with
+`run`. It drives the countdown chain of the supervisor from the DSP frame
+interrupt, with one tick for each frame. Of the arrangements that we tried,
+only this one keeps the two mutual watchdogs of the firmware quiet. It is
+disabled by default. The 1:1 ratio is a choice in the range that those
+watchdogs permit, not a measurement. Also, the interrupt controller masks the
+edge that it delivers.
 
 ```sh
 ./courier link main211.xmf --instructions 40000000 --tick-source dsp --summary
 ```
 
-With the chain running, the line-detector poller the chain carries runs too.
-The bridge answers its `0x7c00` request with a reading in the low band, so the
-firmware counts its own five hits at `[0x649]`; whenever the chain is paced the
-harness stops writing that byte, and stops zeroing the `[0x289]` wait it is
-counted inside. `dsp_bridge.detector_replies` reports how many requests were
-answered.
+When the chain runs, the line-detector poller that the chain carries also runs.
+The bridge answers its `0x7c00` request with a reading in the low band. Thus,
+the firmware counts its own five hits at `[0x649]`. When the chain is paced, the
+harness stops writes to that byte. It also stops the reset to zero of the
+`[0x289]` wait in which the firmware counts. `dsp_bridge.detector_replies`
+reports how many requests got an answer.
 
-Both sides then leave command mode:
+The two sides then leave command mode:
 
 ```text
 a OK  ticks=9141 detector_replies=44 frames=357 peer_off_hook=True
 b OK  ticks=9141 detector_replies=44 frames=357 peer_off_hook=True
 ```
 
-and swap the DTE callback table `acdf,1fce,a8d9` for `50ad,18e3,4cac`, which is
-a different front end from the command-line collector. `OK` is not a call
-result code, though, and there is still no carrier on the line behind it: this
-is the supervisor acting on state the harness supplied, not two modems that
-trained. The same option finishes `ATI11`, which previously stopped after
-"Modulation", and takes `ATI10` to its "Strike a key when ready" pager.
+They also replace the DTE callback table `acdf,1fce,a8d9` with
+`50ad,18e3,4cac`. This is a different front end from the command-line
+collector. But `OK` is not a call result code, and the line still has no
+carrier behind it. This is the supervisor that acts on a state that the harness
+supplied. It is not two modems that trained. The same option completes `ATI11`,
+which stopped after "Modulation" before. It also takes `ATI10` to its "Strike a
+key when ready" pager.
 
-The line carries no call setup, which is what a dedicated line is: both ends are
-connected and each simply sees the other seize. Ring cadence is modelled
-separately (`--ring`) and does not yet reach an answer, so an originate/answer
-call over the link is not available.
+The line carries no call setup, as on a dedicated line: the two ends are
+connected, and each end only sees the other seize. The harness models ring
+cadence separately (`--ring`), and it does not yet get to an answer. Thus, an
+originate/answer call over the link is not available.
 
 ### The window word `0x50` is not the datapump's command port
 
