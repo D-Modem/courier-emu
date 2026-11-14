@@ -1066,35 +1066,36 @@ control registers of the 80186 give a second method.
 | ROM checksum | `6C04` | same | `ATI1` |
 | self test | runs only with the front panel button held | same, `--port 0x14=0xb5` | `0x877cd` |
 
-The self test reproduces line for line, through the dipswitch page to
-`SELF TEST COMPLETED`.
+The self test gives the same result line for line, through the dipswitch page
+to `SELF TEST COMPLETED`.
 
 ### The settings EEPROM
 
-The boot block copies the whole 512-byte part into RAM `0x058e..0x078d` and
-checksums it there at `0x81412`: byte 511 holds the sum of bytes 0..509, with
-byte 510 added and taken straight back out.
+The boot block copies all of the 512-byte part into RAM `0x058e..0x078d`, and
+calculates its checksum there at `0x81412`. Byte 511 holds the sum of bytes
+0..509. The routine adds byte 510 and then removes it again immediately.
 
-That window is why `artifacts/courier-board-21210-ram-403/` contains the part
-itself, and `CourierNvram.idsl403_fixture()` is those 512 bytes rather than
-anything synthesised. Three things agree it is the store: it is identical across
-both capture passes, its stored byte `0xbd` matches the rule where the
-neighbouring ranges give `0xbe` and `0xbc`, and it carries the +S register block
-at the offset derived from the ROM before the capture was read.
+Because of that window, `artifacts/courier-board-21210-ram-403/` contains the
+part itself. `CourierNvram.idsl403_fixture()` is those 512 bytes, not
+synthesised data. Three items of evidence show that it is the store. It is
+identical across the two capture passes. Its stored byte `0xbd` agrees with the
+rule, where the adjacent ranges give `0xbe` and `0xbc`. It has the +S register
+block at the offset that we calculated from the ROM before we read the capture.
 
-**A checksum-valid fixture over erased bytes is worse than no fixture.** An
-intermediate revision did that, the firmware trusted the erased profile, and the
-run lost its DTE output entirely.
+**A fixture with a valid checksum over erased bytes is worse than no fixture.**
+An intermediate revision did that. The firmware accepted the erased profile, and
+the run lost all of its DTE output.
 
 ### The front panel
 
-`0x877cd` gates the self test on port `0x14` bit `0x40` reading low, and
-`0x87e34` then spins while it is still low - a contact being released. It is the
-button, not a DIP switch, and mapping `carrier-detect-override` onto it was
-booting every `--dip-preset dedicated-line` run into the self test.
+`0x877cd` starts the self test only when port `0x14` bit `0x40` reads low. Then
+`0x87e34` loops while it is still low, which is a contact that the user
+releases. It is the button, not a DIP switch. Because `carrier-detect-override`
+was mapped onto it, each `--dip-preset dedicated-line` run booted into the self
+test.
 
-The lamp stage walks a nine-entry table at `0x8275f`, one line per ~281,500
-instructions:
+The lamp stage goes through a table of nine entries at `0x8275f`, one line for
+each ~281,500 instructions:
 
 | idx | port/bit | lamp | idx | port/bit | lamp |
 |---|---|---|---|---|---|
@@ -1104,78 +1105,82 @@ instructions:
 | 3 | `0x14`/`0x01` | **CD** | 8 | `0x14`/`0x20` | ARQ/FAX |
 | 4 | `0x10`/`0x01` | OH, and the relay | | | |
 
-The bold four are measured: driven one at a time with `ATGLK2O0014` against a
-rest state of `0xff`, with a different blink count per bit so they could not be
-confused, while the panel was watched. CS is the odd one - it drops whenever the
-port is released, so it is driven from this latch and idles low.
+The four bold lamps are measured. We drove them one at a time with
+`ATGLK2O0014` against a rest state of `0xff`, and looked at the panel. Each bit
+had a different blink count, thus we could not confuse them. CS is different
+from the others: it goes off each time the port is released. Thus this latch
+drives it, and it idles low.
 
-The remaining five come from the release order read off the board, and the
-alignment checks itself: exactly one of the nine steps was never seen to do
-anything, and it falls on `0x14` bit `0x40`, the button, which has no lamp.
-Nothing had to be assumed about where the silent step was.
+The other five come from the release sequence that we read from the board, and
+the alignment checks itself. Exactly one of the nine steps did nothing that we
+saw. It is on `0x14` bit `0x40`, the button, which has no lamp. Thus we did not
+have to assume the location of the silent step.
 
     bit 0x01 (0xff <-> 0xfe)   CD blinks alone
     bit 0x10 (0xff <-> 0xef)   AA blinks alone
     bit 0x80 (0xff <-> 0x7f)   SYN blinks alone Index 4 reads as a
-lamp *lighting* mid-sweep rather than going out, in both the board's sequence and
-the emulated run, which is what identifies OH and the relay as one line.
+lamp that *comes on* in the middle of the sweep, not one that goes off. This is
+true in the sequence of the board and in the emulated run. This identifies OH
+and the relay as one line.
 
-Port `0x14` reads its **inputs** rather than this latch - `0xfe`, `0xff` and
-`0x7f` all read back as `0x7e` - so the rest state cannot be read and is `0xff`,
-which is what `0x82803` writes to release. A first attempt used the `0x7e` read
-as its baseline, which held both bits driven throughout, and reported CD and SYN
-moving together off bit `0x80`. That was the baseline, not the board.
+Port `0x14` reads its **inputs**, not this latch. `0xfe`, `0xff` and `0x7f` all
+read back as `0x7e`. Thus you cannot read the rest state. It is `0xff`, which is
+the value that `0x82803` writes to release. A first attempt used the `0x7e` read
+as its baseline, which held the two bits driven all the time. It reported that
+CD and SYN changed together from bit `0x80`. That result came from the
+baseline, not from the board.
 
-**This table says which latch bit lights which lamp during the test. It does not
-say the supervisor drives that lamp in service, and mostly it does not.** RD,
-SD, TR, RS and CS are RS-232 signals before they are lamps and follow the wire.
-Across a whole 150M-instruction dial the panel sees 23 writes,
-`carrier-detect-a` and `carrier-detect-b` are never driven at all, and everything
-that moves is the board-ID strap scan at boot plus the hook relay. The lamp
-stage is a lamp *test* - the firmware takes over lines it otherwise leaves to the
-hardware, precisely so every lamp can be seen. That is what makes the sweep
-usable for naming them, and why the naming cannot be turned around into "the
+**This table shows which latch bit lights which lamp during the test. It does
+not show that the supervisor drives that lamp in service, and usually it does
+not.** RD, SD, TR, RS and CS are RS-232 signals before they are lamps, and they
+follow the wire. Across a full dial of 150M instructions, the panel gets 23
+writes. `carrier-detect-a` and `carrier-detect-b` are never driven. All changes
+come from the board-ID strap scan at boot and from the hook relay. The lamp
+stage is a lamp *test*. The firmware takes control of lines that it usually
+leaves to the hardware, so that you can see each lamp. Thus the sweep is
+satisfactory to name the lamps. But you cannot reverse the result into "the
 supervisor controls this lamp".
 
 #### Two bits conflict with dsp-rom-probe, on this same board
 
-[probing.md](probing.md) has its own single-bit strobe table, taken
-on this unit (`/dev/cu.usbserial-21210`, serial `0009540034268322`). It lists the
-same nine self-test entries in the same order, and five attributions agree
-exactly - CD on `0x14` bit 0, CS on bit 1, ARQ on bit 5, SYN on bit 7, MR on
-`0x12` bit 1. **Two do not:**
+[probing.md](probing.md) has its own single-bit strobe table, from this unit
+(`/dev/cu.usbserial-21210`, serial `0009540034268322`). It lists the same nine
+self-test entries in the same sequence. Five attributions agree exactly: CD on
+`0x14` bit 0, CS on bit 1, ARQ on bit 5, SYN on bit 7, MR on `0x12` bit 1.
+**Two do not agree:**
 
 | bit | dsp-rom-probe | this file |
 |---|---|---|
 | `0x14` bit 6 (`0x40`) | HS lamp, observed | *no lamp* - the front-panel button |
 | `0x12` bit 4 (`0x10`) | analog path, audible pop | HS lamp |
 
-Both sides are user-reported panel observations, so neither transcript
-arbitrates. What tips it is firmware: `0x877cd` gates the self test on port
-`0x14` bit `0x40` **reading low**, and `0x87e34` then spins while it is still
-low - that is an input being released, which a lamp drive is not. And the sweep
-here saw nothing at all happen on that step.
+The two sides are panel observations that the user reported, thus neither
+transcript gives the decision. The firmware gives the decision. `0x877cd` starts
+the self test only when port `0x14` bit `0x40` **reads low**. Then `0x87e34`
+loops while it is still low. That is an input that the user releases, and a lamp
+drive does not do that. Also, the sweep here saw nothing occur on that step.
 
-**Settled by re-strobing the two bits one at a time**, watching the panel and
-listening: `0x14` bit 6 from a rest state of `0xff`, and `0x12` bit 4 from its
-shadow. If bit 6 lights nothing and `0x12` bit 4 lights HS, this file is right
-and dsp-rom-probe's two rows shift. Until then neither attribution should be
-built on.
+**To get the answer, strobe the two bits again one at a time.** Look at the
+panel and listen. Strobe `0x14` bit 6 from a rest state of `0xff`, and `0x12`
+bit 4 from its shadow. If bit 6 lights nothing and `0x12` bit 4 lights HS, this
+file is correct, and the two rows of dsp-rom-probe move. Until then, do not use
+either attribution as a base for more work.
 
 ### The hook
 
 Port `0x10` bit `0x01` drives the relay and the OH lamp together, **active
-high** - `0xdf` pulls in, `0xde` releases, chip-select held low throughout. The
-model had the hook on bit `0x04` active-low; both bits are asserted on a dial,
-`0x01` at `c8fbe` and `0x04` about 43,500 instructions later at `c8fe1`, so the
-wrong bit still yielded an off-hook, just late.
+high**. `0xdf` energizes the relay, and `0xde` releases it. Chip-select stays
+low all the time. The model had the hook on bit `0x04`, active-low. A dial
+asserts the two bits: `0x01` at `c8fbe`, and `0x04` about 43,500 instructions
+later at `c8fe1`. Thus the incorrect bit still gave an off-hook, but late.
 
-`[0x020d]` bit `0x02` mirrors the hook - `0x09` on-hook, `0x0b` off-hook, moved
-by pulling the relay in by hand with `ATGLK2O0010,DF`. Every other candidate cell
-was identical between board and emulator. **The emulator never writes `[0x020d]`
-at all**: a `--mem-watch 200:220` across a whole dial catches 96 writes in that
-range and every one is to `[0x0210]`. The predicate at `0x8b449` tests bit 0 of
-this same cell before its success branch, so the cell is on the path.
+`[0x020d]` bit `0x02` copies the hook state: `0x09` on-hook, `0x0b` off-hook.
+We changed it when we energized the relay manually with `ATGLK2O0010,DF`. All
+other candidate cells were identical between board and emulator. **The emulator
+never writes `[0x020d]`.** A `--mem-watch 200:220` across a full dial finds 96
+writes in that range, and all are to `[0x0210]`. The predicate at `0x8b449`
+tests bit 0 of this same cell before its success branch. Thus the cell is on
+the path.
 
 ### Two port read-backs
 
@@ -1184,31 +1189,31 @@ this same cell before its success branch, so the cell is on the path.
 | `0x10` | `0x86` on-hook, `0x87` off-hook | `0xff`, with the NVRAM bits overlaid |
 | `0x00` | `0x00` | `0x33` on the input bits |
 
-Port `0x10` bit `0x01` mirrors the hook on the board and the emulator answers
-open bus, so any firmware routine reading the port back to maintain `[0x020d]` is
-being told the line is permanently off hook.
+On the board, port `0x10` bit `0x01` copies the hook state, but the emulator
+answers open bus. Thus, if a firmware routine reads the port back to update
+`[0x020d]`, it gets the information that the line is always off hook.
 
-Port `0x00` is worse, because that value is one this project chose: it was set to
-answer `PORT0_INPUTS` high on the reasoning that answering from the latch cost
-`ATI7` its option list. The board answers `0x00`. The four bits are not
-capability inputs reading high, the guess was wrong, and whatever moved the
-option list has another cause still to find.
+Port `0x00` is worse, because this project selected that value. We set it to
+answer `PORT0_INPUTS` high, because an answer from the latch removed the option
+list from `ATI7`. The board answers `0x00`. The four bits are not capability
+inputs that read high. The guess was wrong, and the cause of the change in the
+option list is still not known.
 
-The broader shape of the port space is in [the port map above](#the-cpus-io-space):
-only even ports decode, the decode stops at `0x7f`, and the idle default is
-`0x00` where the harness returns `0xff`.
-
+The general shape of the port space is in
+[the port map above](#the-cpus-io-space). Only even ports decode, the decode
+stops at `0x7f`, and the idle default is `0x00` where the harness returns
+`0xff`.
 
 ## The output latches, and how to drive them safely
 
-`ATGLK2O` writes CPU I/O ports, so the three output latches at `0x10`, `0x12`
-and `0x14` are drivable from the AT interface. Part of what follows is physical
-**write** evidence - the first writes of any kind issued to a unit in this
-investigation.
+`ATGLK2O` writes CPU I/O ports. Thus you can drive the three output latches at
+`0x10`, `0x12` and `0x14` from the AT interface. Part of the text below is
+physical **write** evidence. These were the first writes of any type to a unit
+in this investigation.
 
-Two helpers drive the latches, `0x2771` (set bits) and `0x279b` (clear), with
-the port table at `0x27c7`. `AH` is the bit mask and `AL` a descriptor whose bit
-3 must be set; `AL & 3` selects both port and RAM shadow:
+Two helpers drive the latches: `0x2771` (set bits) and `0x279b` (clear). The
+port table is at `0x27c7`. `AH` is the bit mask, and `AL` is a descriptor. Bit 3
+of `AL` must be set. `AL & 3` selects the port and the RAM shadow:
 
 | `AL` | port | shadow |
 |---|---|---|
@@ -1217,40 +1222,40 @@ the port table at `0x27c7`. `AH` is the bit mask and `AL` a descriptor whose bit
 | `0a` | `0x14` | `[0x310]` |
 | `0b` | `0x12` | `[0x311]` - no call site uses it |
 
-**The latches are write-only.** Reading `0x10`/`0x12`/`0x14` returns input
-signals, not latch contents, which is why the firmware keeps shadows and does a
-`cli`-protected read-modify-write against them. Initialization at `0x2728` fills
-`0x30e..0x312` with `0xff`, then forces `[0x30e]=0xfe` and `[0x30f]=0x7f`. The
-captured idle RAM holds `fe 7d f5 ff` at `0x30e..0x311`, readable live with
-`ATGLK2=0000:0300`. Nothing reads `[0x310]`, and there is no direct `out 0x14`
-in that bank, so port `0x14` holds whatever is written until the next helper
-call.
+**The latches are write-only.** A read of `0x10`/`0x12`/`0x14` returns input
+signals, not latch contents. This is why the firmware keeps shadows and does a
+read-modify-write against them with `cli` protection. Initialization at
+`0x2728` fills `0x30e..0x312` with `0xff`, then sets `[0x30e]=0xfe` and
+`[0x30f]=0x7f`. The captured idle RAM holds `fe 7d f5 ff` at `0x30e..0x311`.
+You can read it live with `ATGLK2=0000:0300`. Nothing reads `[0x310]`, and there
+is no direct `out 0x14` in that bank. Thus port `0x14` holds the written value
+until the next helper call.
 
 **`O` is a bare `out dx,al`.** It writes all eight bits and does not update the
-shadow. So a single-bit poke must be composed by hand from the current shadow -
-`ATGLK2O0014,40` does not set bit 6, it clears the other seven - and after a
-write the shadow and the latch disagree. The firmware believes its shadow and
-will not restore the latch on its own; a bit left flipped stays flipped until an
-explicit write or a power cycle. Observed: setting `0x12` bit 1 turned MR off
-and it stayed off. The firmware's own read-modify-write is interrupt-protected;
-a shadow read followed by a separate `O` write is not atomic against it.
+shadow. Thus you must make a single-bit write manually from the current shadow.
+`ATGLK2O0014,40` does not set bit 6. It clears the other seven bits. After a
+write, the shadow and the latch disagree. The firmware trusts its shadow and
+does not restore the latch itself. A changed bit stays changed until an explicit
+write or a power cycle. We saw this: when we set `0x12` bit 1, MR went off and
+stayed off. The read-modify-write of the firmware has interrupt protection. A
+shadow read followed by a separate `O` write is not atomic against it.
 
 ### Do not write port `0x10`
 
-`0x1490` starts from `[0x30e]`, forces bit 5 high and bit 3 low, `out 0x0e,0x6f`
-to select, then toggles bit 6 as a clock with `in al,0x10` reading data back;
-`0x1540` restores the shadow and writes `out 0x0e,7`. That is the bit-banged
-serial EEPROM holding the modem's saved profiles, and the same pattern recurs at
-`0x27a6e..0x27b64` in another bank. These bits are driven by direct `out 0x10`
-writes that bypass the helper API, so a scan of helper call sites does not see
-them. **An arbitrary byte written to port `0x10` can clock the NVRAM
-interface.**
+`0x1490` starts from `[0x30e]`, sets bit 5 high and bit 3 low, and does
+`out 0x0e,0x6f` to select. Then it toggles bit 6 as a clock, and `in al,0x10`
+reads data back. `0x1540` restores the shadow and writes `out 0x0e,7`. That is
+the bit-banged serial EEPROM that holds the saved profiles of the modem. The
+same pattern occurs again at `0x27a6e..0x27b64` in another bank. Direct
+`out 0x10` writes drive these bits and do not use the helper API. Thus a scan of
+the helper call sites does not find them. **An arbitrary byte written to port
+`0x10` can clock the NVRAM interface.**
 
 ### Confirmed function of the driven bits
 
-Established by strobing single bits on a physical unit and watching the front
-panel - user-reported observations, not captured transcripts. Port `0x14` is
-active low: `0` lights the indicator.
+We found these functions when we strobed single bits on a physical unit and
+looked at the front panel. These are observations that the user reported, not
+captured transcripts. Port `0x14` is active low: `0` lights the indicator.
 
 | port | bit | function | evidence |
 |---|---|---|---|
@@ -1271,27 +1276,28 @@ active low: `0` lights the indicator.
 | `0x10` | 3, 5, 6 | serial EEPROM bit-bang | `0x1490`..`0x15a5` |
 
 > **Two rows conflict with [the board measurements below](#measured-on-the-4-03d-board), which
-> strobed the same bits on this same unit.** That file's sweep puts **no lamp**
-> on `0x14` bit 6 and identifies it as the front-panel button - which the
-> firmware supports, since `0x877cd` gates the self test on that bit *reading
-> low* and `0x87e34` spins while it stays low, an input being released. It puts
-> **HS** on `0x12` bit 4, where the row above records an audible pop. Five other
-> attributions agree exactly between the two. Both sides are user-reported panel
-> observations, so neither transcript arbitrates; re-strobing those two bits one
-> at a time, watching and listening, settles it. Until then neither attribution
-> should be built on.
+> strobed the same bits on this same unit.** That sweep puts **no lamp** on
+> `0x14` bit 6, and identifies it as the front-panel button. The firmware
+> supports this: `0x877cd` starts the self test only when that bit *reads low*,
+> and `0x87e34` loops while it stays low, which is an input that the user
+> releases. It puts **HS** on `0x12` bit 4, where the row above records an
+> audible pop. Five other attributions agree exactly between the two. The two
+> sides are panel observations that the user reported, thus neither transcript
+> gives the decision. To get the answer, strobe those two bits again one at a
+> time, and look and listen. Until then, do not use either attribution as a
+> base for more work.
 
-Port `0x14` bit 0 driving the CD *lamp* while `0x10` bit 0 drives the CD *line*
-is consistent: `&C` controls the line, the lamp follows carrier. The panel
-indicators with no latch bit - RD, SD, TR, RS - are the ones expected to be
-wired to the UART and control lines in hardware.
+Port `0x14` bit 0 drives the CD *lamp*, and `0x10` bit 0 drives the CD *line*.
+This is consistent: `&C` controls the line, and the lamp follows carrier. The
+panel indicators with no latch bit are RD, SD, TR and RS. We expect that the
+hardware connects these to the UART and the control lines.
 
 ### The self-test table, and why strobing was considered safe
 
-`0x26a8` walks a nine-entry table at `cs:0x26f2`, calls clear on every entry,
-delays, then calls set on every entry with interrupts masked. It is reached by
-`lcall 8000:26a4` from a dispatcher at `0x26247` when the parsed value is `5`;
-the AT syntax that reaches that dispatcher has not been identified.
+`0x26a8` goes through a table of nine entries at `cs:0x26f2`. It calls clear on
+each entry, waits, then calls set on each entry with interrupts masked. A
+dispatcher at `0x26247` gets to it with `lcall 8000:26a4` when the parsed value
+is `5`. We have not identified the AT syntax that gets to that dispatcher.
 
 | entry | `AX` | port | bit | entry | `AX` | port | bit |
 |---|---|---|---|---|---|---|---|
@@ -1301,43 +1307,46 @@ the AT syntax that reaches that dispatcher has not been identified.
 | 3 | `010a` | `0x14` | 0 | 8 | `200a` | `0x14` | 5 |
 | 4 | `0108` | `0x10` | 0 | | | | |
 
-The firmware drives each of these in both directions itself, so doing so by hand
-reaches no state the firmware does not. **That argument survives; the reading
-that the group is purely front-panel does not** - entry 0 produced an audible
-pop, so this is a broader self-test than a lamp test. Entry 4 is on port `0x10`
-and should be excluded on the NVRAM grounds above despite appearing here. Port
-`0x12` bits 3 and 5 are driven by the firmware but are *not* in this table, so
-they lack that cover, and the latch is now known to reach the analog path.
+The firmware itself drives each of these in the two directions. Thus, a manual
+drive gets to no state that the firmware does not also get to. **That argument
+is still correct. But the interpretation that the group is only front-panel is
+not correct.** Entry 0 made an audible pop, thus this is a larger self-test than
+a lamp test. Entry 4 is on port `0x10`. Do not include it, because of the NVRAM
+risk above, although it is in this table. The firmware drives port `0x12` bits 3
+and 5, but they are *not* in this table. Thus this argument does not apply to
+them, and we now know that the latch gets to the analog path.
 
 ### Port `0x14` bit 2, probed 2026-09-04
 
-Live shadows read `fe 7d f5 ff`, matching the earlier RAM capture exactly, so
-the strobe was `f1` and the restore `f5`. Sequence: `AT`, `ATI7`,
-`ATGLK2=0000:0300`, two `ATGLK2B0000` sweeps, the write, two sweeps, the
-restore, two sweeps - each phase requiring two byte-identical sweeps before
-being accepted, with the restore in a `finally` block. `artifacts/io-latch-bit2-01/`.
+The live shadows read `fe 7d f5 ff`, which is exactly the same as the earlier
+RAM capture. Thus the strobe was `f1` and the restore was `f5`. The sequence was:
+`AT`, `ATI7`, `ATGLK2=0000:0300`, two `ATGLK2B0000` sweeps, the write, two
+sweeps, the restore, two sweeps. Each phase needed two byte-identical sweeps
+before we accepted it, and the restore was in a `finally` block. The data is in
+`artifacts/io-latch-bit2-01/`.
 
-**Zero of the 256 ports changed while bit 2 was held low**, and the
-post-restore sweep is byte-identical to the baseline. Because port `0x14` has no
-refresh path, the bit genuinely stayed low across both intervening sweeps.
+**Zero of the 256 ports changed while bit 2 was held low**, and the sweep after
+the restore is byte-identical to the baseline. Port `0x14` has no refresh path.
+Thus the bit really stayed low across the two sweeps between the write and the
+restore.
 
-That is a null result about **feedback, not function**. A sweep sees only what
-the CPU can read back; a latch bit routed to a DSP pin, a lamp or an analog gate
-would not appear in the peripheral bank at all. What it establishes is that bit
-2 is not wired into anything the supervisor can observe through I/O space, and
-that the write/restore cycle disturbs nothing else. Whether the bit is visible
-on the front panel was not checked.
+That is a null result about **feedback, not function**. A sweep sees only the
+data that the CPU can read back. A latch bit that goes to a DSP pin, a lamp or
+an analog gate does not show in the peripheral bank. The result shows that bit 2
+does not connect to anything that the supervisor can see through I/O space. It
+also shows that the write/restore cycle changes nothing else. We did not check
+whether the bit is visible on the front panel.
 
 ### Bearing on the DSP
 
-No bit the firmware drives is a DSP control line: every one resolves to a
-front-panel indicator, a DTE control line, the NVRAM interface or the analog
-path. That is **not** the same as establishing the latch bank contains no DSP
-control - `0x14` bit 2, `0x12` bits 0, 2 and 6, and `0x10` bits 1, 2, 4 and 7
-have no located driver, and absence of a driver is not evidence that nothing is
-wired to the pin. The positive evidence that DSP reset is elsewhere is
-`0xe3ab`/`0xe429` driving `[0xff56]` bit 1 directly, a CPU port pin rather than
-an ASIC latch; that covers reset specifically and does not exclude some other
+No bit that the firmware drives is a DSP control line. Each one is a front-panel
+indicator, a DTE control line, the NVRAM interface or the analog path. But that
+does **not** show that the latch bank contains no DSP control. `0x14` bit 2,
+`0x12` bits 0, 2 and 6, and `0x10` bits 1, 2, 4 and 7 have no driver that we
+found. If there is no driver, this is not evidence that nothing connects to the
+pin. The positive evidence that DSP reset is at a different location is that
+`0xe3ab`/`0xe429` drive `[0xff56]` bit 1 directly. That is a CPU port pin, not
+an ASIC latch. This applies to reset only. It does not exclude a different
 DSP-related strap or enable.
 
 ## Which DSP: a 'C51, measured
