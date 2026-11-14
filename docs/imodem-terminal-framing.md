@@ -1,74 +1,73 @@
 # I-modem terminal failures: AT framing is bypassed
 
-Confirmed against `Ie030002.nac` on 2026-09-12, using the existing
-`flashnvram.sav` read-only, external product type, and no DSP execution.
-Before the fix, the `--terminal` route delivered the literal `AT` prefix to a
-parser that expects the command body. It also missed the new-command reset.
-Together these explain both the missing/`NO CARRIER` result and old commands
-being executed again.
+We confirmed this against `Ie030002.nac` on 2026-09-12. We used the existing
+`flashnvram.sav` read-only, the external product type, and no DSP execution.
+Before the fix, the `--terminal` route sent the literal `AT` prefix to a
+parser that expects the command body. It also did not do the new-command reset.
+Together, these two faults explain the missing/`NO CARRIER` result, and also why the firmware
+executed old commands again.
 
-This supersedes the earlier explanations in [imodem-at-interface.md](imodem-at-interface.md)
-that attributed these symptoms to missing capability data or typing speed.
-There may still be configuration and hardware gaps, but neither a new
-configuration record nor an active ISDN line was needed to obtain correct
-responses in the controlled experiment below.
+This replaces the earlier explanations in [imodem-at-interface.md](imodem-at-interface.md).
+These explanations said that the symptoms came from missing capability data or from the typing speed.
+There can still be gaps in the configuration and the hardware. But the controlled experiment below
+got correct responses without a new configuration record and without an active ISDN line.
 
 ## Why AT produces silence or NO CARRIER
 
-`interactive_pump` passes the whole typed line through `send_serial` to SIO0.
-At idle the RX dispatch word `2600:e834` selects `a400:ec8d` (`0xb2c8d`).
-That handler reads RBR and calls `[c922]`, which is `0x8b3e`: the command-body
-collector at `0xacb3e`. It masks parity but does not recognize an AT prefix.
+`interactive_pump` sends the full typed line through `send_serial` to SIO0.
+At idle, the RX dispatch word `2600:e834` selects `a400:ec8d` (`0xb2c8d`).
+That handler reads RBR and calls `[c922]`, which is `0x8b3e`: the collector of the command body
+at `0xacb3e`. It masks the parity, but it does not recognize an AT prefix.
 
-The raw ATI trace reaches the parser at `0xcbb90` with length 3 and buffer
-`ATI`, where length 1 and buffer `I` are needed. The ordinary command table
-dispatches the leading `A` to `0xcc564`, the answer-call handler. Its write
-at `0xcc5ac` sets `[d16f]` bit 0. The following `I` still prints `USR009F`,
-which makes the command appear to have worked.
+In the raw ATI trace, the parser at `0xcbb90` gets length 3 and the buffer
+`ATI`. It must get length 1 and the buffer `I`. The ordinary command table
+dispatches the leading `A` to `0xcc564`, which is the answer-call handler. Its write
+at `0xcc5ac` sets bit 0 of `[d16f]`. The `I` that follows still prints `USR009F`.
+Thus, the command looks successful.
 
-At completion, `[d16f]=1` sends the parser through `0xcc182`, returning carry
-set. The caller branches from `0xac74f` via `0xac764`, `0xac4eb`, and
-`0xac52f` into call handling. Eventually `[c922]` becomes `0x0e0e`, the
+At completion, `[d16f]=1` sends the parser through `0xcc182`, which returns with carry
+set. The caller branches from `0xac74f` through `0xac764`, `0xac4eb`, and
+`0xac52f` into call handling. Then, `[c922]` becomes `0x0e0e`, the
 keypress-abort receiver at `0xa4e0e`. A bare AT has no diagnostic text to
-print and can therefore appear silent while waiting in this state.
+print. Thus, it can look silent while it waits in this state.
 
-The next input aborts the unintended call, setting `[d08b]=0x17` (keypress
-abort). The result emitter at `0xacf8c` receives code 3 and prints
-`NO CARRIER`. Input during this transition can be discarded. This is an
-actual call-state transition, not a display or UART-output duplication.
+The next input aborts the call that we did not intend, and sets `[d08b]=0x17` (keypress
+abort). The result emitter at `0xacf8c` gets code 3 and prints
+`NO CARRIER`. The firmware can discard input during this transition. This is a
+real transition of the call state. It is not a duplication of the display or of the UART output.
 
 ## Why the old model code keeps coming back
 
-The command length at `2600:e49a` is not reset on CR. The collector increments
-it as characters arrive and terminates the buffer at `2600:e49b` on CR.
-Resetting the length belongs to recognition of a new AT prefix.
+A CR does not reset the command length at `2600:e49a`. The collector increments
+it when characters arrive, and it terminates the buffer at `2600:e49b` on CR.
+The reset of the length is part of the recognition of a new AT prefix.
 
-The stock route skips that recognition, so subsequent accepted input appends
-to the previous command body. Old `I` and `Y11` commands are parsed again.
-In a raw run with **20 million instructions between lines**, ATY11 produced
-the previous `USR009F` before its own heading; the following accepted ATI3
-repeated both old reports before printing its banner. Waiting longer does not
-reset this buffer.
+The stock route skips that recognition. Thus, the next accepted input is added
+to the previous command body, and the firmware parses the old `I` and `Y11` commands again.
+In a raw run with **20 million instructions between lines**, ATY11 gave
+the previous `USR009F` before its own heading. The ATI3 that was accepted after it
+gave the two old reports again before it printed its banner. If you wait longer, the buffer
+does not reset.
 
-Removing AT from the input is only a partial workaround: an empty line and
-`I` then produce genuine OK result codes, but later `I6` and `Y11` still
-re-execute accumulated commands. Prefix recognition and the buffer reset are
+If you remove AT from the input, this is only a partial workaround. An empty line and
+`I` then give real OK result codes, but later `I6` and `Y11` still
+execute the accumulated commands again. The prefix recognition and the buffer reset are
 both necessary.
 
 ## Controlled validation
 
 The firmware already contains an external UART prefix handler:
 
-* `0xb3596` recognizes A, masking parity/case with `and al,0x5f`.
-* `0xb35aa` recognizes T, and also handles the A/ repeat form.
+* `0xb3596` recognizes A. It masks the parity/case with `and al,0x5f`.
+* `0xb35aa` recognizes T. It also handles the A/ repeat form.
 * `0xb35e6` clears `[e498]` and **`[e49a]`**, selects the body collector,
-  and switches RX dispatch back to `0xec8d` for the command body.
+  and changes the RX dispatch back to `0xec8d` for the command body.
 
-For diagnosis only, a code hook at `0xc7bf1` (after reception is armed)
-selects this existing handler by writing `0xf596` to `2600:e834`. The
-experiment changes this RAM dispatch word; it does not patch firmware code,
+For diagnosis only, a code hook at `0xc7bf1` (after the firmware arms the reception)
+selects this existing handler. It writes `0xf596` to `2600:e834`. The
+experiment changes this RAM dispatch word. It does not do these things: patch firmware code,
 force result codes, change the configuration, inject recovery lines, or
-filter transmitted output.
+filter the transmitted output.
 
 | Typed, consecutively in one boot | Firmware output |
 |---|---|
@@ -78,28 +77,28 @@ filter transmitted output.
 | ATY11 | Freq / Level heading, then OK |
 | AT | OK |
 
-All five calls to the result emitter receive code 0. The disconnect cause
-stays 0. There are no stale reports. The buffer lengths at result emission
-are 0, 1, 2, 3, 0 respectively, containing the new command bodies.
+All five calls to the result emitter get code 0. The disconnect cause
+stays 0. There are no stale reports. At result emission, the buffer lengths
+are 0, 1, 2, 3, 0, and the buffers contain the new command bodies.
 
-The emulator now models that missing external-board selection at `0xc7bf1`,
-the boundary where command reception has been armed. It writes `0xf596` to
-the firmware's RX dispatch word and otherwise leaves prefix recognition,
-buffer reset, body collection, parsing, and result emission to the firmware.
-The selection is limited to the external product; the internal product keeps
-its distinct input path.
+The emulator now models that missing selection of the external board at `0xc7bf1`.
+This is the boundary where the firmware has armed the command reception. The emulator writes `0xf596` to
+the RX dispatch word of the firmware. All other steps stay with the firmware: prefix recognition,
+buffer reset, body collection, parsing, and result emission.
+The selection applies only to the external product. The internal product keeps
+its own input path.
 
-With the input path fixed, `scripted_pump` no longer injects recovery lines or
-suppresses stale output. Scripted and interactive sessions now deliver the
+With the input path fixed, `scripted_pump` does not inject recovery lines now, and it does not
+suppress stale output. Scripted and interactive sessions now send the
 same literal terminal traffic.
 
 ## Evidence and reproduction
 
-[Saved traces](../artifacts/imodem-terminal-diagnosis/README.md) include the
-raw call-state transitions, the parser's carry-set return, the suffix-only
-control, and the successful external-prefix-handler experiment.
+The [saved traces](../artifacts/imodem-terminal-diagnosis/README.md) include the
+raw transitions of the call state, the return of the parser with carry set, the suffix-only
+control, and the successful experiment with the external prefix handler.
 
-From the repository root:
+From the root of the repository:
 
 ```sh
 .venv/bin/python artifacts/imodem-terminal-diagnosis/probe.py \
@@ -108,7 +107,7 @@ From the repository root:
   --mode prefix-handler --output /tmp/imodem-prefix.json
 ```
 
-The probe reads the local NVRAM file and never saves it. Raw and suffix modes
-explicitly restore the former body-receiver selection so the original failure
-remains reproducible after the production fix; prefix-handler mode exercises
+The probe reads the local NVRAM file and never saves it. The raw and suffix modes
+explicitly restore the former selection of the body receiver. Thus, you can still get the original failure
+again after the production fix. The prefix-handler mode exercises
 the corrected selection.
