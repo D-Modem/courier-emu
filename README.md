@@ -1437,86 +1437,95 @@ originate/answer call over the link is not available.
 
 ### The window word `0x50` is not the datapump's command port
 
-The C51 has no external `IN` for `0x50` at all. Data addresses `0x50..0x5f` are
-reserved on a C5x, this core decodes them as external I/O, and the site at
-program `0x8c1f` is a `BIT @50, 6` inside the per-sample service routine. Its
-`TC` result is discarded by the `CLRC TC` at `0x8c3d` with no consumer in
-between, so the word is read and thrown away. Three checks say the same thing
-from the other side:
+The C51 has no external `IN` for `0x50`. On a C5x, data addresses `0x50..0x5f`
+are reserved. This core decodes them as external I/O. The site at program
+`0x8c1f` is a `BIT @50, 6` in the service routine for each sample. The
+`CLRC TC` at `0x8c3d` discards its `TC` result, and nothing between them uses
+it. Thus, the firmware reads the word and discards it. Three checks give the
+same result from the other side:
 
-- Presenting each of the twelve header values the supervisor actually sends at
-  window words `0x50`/`0x51` leaves a 3.4 M-instruction C51 run byte-identical
-  in every counter, including where it stops.
-- The C51's `IMR` is zero after boot, so no host interrupt can reach it either.
-- Applying all 2,274 of a run's runtime messages as `host_write(header, data)`
-  into C51 data space changes nothing.
+- We presented each of the twelve header values that the supervisor really
+  sends at window words `0x50`/`0x51`. A 3.4 M-instruction C51 run stays
+  byte-identical in all counters, and it stops at the same location.
+- The `IMR` of the C51 is zero after boot. Thus, no host interrupt can get to
+  it.
+- We applied all 2,274 runtime messages of a run as
+  `host_write(header, data)` into C51 data space. This changes nothing.
 
-So there is no host-to-datapump command path in the resident program, and
-"recover the `0x58..0x5e` to C51 `0x50/0x51` valid/ack timing", which earlier
-notes named as the next step, is not it. The supervisor's runtime traffic is a
-real channel — 2,274 two-word messages with a valid/ack handshake on port
-`0x1c`, and the `0x40..0x4e` window used only for the two program downloads —
-but whatever consumes it on the board is not the C51 code these images run.
+Thus, the resident program has no host-to-datapump command path. Earlier notes
+named this next step: "recover the `0x58..0x5e` to C51 `0x50/0x51` valid/ack
+timing". That is not the solution. The runtime traffic of the supervisor is a
+real channel. It has 2,274 two-word messages with a valid/ack handshake on port
+`0x1c`. The `0x40..0x4e` window is used only for the two program downloads. But
+the component on the board that uses this traffic is not the C51 code that
+these images run.
 
 ### What the datapump is doing instead
 
-Taking instruction boundaries from a run rather than decoding statically, the
-whole of what the C51 executes in steady state is 167 instructions, one pass is
-169, and the loop head is at `0x0cb1` — inside the bank the supervisor
-downloads. The datapump is resident and idle, not un-entered, and it uses about
-6% of the cycles a 25 MHz part has per 9.6 kHz sample.
+We took instruction boundaries from a run, and did not decode statically. In
+steady state, the C51 executes 167 instructions in total. One pass is 169
+instructions. The loop head is at `0x0cb1`, in the bank that the supervisor
+downloads. The datapump is resident and idle. It is not "not entered". It uses
+about 6% of the cycles that a 25 MHz part has for each 9.6 kHz sample.
 
-Every pass ends with `BIT *, 4` on `[0x00cc]` and a `CC 0xb4d4` on the result,
-and `[0x00cc]` is zero on every sample of every run. `[0x00cc]` is the
-datapump's own status word — the low half of a 32-bit value carried from sample
-to sample through `[0x7e]:[0x7d]` and ACCB, holding `0x0555_0000` throughout —
-and `0xb4d4` turns out not to be code at all but a numeric table, so that
-conditional is not the way in.
+Each pass ends with `BIT *, 4` on `[0x00cc]` and a `CC 0xb4d4` on the result.
+`[0x00cc]` is zero on each sample of each run. `[0x00cc]` is the status word of
+the datapump itself. It is the low half of a 32-bit value that goes from sample
+to sample through `[0x7e]:[0x7d]` and ACCB. This value is `0x0555_0000` for the
+full run. `0xb4d4` is not code. It is a numeric table. Thus, that conditional is
+not the entry.
 
-Interrupts are enabled — the reset code sets `IMR = 0x002a` and clears `INTM` —
-and of the sixteen, only number 7 changes anything when raised. That is not the
-datapump waking up: `PMST.IPTR` is zero, so the vector is program `0x0010`,
-which is inside the reset code, and driving the interrupt partially reboots the
-C51. Almost 6,000 of the instructions it adds are below `0x00d0`.
+Interrupts are enabled: the reset code sets `IMR = 0x002a` and clears `INTM`.
+Of the sixteen interrupts, only number 7 changes anything when it is raised.
+This is not the datapump that starts. `PMST.IPTR` is zero, so the vector is
+program `0x0010`, which is in the reset code. Thus, when you drive the
+interrupt, the C51 partially boots again. Almost 6,000 of the instructions
+that it adds are below `0x00d0`.
 
-There is no vector table in this image to point it anywhere better. `IPTR` can
-only place one on 32 two-kiloword boundaries; the longest run of consecutive
-two-word branches at any of them is a single slot, and nothing table-shaped
-exists anywhere else in the image either. The area is never rewritten: across
-600,000 instructions of startup the only program-memory instruction executed is
-one `BLPD`, which reads rather than writes.
+This image has no vector table that can point it to a better location. `IPTR`
+can put a table only on 32 two-kiloword boundaries. At each of them, the
+longest run of consecutive two-word branches is a single slot. Nothing with
+the shape of a table is in other locations in the image. The firmware never
+writes this area again. Across 600,000 instructions of startup, the only
+program-memory instruction that executes is one `BLPD`, which reads and does
+not write.
 
-Nor in any other image here. All fifteen — six XMFs, four XMDs, the ISDN ROM,
-`.nac`, `.sdl` and `.xmp` — scanned in both byte orders come up empty once the
-handler word is required to vary; the long runs are filler or sequential `CALL`
-code. Every XMF's DSP payload instead begins at file `0x2f0` with reset code,
-identical across `main211`, `main2205` and `3453Bv2.1.1`, and a different
-variant in the four 2.3.x builds whose first act is an external write to I/O
-port `0x8057` and which programs different wait states (`PDWSR` `0x2000`
-against `0x000a`). So the vector area holding reset code is a property of every
-build in the tree, not a quirk of one image, and those wait-state values are
-the one direct statement about the memory map available here.
+The other images here also have no vector table. We scanned all fifteen in the
+two byte orders: six XMFs, four XMDs, the ISDN ROM, `.nac`, `.sdl` and `.xmp`.
+When the handler word must vary, the scan finds nothing. The long runs are
+filler or sequential `CALL` code. The DSP payload of each XMF starts at file
+`0x2f0` with reset code. This code is identical across `main211`, `main2205` and
+`3453Bv2.1.1`. The four 2.3.x builds have a different variant. Its first action
+is an external write to I/O port `0x8057`, and it programs different wait states
+(`PDWSR` `0x2000` against `0x000a`).
 
-The reading that fits is that the C51 is in microcomputer mode, its program
-`0x0000..0x0fff` is on-chip ROM holding both the vector table and the bootstrap
-that receives the download, and neither is in this image — so the assumption
-that the downloaded segment begins at program `0x0000` puts the downloaded init
-on top of the vectors.
+Thus, reset code in the vector area is a property of each build in the tree. It
+is not a special property of one image. Those wait-state values are the only
+direct statement about the memory map that is available here.
+
+The interpretation that agrees with these facts is this. The C51 is in
+microcomputer mode. Its program `0x0000..0x0fff` is on-chip ROM. This ROM holds
+the vector table and the bootstrap that receives the download, and this image
+contains neither. Thus, the assumption that the downloaded segment starts at
+program `0x0000` puts the downloaded init on top of the vectors.
 
 ### The C51 memory map, and what the wait states say
 
-The core used to parse `MP/MC`, `OVLY` and `RAM` out of `PMST` and act on none
-of them. It now decodes both spaces as the C51 actually lays them out: program
-is on-chip ROM below `0x1000` when `MP/MC` is low, DARAM B0 at `0xfe00` under
-`CNF`, external otherwise; data is registers below `0x0060`, DARAM at B2
-`0x0060`, B0 `0x0100` (unless `CNF` moves it) and B1 `0x0300`, external from
-`0x0800` up, and **reserved** in the gaps at `0x0080..0x00ff` and
-`0x0500..0x07ff`. The C51 has no SARAM at all, so `PMST.RAM` and `PMST.OVLY`
-are don't-cares on this part.
+Before, the core parsed `MP/MC`, `OVLY` and `RAM` from `PMST`, but it did not
+act on them. Now it decodes the two spaces with the real layout of the C51:
 
-The wait-state registers are decoded too, and they answer the `MP/MC` question
-the images could not. Both firmware families write `CWSR 0x0010`, which puts
-every space on the plain 0/1/2/3 scale, and then:
+- Program: on-chip ROM below `0x1000` when `MP/MC` is low, DARAM B0 at `0xfe00`
+  under `CNF`, and external in all other areas.
+- Data: registers below `0x0060`, DARAM at B2 `0x0060`, B0 `0x0100` (unless
+  `CNF` moves it) and B1 `0x0300`, and external from `0x0800` up. The gaps at
+  `0x0080..0x00ff` and `0x0500..0x07ff` are **reserved**.
+
+The C51 has no SARAM. Thus, `PMST.RAM` and `PMST.OVLY` have no effect on this
+part.
+
+The core also decodes the wait-state registers. These registers answer the
+`MP/MC` question that the images could not answer. The two firmware families
+write `CWSR 0x0010`, which puts each space on the plain 0/1/2/3 scale, and then:
 
 ```text
 2.1/2.2  PDWSR 0x000a   program 0x0000..0x7fff  2 wait states
@@ -1525,20 +1534,20 @@ every space on the plain 0/1/2/3 scale, and then:
          IOWSR 0x0101   io      0x0000..0x1fff  1, io 0x8000..0x9fff  1
 ```
 
-Wait states only apply off-chip, so a non-zero field is the firmware saying it
-expects external memory there. The 2.1/2.2 boards put program `0x0000..0x7fff`
-off-chip — exactly the span of the 30,172-word segment the supervisor downloads
-— which means `MP/MC` is high and there is no boot ROM under the download. The
-pin now defaults to high for that reason rather than by convention. The 2.3.x
-boards need no program wait states at all and put their slow external memory in
-data space instead.
+Wait states apply only off-chip. Thus, a field that is not zero tells that the
+firmware expects external memory there. The 2.1/2.2 boards put program
+`0x0000..0x7fff` off-chip. This is exactly the span of the 30,172-word segment
+that the supervisor downloads. Thus, `MP/MC` is high, and no boot ROM is below
+the download. For this reason, the pin now has the default high, and not by
+convention. The 2.3.x boards need no program wait states. They put their slow
+external memory in data space.
 
-Every run reports `dsp_bridge.dsp_memory_map` with the mode bits, the
-wait-state decode and per-region access counts. One of those counts is worth
-reading on its own: **about 700,000 data accesses a run land in the C51's
-reserved windows**, and they are the frame-block cells `[0x00ca]`–`[0x00cd]`,
-including the line-DAC source and the gate above. On silicon those addresses
-hold no storage. `courier_firmware_analysis.md` has the rest.
+Each run reports `dsp_bridge.dsp_memory_map` with the mode bits, the wait-state
+decode and the access counts for each region. One of those counts is important:
+**in each run, about 700,000 data accesses go to the reserved windows of the
+C51**. They are the frame-block cells `[0x00ca]`–`[0x00cd]`, which include the
+line-DAC source and the gate above. On silicon, those addresses have no
+storage. `courier_firmware_analysis.md` has the rest.
 
 ## Minimal SIP dial-out
 
