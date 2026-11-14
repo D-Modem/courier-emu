@@ -1351,14 +1351,16 @@ DSP-related strap or enable.
 
 ## Which DSP: a 'C51, measured
 
-The core models a 'C52. **It is not one**, and the firmware says so three ways.
+The core models a 'C52. **It is not a 'C52**, and the firmware shows this in
+three ways.
 
-**Not a C2x either.** A 1200-word census finds `splk` (98), `samm` (71), `lamm`
-(31), `bsar` (32), `bd` (32), `calld` (31), `retd` (36), `retcd` (108), `lacc16`
-(21), `bcnd` (48), `bldd` (13), `smmr` (19), `lmmr` (2) and `apl`/`opl`/`xpl`
-(14) - none with a C2x encoding. A TMS320C25 cannot run this program. The C50,
-C51, C52 and C53 share the instruction set and differ in on-chip memory, so the
-census fixes the family and the **memory map** has to choose the member.
+**It is also not a C2x.** A census of 1200 words finds `splk` (98), `samm`
+(71), `lamm` (31), `bsar` (32), `bd` (32), `calld` (31), `retd` (36), `retcd`
+(108), `lacc16` (21), `bcnd` (48), `bldd` (13), `smmr` (19), `lmmr` (2) and
+`apl`/`opl`/`xpl` (14). None of these has a C2x encoding. A TMS320C25 cannot run
+this program. The C50, C51, C52 and C53 have the same instruction set and
+different on-chip memory. Thus the census sets the family, and the **memory
+map** must select the member.
 
 SPRU056D Table 1-1, on-chip memory in 16-bit words:
 
@@ -1370,53 +1372,55 @@ SPRU056D Table 1-1, on-chip memory in 16-bit words:
 | 'C53 | 1056 | 3K | 16K | 2, includes TDM |
 | 'LC56 | 1056 | 6K | 32K | 2, BSP |
 
-**1. The firmware maps SARAM that a 'C52 does not have.** Its prologue is
+**1. The firmware maps SARAM that a 'C52 does not have.** Its prologue is:
 
 ```text
 8014  apl @07, #07f8      ; keep bits 3-10
       opl @07, #00b0      ; set bits 4, 5 and 7
 ```
 
-and on a C5x bit 4 is `PMST.RAM` and bit 5 is `PMST.OVLY` - the two bits that map
-on-chip SARAM into program space and overlay it into both spaces. A build sets
-them only on a part with SARAM to map. Bit 7 is `IPTR`'s LSB, putting the vector
-table at `0x0080`, which likewise needs on-chip memory there. On a 'C52 all three
-are meaningless.
+On a C5x, bit 4 is `PMST.RAM` and bit 5 is `PMST.OVLY`. These two bits map
+on-chip SARAM into program space and overlay it into the two spaces. A build
+sets them only on a part that has SARAM to map. Bit 7 is the LSB of `IPTR`. It
+puts the vector table at `0x0080`, which also needs on-chip memory there. On a
+'C52, all three bits have no function.
 
-**2. `0x23f0` only fits the 9K part.** 302's mailbox dispatcher and its stream
-resume poll both `calld 0x23f0` on every pass. That is below the external RAM, so
-it has to be on-chip, and with `PMST.RAM` set the guide gives the 9K SARAM's
-program range as **`0x0800`-`0x2BFF`**. A 3K part reaches only `0x13ff`, a 1K part
-`0x0bff`, a 6K part `0x1fff`. **Only the 'C50 covers `0x23f0`.**
+**2. `0x23f0` agrees only with the 9K part.** The mailbox dispatcher of 302 and
+its stream resume poll both do `calld 0x23f0` on each pass. That address is
+below the external RAM, thus it must be on-chip. With `PMST.RAM` set, the guide
+gives the program range of the 9K SARAM as **`0x0800`-`0x2BFF`**. A 3K part
+gets only to `0x13ff`, a 1K part to `0x0bff`, a 6K part to `0x1fff`. **Only the
+'C50 includes `0x23f0`.**
 
-Data space agrees: Table 8-8 with `OVLY=1` puts SARAM at `0x0800`-`0x2BFF`, and
-the prologue's block clears cover `0x0100-0x04ff`, `0x0800-0x08ff` and
-`0x0b80-0x0bff`, with 302's mailbox ring at `0x0bd0` - all inside it.
+Data space agrees. Table 8-8 with `OVLY=1` puts SARAM at `0x0800`-`0x2BFF`. The
+block clears of the prologue are at `0x0100-0x04ff`, `0x0800-0x08ff` and
+`0x0b80-0x0bff`, and the mailbox ring of 302 is at `0x0bd0`. All of these are in
+that range.
 
-**3. The 'C52 has one serial port and no TDM**, while this firmware sets up
-`TSPC`, the TDM serial port control register, and transmits on that port
-continuously from the idle task.
+**3. The 'C52 has one serial port and no TDM.** But this firmware configures
+`TSPC`, the TDM serial port control register, and the idle task transmits on
+that port all the time.
 
-> **The 403 build does not need the 9K.** It puts the same helper in-bank at
-> `0x80e8`, so only the older build reaches `0x23f0`. A board running 403 could
-> therefore be a **'C51** on this evidence - 1K SARAM at `0x0800`-`0x0bff` still
-> covers the ring at `0x0bd0` and the prologue's clears. What is excluded on every
-> build is the 'C52.
+> **The 403 build does not need the 9K.** It puts the same helper in the bank at
+> `0x80e8`. Thus only the older build gets to `0x23f0`. On this evidence, a
+> board with 403 can be a **'C51**: 1K SARAM at `0x0800`-`0x0bff` still includes
+> the ring at `0x0bd0` and the clears of the prologue. The 'C52 is excluded on
+> all builds.
 
-**4. The package suffix says the same.** `TI DSP 16-912 (C) US ROBOTICS
-**D17140PQ**` - `PQ` is TI's 132-pin BQFP suffix, carried by 'C50, 'LC50, 'C51
-and 'LC51. The 'C52 is **PJ** and the 'C53 is not a PQ part either. The pin work
-above already leaned on SPRU056D Table A-4's *PQ* pinout to place `VDDD` and
-`IS`, so this was in the evidence unremarked. The rest of the marking is a custom
-USR number and says nothing.
+**4. The package suffix gives the same result.** `TI DSP 16-912 (C) US ROBOTICS
+**D17140PQ**`: `PQ` is the TI suffix for the 132-pin BQFP. The 'C50, 'LC50,
+'C51 and 'LC51 have it. The 'C52 is **PJ**, and the 'C53 is also not a PQ part.
+The pin work above already used the *PQ* pinout of SPRU056D Table A-4 to find
+`VDDD` and `IS`. Thus this was already in the evidence, but nobody saw it. The
+remainder of the marking is a custom USR number and gives no information.
 
 ### It is a 'C51, and the 2K dump was a quarter of the ROM
 
 **Measured 2026-09-13** on the 25 MHz board, not inferred:
 [artifacts/dsp-memory-test-2806](../artifacts/dsp-memory-test-2806/README.md).
-Write two patterns through data space, read the same addresses back through
-program space. SARAM seen from both spaces is one physical memory and must
-follow the write; ROM cannot.
+The test writes two patterns through data space, and reads the same addresses
+back through program space. SARAM seen from the two spaces is one physical
+memory and must follow the write. ROM cannot follow it.
 
 | address | data write lands | program space follows |
 |---|---|---|
@@ -1424,10 +1428,10 @@ follow the write; ROM cannot.
 | `0x1800` | yes | **no** |
 | `0x2400` | yes | **yes** |
 
-With `MP/MC=0` and `PMST.RAM=1` a 'C50 maps 9K of SARAM into program space over
-`0x0800`-`0x2BFF`, so all three would follow. The observed split is the 'C51
-map: **8K of on-chip ROM at `0x0000`-`0x1FFF`** winning over SARAM in program
-space, and writable memory above it.
+With `MP/MC=0` and `PMST.RAM=1`, a 'C50 maps 9K of SARAM into program space over
+`0x0800`-`0x2BFF`. Thus all three addresses would follow. The observed split is
+the 'C51 map: **8K of on-chip ROM at `0x0000`-`0x1FFF`** has priority over SARAM
+in program space, and writable memory is above it.
 
 | | SARAM | **ROM** | serial | verdict |
 |---|---|---|---|---|
@@ -1435,36 +1439,38 @@ space, and writable memory above it.
 | **'C51 / 'LC51** | **1K** | **8K** | 2 | **the part** |
 | 'C52 | none | 4K | 1 | excluded by the `PQ` suffix and by SARAM use |
 
-The full 8K is read - `artifacts/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin` -
-and is mostly unprogrammed: 1920 words of boot code at `0x0000`-`0x077F`, a
+We read all of the 8K into
+`artifacts/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin`, and most of it is not
+programmed. It contains 1920 words of boot code at `0x0000`-`0x077F`, a
 128-word mailbox block at `0x1F80`, and 6144 words of a 32-word `FFFF`/`0000`
-array pattern. The 20.16 MHz board's part has since been read in full too and
-agrees byte for byte wherever the ROM is programmed. `0x0780`-`0x07FF` is that same
-pattern, so the old 2K capture did not stop at a boundary - it ran off the end of
-the programmed part.
+array pattern. Since then, we also read all of the part of the 20.16 MHz board.
+It agrees byte for byte at all programmed locations of the ROM. `0x0780`-`0x07FF`
+has that same pattern. Thus the old 2K capture did not stop at a boundary. It
+went past the end of the programmed part.
 
 ### MP/MC is 0, and this file said 1
 
 `PMST` sampled on the board reads `00b0`: `IPTR` 0, `AVIS` 1, `OVLY` 1, `RAM` 1,
-**`MP/MC` 0**. Microcomputer mode. The caveat that `MP/MC` had never been read
-directly is discharged, and the answer is the opposite of the assumption carried
-below and in [board-parts.md](board-parts.md) - that the firmware runs MP/MC=1
-and the on-chip ROM window therefore does not exist. It exists, and it is 8K.
+**`MP/MC` 0**. This is microcomputer mode. Previously, nobody had read `MP/MC`
+directly. Now this caveat is closed, and the answer is the opposite of the
+assumption in the text below and in [board-parts.md](board-parts.md). That
+assumption was that the firmware runs MP/MC=1, and thus that the on-chip ROM
+window does not exist. The window exists, and it is 8K.
 
-`RAM` and `OVLY` also read as **already set on entry**, before the `opl @07,
-#0030` every kernel in `dsp_probe.py` executes. That instruction has never been
-changing anything.
+`RAM` and `OVLY` also read as **already set on entry**, before each kernel in
+`dsp_probe.py` executes the `opl @07, #0030` instruction. That instruction never
+changed anything.
 
-**The memory-map rows below have not been reworked for this.** They were written
-against MP/MC=1 and a 2K ROM, and both are now known wrong; what is measured is
+**We did not update the memory-map rows below for this.** We wrote them for
+MP/MC=1 and a 2K ROM, and we now know that both are wrong. The measured data is
 the table above.
 
 ### What that means for the core
 
-`native/c5x_core.h` has the part with 4K of program ROM, three DARAM blocks and
-**no SARAM at all**, making `PMST.RAM` and `PMST.OVLY` don't-cares, with
-everything from `0x0800` up `External`. The guide's three memory-map figures agree
-with the core everywhere *except* that:
+`native/c5x_core.h` gives the part 4K of program ROM, three DARAM blocks and
+**no SARAM**. Thus `PMST.RAM` and `PMST.OVLY` have no effect, and all addresses
+from `0x0800` up are `External`. The three memory-map figures of the guide agree
+with the core at all locations *except* these:
 
 | region | guide | core |
 |---|---|---|
@@ -1478,52 +1484,52 @@ with the core everywhere *except* that:
 | data `0800`-`2BFF` | **SARAM if `PMST.OVLY`**, else external | external, always |
 | data `2C00`-`FFFF` | external | external, less the shared window |
 
-**So the correction to make is the memory map, not just the part number**: SARAM
-mapped by `PMST.RAM`/`OVLY` instead of stubbed. That has not been made or tested.
-The ROM row is a harness fixture rather than a claim about the board - the
-firmware runs MP/MC=1 where that window does not exist, and the probe kernels in
-`dsp_probe.py` and `fsk.py` use microcomputer mode to host 4K synthetic drivers
-of their own.
+**Thus the necessary correction is to the memory map, not only to the part
+number**: SARAM mapped by `PMST.RAM`/`OVLY`, not a stub. Nobody has made or
+tested this correction. The ROM row is a harness fixture, not a claim about the
+board. The firmware runs MP/MC=1, where that window does not exist. The probe
+kernels in `dsp_probe.py` and `fsk.py` use microcomputer mode to hold their own
+4K synthetic drivers.
 
-**And the shared external window is ordinary, not a trick.** The guide puts
-nothing on-chip above `0x2BFF` in data space, and nothing above it in program
-space with `CNF` clear, which is how this firmware runs. So a reference to
-`0x8000`-`0xFEFF` is an off-chip bus cycle in **both** spaces - the same address
-driven on the same pins. One RAM answering both is a board that does not separate
-the two strobes, which is what 302's `bldp` from data `0x80f5` needs.
+**Also, the shared external window is usual, not a trick.** The guide puts
+nothing on-chip above `0x2BFF` in data space. It also puts nothing above it in
+program space with `CNF` clear, and this firmware runs with `CNF` clear. Thus a
+reference to `0x8000`-`0xFEFF` is an off-chip bus cycle in **the two** spaces:
+the same address on the same pins. If one RAM answers the two, the board does
+not separate the two strobes. The `bldp` of 302 from data `0x80f5` needs this.
 
-> An earlier reading had the 9K SARAM "decoding with A15-A14 ignored" and
-> therefore mirroring. That is **Table 8-15, address ranges during external
-> DMA**, and applies to a DMA master reaching the SARAM - not to the CPU's own
-> program and data addressing.
+> An earlier reading said that the 9K SARAM decodes "with A15-A14 ignored", and
+> thus mirrors. That is **Table 8-15, address ranges during external DMA**. It
+> applies to a DMA master that gets access to the SARAM, not to the program and
+> data addressing of the CPU itself.
 
 ### Its program memory is RAM, above `0x8000`
 
-The bridge does not assume the transfer: it accumulates the supervisor's actual
-download stream and compares it against the image. Every run reports
-`bootstrap_match: true` at `bootstrap_bytes: 60344` - 30,172 words, the whole
-resident segment.
+The bridge does not assume the transfer. It collects the actual download stream
+of the supervisor and compares it with the image. Each run reports
+`bootstrap_match: true` at `bootstrap_bytes: 60344`. That is 30,172 words, all
+of the resident segment.
 
-> **Corrected 2026-09-15.** That segment's origin is `0x8000`, not `0x0000`,
-> so this says nothing about the mask-ROM window. `0x0000` was a constant in
-> `courier_emu/xmf.py`; the supervisor's own download call site names the
-> destination it requests, and for 2.1.1 and 2.2.05 that is `8000`, with the
-> overlay table's other rows at `9d00`, `af50` and `dc00`. Every branch target
-> in the payload has bit 15 set, which at origin `8000` needs no explaining and
-> at origin `0000` needed masking off. The download match is a content match;
-> it never located the words. See
+> **Corrected 2026-09-15.** The origin of that segment is `0x8000`, not
+> `0x0000`. Thus this gives no information about the mask-ROM window. `0x0000`
+> was a constant in `courier_emu/xmf.py`. The download call site of the
+> supervisor names the destination that it requests. For 2.1.1 and 2.2.05 that
+> is `8000`, and the other rows of the overlay table are at `9d00`, `af50` and
+> `dc00`. Each branch target in the payload has bit 15 set. At origin `8000` this
+> needs no explanation, but at origin `0000` it needed a mask. The download
+> match is a content match. It never found the location of the words. Refer to
 > [hardware-timebase-and-audio-path.md](hardware-timebase-and-audio-path.md#3-corrected-the-xmf-payload-loads-at-8000-not-0000).
 
-So the supervisor transfers 30k words into the external RAM at `0x8000` and
-addresses nothing below it - which is what a part whose low 8K is mask ROM
-requires, and agrees with the `MP/MC`-low measurement in
-[which DSP: a 'C51, measured](#which-dsp-a-c51-measured). The 2.3.x XMFs are
-the ones that do not fit it: their table loads at `1000`, with one row at
-program `0000`.
+Thus the supervisor transfers 30k words into the external RAM at `0x8000`, and
+it addresses nothing below that address. A part with mask ROM in its low 8K
+needs this. It also agrees with the `MP/MC`-low measurement in
+[which DSP: a 'C51, measured](#which-dsp-a-c51-measured). The 2.3.x XMFs do not
+agree with it: their table loads at `1000`, with one row at program `0000`.
 
-The two `CY7C199-15VC` give 64 KB = **32K words, exactly `0x8000`-`0xffff`** - the
-range the supervisor's downloads fill (`0x8000`-`0xf8b5` on 302, `0x8000`-`0xf949`
-on 403, about 31K words). The part is sized for the job with a little to spare.
+The two `CY7C199-15VC` give 64 KB = **32K words, exactly `0x8000`-`0xffff`**.
+This is the range that the downloads of the supervisor fill (`0x8000`-`0xf8b5`
+on 302, `0x8000`-`0xf949` on 403, about 31K words). The size of the part is
+correct for the function, with a small margin.
 
 ## The codec, and a withdrawn identification
 
