@@ -116,8 +116,8 @@ flash_offset = 0x29080 + 2 * (dsp_word - 0x8000)
 
 Two independent checks agree:
 
-- Flash `0x29080` holds the DSP reset code (`LDP #0; SPLK #ffff,@57; SETC
-  INTM`). It maps to word `0x8000`, the address that `e3aa` requests.
+- Flash `0x29080` holds the DSP reset code
+  (`LDP #0; SPLK #ffff,@57; SETC INTM`). It maps to word `0x8000`, the address that `e3aa` requests.
 - The resident sender at words `83d6..83ff` maps to flash `0x2982c..0x2987e`.
   That is in the `[0x29080,0x29880)` startup/sender region, which we identified
   separately.
