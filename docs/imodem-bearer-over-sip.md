@@ -1,8 +1,8 @@
 # The B channel as a SIP call
 
-[imodem-audio-bearer.md](imodem-audio-bearer.md) ends with the I-modem
-answering an audio call as a modem, putting ANSam on the bearer, and finding
-nothing at the other end of it.  `--bri-sip` puts a SIP call there.
+At the end of [imodem-audio-bearer.md](imodem-audio-bearer.md), the I-modem
+answers an audio call as a modem and puts ANSam on the bearer. But it finds
+nothing at the other end of the bearer. `--bri-sip` puts a SIP call there.
 
 ```sh
 .venv/bin/python tools/sip_answer_sink.py answer.g711 150 &
@@ -14,7 +14,7 @@ nothing at the other end of it.  `--bri-sip` puts a SIP call there.
     --send ATA --send-after 30000000
 ```
 
-and the modem's answer tone comes out of the far end of an RTP stream:
+The answer tone of the modem comes out of the far end of an RTP stream:
 
 ```
 bri.media_peer   INVITE to 5551234
@@ -25,54 +25,54 @@ bri.media_peer   INVITE to 5551234
 
 ## Why this join needs nothing in the middle
 
-A B channel carries 8000 octets a second of G.711.  RTP's PCMU payload *is*
-8000 octets a second of G.711.  They are the same octets, so the bridge
-converts nothing:
+A B channel carries 8000 octets of G.711 each second. The PCMU payload of RTP
+*is* 8000 octets of G.711 each second. They are the same octets. Thus the
+bridge does not convert anything:
 
-* **no resampling** - both sides are 8 kHz.  `ata.py`, which puts the analogue
-  board on a SIP line, has to run a polyphase filter because that board's codec
-  path is not;
+* **no resampling** - the two sides are 8 kHz. `ata.py`, which puts the
+  analogue board on a SIP line, must run a polyphase filter, because the codec
+  path of that board is not 8 kHz;
 * **no companding conversion** - mu-law in, mu-law out.
 
-The second one is not tidiness.  `SipSession`'s linear path decodes each
-codeword to a sample and re-encodes it on the way out, and that round trip is
-identity for 255 of the 256 codewords and **not for `7f`**.  One in 256 would
-be inaudible in speech and is a defect here: V.90 and x2 are built on exact
-codewords - the whole idea is that the digital end of the call places them on
-the wire itself - and this board is that end.  So `send_pcmu` and
-`receive_pcmu` were added beside `send_audio`, and the analogue path is left
-exactly as it was.
+The second item is not only for tidiness. The linear path of `SipSession`
+decodes each codeword to a sample and encodes it again on the way out. That
+round trip is identity for 255 of the 256 codewords, but **not for `7f`**.
+One error in 256 is inaudible in speech, but it is a defect here. V.90 and x2
+use exact codewords - the main idea is that the digital end of the call puts
+them on the wire itself - and this board is that end. Thus we added
+`send_pcmu` and `receive_pcmu` next to `send_audio`, and we did not change the
+analogue path.
 
-`tests/test_bearer_sip.py` puts all 256 codewords through a real socket pair
-and checks they arrive unchanged, and checks the linear path against the same
-256 so the reason stays written down.
+`tests/test_bearer_sip.py` sends all 256 codewords through a real socket pair
+and makes sure that they arrive with no change. It also examines the linear
+path with the same 256 codewords, so that the reason stays recorded.
 
 ## What it does not pretend
 
-The emulator runs on an instruction budget and RTP runs on a clock, and the two
-disagree about how long a second is.  The bridge does not paper over that: it
-returns exactly as many octets as it was handed, fills what has not arrived
-with mu-law silence, and **counts every octet of the fill**.  A run says so
-plainly:
+The emulator runs on an instruction budget, and RTP runs on a clock. The two
+do not agree about the length of a second. The bridge does not hide this. It
+returns exactly as many octets as it received. It fills the octets that did
+not arrive with mu-law silence, and it **counts every octet of the fill**. A
+run shows this clearly:
 
 ```
 octets  to_rtp 94096  from_rtp 94096  silence_filled 94096
 ```
 
-- everything the modem said went out, and nothing came back, because the sink
-above sends no audio.  A far end that does send audio will show the fill
-falling, and how far it falls is the honest measure of how close to real time
-that run was.  Nothing here tries to make the two clocks agree; a run that
-needs them to is a different piece of work, and it should be a deliberate one.
+All of the output of the modem went out, and nothing came back, because the
+sink above sends no audio. A far end that sends audio will show a decrease of
+the fill. The size of that decrease is the honest measure of how close to real
+time that run was. Nothing here tries to make the two clocks agree. A run that
+needs this is a different task, and it must be an intentional one.
 
 ## Where it goes
 
-The obvious far end is the other Courier.  This tree already models the
+The obvious far end is the other Courier. This tree already models the
 analogue board and its datapump, and
 [ata-sip-line.md](ata-sip-line.md) already puts that board on a SIP line
-through `LineExchange`.  Both ends now speak PCMU to a SIP server, which means
-the ISDN Courier and the analogue Courier can be pointed at each other through
-one - the digital end placing codewords directly on the bearer, the analogue
-end hearing them through a codec.  That is the shape of an x2 or V.90
-connection, and it is the first time this repository has had both halves of it
-able to reach the same wire.
+through `LineExchange`. Now the two ends speak PCMU to a SIP server. Thus you
+can point the ISDN Courier and the analogue Courier at each other through one
+server. The digital end puts codewords directly on the bearer, and the
+analogue end hears them through a codec. That is the shape of an x2 or V.90
+connection. It is the first time that this repository has the two halves of
+it able to get to the same wire.
