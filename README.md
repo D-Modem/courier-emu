@@ -1551,16 +1551,21 @@ storage. `courier_firmware_analysis.md` has the rest.
 
 ## Minimal SIP dial-out
 
-`--sip-server` attaches the DAA to a small UDP SIP user agent and enables both
-the DAA and DSP automatically. Parsed `ATD` digits become the destination URI;
-the client supports an unauthenticated INVITE or one MD5 Digest retry after
-`401`/`407`, SDP with PCMU payload 0, ACK/BYE, and bidirectional RTP. The modem's
-9.6 kHz line stream is converted to/from 8 kHz PCMU. The current DTMF assist is
-inserted at the recovered C51 DAC write, so it travels as ordinary in-band
-audio; it is not yet evidence that the firmware datapump entered originate
-mode.
+`--sip-server` attaches the DAA to a small UDP SIP user agent. It enables the
+DAA and the DSP automatically. Parsed `ATD` digits become the destination URI.
+The client supports these items:
 
-Keep the password out of command history by putting it in the environment:
+- An unauthenticated INVITE, or one MD5 Digest retry after `401`/`407`
+- SDP with PCMU payload 0
+- ACK/BYE
+- RTP in the two directions
+
+The harness changes the 9.6 kHz line stream of the modem to and from 8 kHz
+PCMU. The current DTMF assist goes in at the recovered C51 DAC write. Thus, it
+travels as usual in-band audio. It is not yet evidence that the firmware
+datapump went into originate mode.
+
+To keep the password out of the command history, put it in the environment:
 
 ```sh
 export COURIER_SIP_PASSWORD='your-password'
@@ -1569,86 +1574,115 @@ export COURIER_SIP_PASSWORD='your-password'
   --sip-target 'sip:{number}@pbx.example.net' --at ATD123 --summary
 ```
 
-`dsp_bridge.sip` reports the target, response status, dialog state, RTP
-endpoints/counters, and a bounded event trace; it never includes the password.
-This deliberately minimal client is UDP/IPv4 and PCMU-only. It does not yet
-REGISTER, use SIP/TLS, negotiate other codecs, send RFC 2833 events, or turn
-SIP failure responses into Courier `BUSY`/`NO ANSWER` result codes.
+`dsp_bridge.sip` reports these items: the target, the response status, the
+dialog state, the RTP endpoints/counters and a bounded event trace. It never
+includes the password. This client is intentionally minimal. It is UDP/IPv4
+and PCMU-only. It does not yet do these items:
 
-A live 6000-to-7800 validation completed Digest authentication, received
-`200 OK`, and carried 1,152 inbound and 507 outbound RTP packets, while the
-Courier still returned `NO CARRIER`. The supervisor emitted 30 two-word
-runtime control messages on ports `0x58..0x5e` and none of them reached a
-datapump. The blocker is below SIP rather than in its duration or RTP
-transport, and it is not the host-latch timing earlier notes named: see "The
-window word `0x50` is not the datapump's command port".
+- REGISTER
+- Use SIP/TLS
+- Negotiate other codecs
+- Send RFC 2833 events
+- Change SIP failure responses into Courier `BUSY`/`NO ANSWER` result codes
 
-The result includes CPU registers, the first 128 I/O/MMIO operations, complete
-per-address event counts, the hottest code addresses, and the final execution
-path. It also records `supervisor-entry`, `dsp-transfer`, `startup-crc`, and
-`main-loop` milestones; a run that reaches the normal dispatcher reports
-`status: main-loop`. Unknown input ports return all ones. Input responses and output latches
-are separate, matching hardware such as DSP command/status port `0x1e`;
-`--port` sets only the input response. This intentionally makes unmodeled
-hardware visible instead of silently pretending it exists.
+A live 6000-to-7800 validation completed Digest authentication and received
+`200 OK`. It carried 1,152 inbound and 507 outbound RTP packets. But the
+Courier still returned `NO CARRIER`. The supervisor sent 30 two-word runtime
+control messages on ports `0x58..0x5e`, and none of them got to a datapump. The
+blocker is below SIP. It is not in the duration of SIP or in the RTP transport.
+It is also not the host-latch timing that earlier notes named. See "The window
+word `0x50` is not the datapump's command port".
 
-On macOS, a native Unicorn library can be selected with
-`--libunicorn /path/to/library/directory`. The worker boundary converts native
-signals into a clean CLI failure rather than crashing the controlling process.
+The result includes these items: the CPU registers, the first 128 I/O/MMIO
+operations, the full event counts for each address, the hottest code addresses
+and the final execution path. It also records the `supervisor-entry`,
+`dsp-transfer`, `startup-crc` and `main-loop` milestones. A run that gets to the
+usual dispatcher reports `status: main-loop`.
+
+Unknown input ports return all ones. Input responses and output latches are
+separate, as on hardware such as DSP command/status port `0x1e`. `--port` sets
+only the input response. This intentionally makes unmodeled hardware visible.
+The harness does not silently pretend that the hardware exists.
+
+On macOS, you can select a native Unicorn library with
+`--libunicorn /path/to/library/directory`. The worker boundary changes native
+signals into a clean CLI failure. Thus, the controlling process does not crash.
 
 ## Current boundary
 
-The 80186 and C51 are lock-stepped at their recovered 20/25 MHz ratio. The
-supervisor's DSP bootstrap is reconstructed from ports `0x40..0x4e`, verified
-byte-for-byte against the XMF C51 boot segment, and published to the native DSP
-through the recovered mailbox. The DTE serial path can inject commands and
-capture firmware-generated result text. The ASIC line frame now transports
-9.6 kHz input/output samples and captures dial tones. Remaining device work is
-the original datapump command mailbox, complete 80186 peripheral timing, and
-unexercised C51 opcode forms. The silicon DAA's ring, loop-current, and frame
-lock state is modeled at register level under `--daa-codec`; its revision
-reaches the firmware through mailbox tag `0x7b` and `ATI7`, but no read path to
-the line-side status fields has been found, so those are still unconsumed. The
-board latches, front-panel signal lines, and the Microwire settings EEPROM are
-modeled. What remains on the settings side is a recovered parameter-flash sector
-for `0xf8000` and front-panel legends for the unnamed indicator bits; there is no
-boot-time NVRAM profile load in this firmware to model.
+The 80186 and the C51 run in lock-step at their recovered 20/25 MHz ratio. The
+harness reconstructs the DSP bootstrap of the supervisor from ports
+`0x40..0x4e`. It verifies it byte for byte against the XMF C51 boot segment. It
+publishes it to the native DSP through the recovered mailbox. The DTE serial
+path can inject commands and capture the result text that the firmware makes.
+The ASIC line frame now transports 9.6 kHz input/output samples and captures
+dial tones.
+
+This device work remains:
+
+- The command mailbox of the original datapump
+- The full timing of the 80186 peripherals
+- C51 opcode forms that no run has used yet
+
+Under `--daa-codec`, the harness models the ring, loop-current and frame-lock
+state of the silicon DAA at register level. Its revision gets to the firmware
+through mailbox tag `0x7b` and `ATI7`. But we did not find a read path to the
+line-side status fields. Thus, nothing uses those fields yet.
+
+The board latches, the signal lines of the front panel and the Microwire
+settings EEPROM are modeled. On the settings side, two items remain: a
+recovered parameter-flash sector for `0xf8000`, and front-panel legends for the
+indicator bits that have no name. This firmware has no boot-time NVRAM profile
+load to model.
 
 ### Quad CPU AT terminal
 
 For the current server answer attempt, see
-[Quad server bring-up](docs/quad-server-bringup.md). The probe can now boot
-from the QF archive and records the watchdog-induced `NO CARRIER` path.
-CPU/DSP call control remains incomplete; it is not yet a negotiation peer.
+[Quad server bring-up](docs/quad-server-bringup.md). The probe can now boot from
+the QF archive. It records the `NO CARRIER` path that the watchdog causes.
+CPU/DSP call control is not yet complete. It is not yet a negotiation peer.
 
 The QF060003 modem now executes `AT` → `OK` with an explicit byte-terminal
 adapter. Run `PYTHONPATH=. .venv/bin/python tools/probe_quad_at.py` to boot the
-controller, load a modem, and verify `OK`, `ERROR`, then `OK` through its real
-firmware parser. See [the measured transcript and adapter limits](docs/quad-at-terminal.md).
-Raw-pin autobaud remains incomplete. The Quad C50 endpoint now boots the
-resident streamed by this CPU and exposes a digital-call timeslot with one
-opaque 8-bit G.711 codeword in each direction at 8 kHz. `connect_digital_call`
-selects mu-law (`0xff`) or A-law (`0xd5`) idle fill; `receive_g711` and
-`transmit_g711` are the byte-exact ingress and egress surfaces.
+controller and load a modem. The script then verifies `OK`, `ERROR`, then `OK`
+through the real firmware parser. See
+[the measured transcript and adapter limits](docs/quad-at-terminal.md).
+Raw-pin autobaud is not yet complete.
 
-The captured QF060003 DSP's **stock** DTMF path now runs too. It executes the
-QF selector at `0x8de0`, oscillators at `0x8e54`/`0x8e60`, sine helper at
-`0x92da`, mixer at `0x82be`, and serial ISR at `0x83e1`; no generated DSP
-program or host oscillator supplies its samples. Run
+The Quad C50 endpoint now boots the resident that this CPU streams. It makes
+available a digital-call timeslot with one opaque 8-bit G.711 codeword in each
+direction at 8 kHz. `connect_digital_call` selects mu-law (`0xff`) or A-law
+(`0xd5`) idle fill. `receive_g711` and `transmit_g711` are the byte-exact
+ingress and egress surfaces.
+
+The **stock** DTMF path of the captured QF060003 DSP now also runs. It executes
+these parts:
+
+- The QF selector at `0x8de0`
+- The oscillators at `0x8e54`/`0x8e60`
+- The sine helper at `0x92da`
+- The mixer at `0x82be`
+- The serial ISR at `0x83e1`
+
+No generated DSP program or host oscillator supplies its samples. To render and
+measure all sixteen stock keypad tones, run
 `PYTHONPATH=. .venv/bin/python -m courier_emu.quad_audio --ram
-artifacts/quad-identify-20260910/ram.bin --output /tmp/qf-dtmf` to render and
-measure all sixteen stock keypad tones.
+artifacts/quad-identify-20260910/ram.bin --output /tmp/qf-dtmf`.
 
-The captured resident also contains QF's own G.711 expander and compressor.
-The component runner executes its DTMF generator, either compressor branch,
-and its byte serial ISR, producing raw 8 kHz `.g711` streams without a host
-codec. The chassis call-control request that arms this path remains unfinished;
-see `docs/quad-dsp-pcm-path.md`.
+The captured resident also contains the G.711 expander and compressor of QF
+itself. The component runner executes its DTMF generator, the two compressor
+branches and its byte serial ISR. These make raw 8 kHz `.g711` streams without a
+host codec. The chassis call-control request that arms this path is not yet
+complete. See `docs/quad-dsp-pcm-path.md`.
 
-Its stock answer-signal family is executable as well: 2100 Hz ANS, ANS with
-periodic phase reversals, ANSam with the resident's 15.05 Hz amplitude
-modulator, and ANSam with phase reversals. Run
-`PYTHONPATH=. .venv/bin/python tools/probe_quad_answer_g711.py` to emit every
-variant through both the QF A-law and mu-law compressor branches and serial
-ISR. Raw `.g711` streams and decoded WAV previews are written under
+Its stock answer-signal family also executes:
+
+- 2100 Hz ANS
+- ANS with periodic phase reversals
+- ANSam with the 15.05 Hz amplitude modulator of the resident
+- ANSam with phase reversals
+
+Run `PYTHONPATH=. .venv/bin/python tools/probe_quad_answer_g711.py` to send
+each variant through the QF A-law and mu-law compressor branches and the serial
+ISR. The script writes raw `.g711` streams and decoded WAV previews under
 `artifacts/quad-answer-g711-20260910/`.
