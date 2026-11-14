@@ -1418,11 +1418,11 @@ The item to look for in image 11 is the constellation table, not a G.711
 codec.
 ## Found it: G.711 is computed, not tabulated, and only the I-modem has it
 
-Two corrections and one answer.
+This section has two corrections and one answer.
 
-**The answer.** The I-modem resident carries a complete G.711 codec in both
-directions and both laws, at `81b8`-`8215`, immediately before its sample
-paths.  The expander first:
+**The answer.** The I-modem resident has a complete G.711 codec for the two
+directions and the two laws, at `81b8`-`8215`, immediately before its sample
+paths.  First, the expander:
 
 ```
 81b8: bit   4, *              ; which law?
@@ -1451,10 +1451,10 @@ paths.  The expander first:
 81e1: xc    1, ntc / neg
 ```
 
-`xor #55`/`cmpl` is exactly the pair that separates the two laws, and only
-µ-law carries the bias subtraction - textbook G.711, expressed as
-exponent-and-mantissa rather than as a lookup.  The compressor follows it, the
-same two ways round, using `norm` to find the exponent:
+`xor #55`/`cmpl` is exactly the pair that makes the two laws different, and
+only µ-law has the bias subtraction.  This is textbook G.711, as
+exponent-and-mantissa and not as a lookup.  The compressor comes after it.
+It also has the two laws, and it uses `norm` to find the exponent:
 
 ```
 81ec: clrc ovm ; lar ar1,#07 ; rpt #06 ; norm *-    ; exponent search
@@ -1465,43 +1465,44 @@ same two ways round, using `norm` to find the exponent:
 820f: cmpl                                          ; µ-law
 ```
 
-And the law is a runtime choice - `bit 4, *` at the top - which is S58 bit 4,
-"Force x2 A-law mode", carried down to the DSP.
+Also, the law is a runtime choice: `bit 4, *` at the top.  This is S58 bit 4,
+"Force x2 A-law mode", sent down to the DSP.
 
-**It is I-modem only.**  The A-law toggle `xor #00055000` appears twice in the
-I-modem resident (`81bd` in the expander, `81fb` in the compressor) and **zero
-times** in the analog Courier residents, 2.1.1 and 2.3.31 alike.  Those two
-sit behind a TLC320AC01 that hands them linear samples: their ISRs at `81ad`,
-`81e8`, `8203` are `lamm @20 ; sacl *` and nothing more.  The I-modem needs the
-codec because its analog datapumps - V.34, V.FC, fax - run over a B channel
-that carries companded octets, exactly as expected.
+**It is in the I-modem only.**  The A-law toggle `xor #00055000` occurs two
+times in the I-modem resident (`81bd` in the expander, `81fb` in the
+compressor).  It occurs **zero times** in the analog Courier residents, 2.1.1
+and 2.3.31.  Those two residents are behind a TLC320AC01 that gives them
+linear samples.  Their ISRs at `81ad`, `81e8`, `8203` are only
+`lamm @20 ; sacl *`.  The I-modem needs the codec because its analog
+datapumps (V.34, V.FC, fax) operate on a B channel that carries companded
+octets.  This is as expected.
 
-**Correction.** The routine at `8374`, described in the section above as "a
-shift by a stored exponent … the segment-and-mantissa method", is not
-companding.  Its shift counts come from `@76`/`@77`, and `83a3`-`83a5` sets
-both to a constant `0x18`:
+**Correction.** The section above describes the routine at `8374` as "a
+shift by a stored exponent … the segment-and-mantissa method".  But this
+routine is not companding.  Its shift counts come from `@76`/`@77`, and
+`83a3`-`83a5` sets the two counts to a constant `0x18`:
 
 ```
 839f: lacc #03cf ; samm @74 ; samm @75     ; two buffer pointers
 83a3: lacl #18   ; samm @76 ; samm @77     ; two shift counts, both 24
 ```
 
-So `sath ; satl` there is a fixed 24-bit right shift - the top byte of a
-32-bit accumulator - and `and #00ff ; add @7c, 8` packs two of those into one
-16-bit word.  That is the *linear* two-samples-per-word path, not a codec.  The
-codec is the separate routine at `81b8`, and the earlier claim that no
-companding existed anywhere in the DSP was wrong: no *table* exists, which is
-a different thing.
+Thus, `sath ; satl` there is a fixed 24-bit right shift, that is the top byte
+of a 32-bit accumulator.  `and #00ff ; add @7c, 8` packs two of those into one
+16-bit word.  That is the *linear* two-samples-per-word path, not a codec.
+The codec is the separate routine at `81b8`.  The earlier claim, that there
+was no companding in the DSP, was not correct.  There is no *table*, and that
+is a different thing.
 
 ## The dispatch base is `882b`, and the bit numbers were double-converted
 
-Two mechanical errors ran through the sections above.  Both are settled by
-executable code and by the C5x manual, and together they move the x2 engine's
-mode word to a different pair of host commands.
+The sections above have two mechanical errors.  Executable code and the C5x
+manual settle the two errors.  Together, they move the mode word of the x2
+engine to a different pair of host commands.
 
 ### The host-command table starts at `882b`, not `8817`
 
-The resident's receive path is at `851c`:
+The receive path of the resident is at `851c`:
 
 ```text
 851f  in   @7d, #005e        ; tag
@@ -1514,56 +1515,63 @@ The resident's receive path is at `851c`:
 8536  cala
 ```
 
-The subtraction is never undone, so the base is `88a0 - 75 = 882b` and the
-table is exactly `76h` entries for tags `00..75` - the `add` names its own
-last row.  `8817..882a` is a signed curve (`0038 0027 0017 0008 fff9 …`),
-not addresses.
+The code never reverses the subtraction.  Thus, the base is
+`88a0 - 75 = 882b`, and the table has exactly `76h` entries for tags
+`00..75`.  The `add` gives the location of its own last row.  `8817..882a` is
+a signed curve (`0038 0027 0017 0008 fff9 …`), not addresses.
 
 Three independent checks agree, and each of them fails on `8817`:
 
-* tags `1c` and `1d` reach `a05d` and `a062`, two adjacent handlers that each
-  compute `@7a * 5` into adjacent cells.  Their senders at `aa09a` pass a byte
-  in `bl` - `[9161]` and S9 at `[914d]` - which is exactly a timer being
-  rescaled.  On the old base tag `1c` reaches `834a`, which ignores its
-  argument.
-* tags `5c` and `5d` reach `e11e` and `e11a`.  Their senders at `a9cac` and
-  `a98bf` both finish with `or bl, (es:[0ce0:b5b9] & 3) << 6`, and `e120`
-  opens with `lacc @7a / and #00c0 / sub #c0` - the same two-bit field, in the
-  same two bit positions.
-* tag `70` reaches `91a1`, which masks the payload with `3fffh` - the same
-  two unused top bits the supervisor's own symmetric edit clears.
+* Tags `1c` and `1d` go to `a05d` and `a062`.  These are two adjacent
+  handlers, and each calculates `@7a * 5` into adjacent cells.  Their senders
+  at `aa09a` pass a byte in `bl`: `[9161]` and S9 at `[914d]`.  This is
+  exactly a timer that gets a new scale.  On the old base, tag `1c` goes to
+  `834a`, which ignores its argument.
+* Tags `5c` and `5d` go to `e11e` and `e11a`.  Their senders at `a9cac` and
+  `a98bf` both end with `or bl, (es:[0ce0:b5b9] & 3) << 6`.  `e120` starts
+  with `lacc @7a / and #00c0 / sub #c0`.  This is the same two-bit field, in
+  the same two bit positions.
+* Tag `70` goes to `91a1`, which masks the payload with `3fffh`.  These are
+  the same two unused top bits that the symmetric edit of the supervisor
+  clears.
 
 ### The `bit` operand is already the true bit
 
 `spru056d` gives BIT as `(dma bit at bit address (15 - bit code)) -> TC`, and
-[c5x_disasm.py](../tools/c5x_disasm.py) prints `15 - (base & 15)`.  So the
-number in the listing **is** the bit of the word; the "complemented bit codes"
-rule applied above converts a second time and lands back on the raw code.
-Read directly, the engine tests only bits 0--9 and 15 of `@60`/`@6d`, and
-every write to `@60` inside it (`opl #0200`, `xpl #0001`, `apl #fdff/fffd/
-fffe`, `and #0006`) is in that same low range.
+[c5x_disasm.py](../tools/c5x_disasm.py) prints `15 - (base & 15)`.  Thus, the
+number in the listing **is** the bit of the word.  The "complemented bit
+codes" rule above converts a second time and gives the raw code again.  If we
+read it directly, the engine tests only bits 0--9 and 15 of `@60`/`@6d`.  All
+the writes to `@60` in the engine (`opl #0200`, `xpl #0001`, `apl #fdff/fffd/
+fffe`, `and #0006`) are in that same low range.
 
 ### So tag `70` is the capability word, and `5c`/`5d` are the mode word
 
-`91a1` stores the tag-`70` payload, masked to `3fffh`, into DSP cell `ffdb`
-and sets bit 15 of `ffd9`; `91ae` stores tag `71` into `ffda`.  `ffdb` is read
-at `927f`, which picks `ffdb` or `ffdc` on `039f` bit 12 and spills the word
-into the `fef0` work area - a transmit-side capability structure.  That is the
-INFO0 capability word
-[x2-v90-protocol-selection.md](x2-v90-protocol-selection.md) already derives
-from S54/S56/S58, arrived at here from the receiving end.
+`91a1` stores the tag-`70` payload, masked to `3fffh`, into DSP cell `ffdb`,
+and sets bit 15 of `ffd9`.  `91ae` stores tag `71` into `ffda`.  The code
+reads `ffdb` at `927f`.  This routine selects `ffdb` or `ffdc` on `039f`
+bit 12 and writes the word into the `fef0` work area, which is a
+transmit-side capability structure.  That is the INFO0 capability word that
+[x2-v90-protocol-selection.md](x2-v90-protocol-selection.md) already gets
+from S54/S56/S58.  Here, we get it from the receive end.
 
-**What survives.**  The S-register decode is unchanged: the builder at
-`ada3c`/`addca` is still the only tag-`70` sender in all seven builds, S54,
-S56, S58 are still at `917a`, `917c`, `917e`, the help text still names their
-bits, and S58 is still read at exactly five instructions.  What changes is the
-destination: those bits are the **declared capability word**, not the engine's
-mode word, so "symmetric clears payload bit 11, which `e14f` tests" does not
-hold - `e14f` tests bit 4 of a word that comes from somewhere else.
+**What is still correct.**  The S-register decode does not change.  These
+items are still correct:
 
-**Where the mode word comes from.**  `@60`/`@6d` are built from the tag-`5c`
-and tag-`5d` payloads, and their builders read the call descriptor rather than
-S-registers.  The tag-`5c` builder at `a9bc0..a9cac`:
+* The builder at `ada3c`/`addca` is the only tag-`70` sender in all seven
+  builds.
+* S54, S56, S58 are at `917a`, `917c`, `917e`.
+* The help text gives the names of their bits.
+* Exactly five instructions read S58.
+
+The destination changes.  Those bits are the **declared capability word**,
+not the mode word of the engine.  Thus, "symmetric clears payload bit 11,
+which `e14f` tests" is not correct.  `e14f` tests bit 4 of a word that comes
+from a different source.
+
+**Where the mode word comes from.**  The code makes `@60`/`@6d` from the
+tag-`5c` and tag-`5d` payloads.  Their builders read the call descriptor, not
+S-registers.  This is the tag-`5c` builder at `a9bc0..a9cac`:
 
 ```text
 a9bf8  descriptor mode byte = 8   -> leave without sending
@@ -1580,8 +1588,8 @@ a9c5d  S67 bit 2 set (Fix Connection Rate for Digital Calls):
 
 ### Which answers the 56000 question properly
 
-The seven-bit datapump mode is not unwired at all; the earlier section reached
-that conclusion from the wrong tag.  The chain is short and every link is an
+The seven-bit datapump mode is connected.  The earlier section got its
+conclusion from the incorrect tag.  The chain is short, and each link is an
 instruction:
 
 ```text
@@ -1592,41 +1600,43 @@ S67 bit 4 clear = "Connect at 56K"
     -> 7 bits x 8 kHz = 56000
 ```
 
-`e5e7`'s other consumer agrees: `e17c` doubles `@63/@64` when bit 0 is
-**clear**, the 64K case.  So a restricted 56k digital bearer really does drop
-the datapump to a seven-bit alphabet, and the eight-bit alphabet is the 64K
-bearer - which is what the `56000/DIGITAL` and `64000/DIGITAL` result codes
-are naming.  The x2 ladder's own 56000 (`K = 42`, MP ordinal 13, eight-bit
-codewords in a six-symbol frame) remains a separate mechanism for analogue
-paths; both exist, and they are not the same 56000.
+The other consumer of `e5e7` agrees: `e17c` doubles `@63/@64` when bit 0 is
+**clear**, which is the 64K case.  Thus, a restricted 56k digital bearer
+really decreases the datapump to a seven-bit alphabet.  The eight-bit
+alphabet is the 64K bearer.  This is what the `56000/DIGITAL` and
+`64000/DIGITAL` result codes identify.  The 56000 of the x2 ladder (`K = 42`,
+MP ordinal 13, eight-bit codewords in a six-symbol frame) is still a separate
+mechanism for analogue paths.  The two mechanisms exist, and they are not the
+same 56000.
 
-`e172`'s three arms are live for the same reason.  Bit 2 selects `e60b` and is
-set for descriptor modes `0ah` and `9` on an unfixed rate; bit 1 selects
-`e822` and is set for the `ax = 2` family, every descriptor mode that is
-neither `0ah` nor `9`; bit 0 - the 56K bit - then chooses the width in the
-fall-through arm.
+For the same reason, the three arms of `e172` are live:
 
+* Bit 2 selects `e60b`.  It is set for descriptor modes `0ah` and `9` on a
+  rate that is not fixed.
+* Bit 1 selects `e822`.  It is set for the `ax = 2` family, that is all
+  descriptor modes that are not `0ah` or `9`.
+* Bit 0, the 56K bit, then selects the width in the fall-through arm.
 ### The -6 dBm constellation
 
-S58 bit `10h`, "-6dbm constellation", sets capability-word bit 10, which
-reaches `ffdb` and the transmitted INFO0 word.  The server-side counterpart is
-in `HDM.MIB` as `hdmScHighPowerConst`, S76.7: "used to enable/disable the X2
-high-power constellation.  This object is only valid in countries, where it is
-legal."
+S58 bit `10h`, "-6dbm constellation", sets capability-word bit 10.  This bit
+goes to `ffdb` and into the transmitted INFO0 word.  The server-side
+equivalent is in `HDM.MIB` as `hdmScHighPowerConst`, S76.7: "used to
+enable/disable the X2 high-power constellation.  This object is only valid in
+countries, where it is legal."
 
-There is no 0 dBm constellation.  The string `dbm` occurs once in the whole
-I-modem image, in that one help line; the analogue Couriers do not carry the
-option at all, and their only `-dBm` strings are the level displays and the
-S16/S17 transmit-level registers.  It is a single boolean.
+There is no 0 dBm constellation.  The string `dbm` occurs one time in the full
+I-modem image, in that one help line.  The analogue Couriers do not have the
+option.  Their only `-dBm` strings are the level displays and the S16/S17
+transmit-level registers.  It is a single boolean.
 
 ### The help text is tokenized, and the tokens set the polarity
 
-`-6` being below zero makes "high power" look backwards, so the reference
-point matters.  It is not 0 dBm, and the firmware says so itself once the help
-strings are decoded: bytes above `7f` in them are dictionary tokens, and two
-of them carry the sense of every bit line.  `ed` is `= `, **`bd` is `Disable`
-and `ee` is `Enable`**, which is checkable against registers whose bits are
-documented independently:
+`-6` is below zero, so "high power" seems to be in the opposite direction.
+Thus, the reference point is important.  It is not 0 dBm, and the firmware
+itself says this when we decode the help strings.  In these strings, bytes
+above `7f` are dictionary tokens, and two of them give the sense of each bit
+line.  `ed` is `= `, **`bd` is `Disable` and `ee` is `Enable`**.  We can
+check this against registers that have bits with independent documentation:
 
 ```text
 S15  1 = Disable High-Freq EQ      S27  4 = Disable V32
@@ -1634,7 +1644,7 @@ S15 16 = Disable MNP Level 4       S27 32 = Disable V.42
 S34  8 = Enable V23 Fallback       S53  1 = Enable Dial Security
 ```
 
-So S58 reads, in full:
+Thus, this is the full text of S58:
 
 ```text
 S58  1 = Disable x2                4 = Force x2 A-law mode
@@ -1642,74 +1652,79 @@ S58  1 = Disable x2                4 = Force x2 A-law mode
      8 = Disable symetric mode
 ```
 
-Three disables, one force, one **enable** - and the enable is the only bit of
-the five that is opt-in.  That resolves the sense in three independent ways
-that agree:
+There are three disables, one force and one **enable**.  The enable is the
+only bit of the five that is opt-in.  Three independent indications agree on
+the sense:
 
-* the bit is *Enable*, and setting it *sets* capability bit 10 (`addd8`),
-  where the disable bits *clear* their capability bits (`addf2`, `addfc`).
-  You opt in to this constellation; you opt out of the others;
-* the identical bit on the server is `hdmScHighPowerConst`, S76.7, "the X2
-  **high-power** constellation ... only valid in countries, where it is legal";
-* a country-restricted opt-in is a licence to transmit *more*, not less.
+* The bit is *Enable*, and when you set it, it *sets* capability bit 10
+  (`addd8`).  The disable bits *clear* their capability bits (`addf2`,
+  `addfc`).  You select this constellation, and you deselect the others.
+* The same bit on the server is `hdmScHighPowerConst`, S76.7, "the X2
+  **high-power** constellation ... only valid in countries, where it is
+  legal".
+* An opt-in with a country restriction is permission to transmit *more*
+  power, not less.
 
-The baseline the `-6` is measured against is therefore the regulatory ceiling
-on the digital end's transmit power, which sits below `-6` dBm - not 0 dBm,
-which no PSTN downstream would be permitted anyway.  The exact default figure
-is not stated anywhere in these images, so this document does not assert one.
+Thus, the `-6` is measured against the regulatory ceiling on the transmit
+power of the digital end, which is below `-6` dBm.  It is not measured against
+0 dBm, because no PSTN downstream would permit 0 dBm.  These images do not
+give the exact default figure, so this document does not give one.
 
-This also corrects the polarity used in the S58 table above: bits 1, 2 and 8
-are *disables*, so capability bits 11 and 12 are cleared when symmetric and
-server are **disabled**, and carry the advertisement when they are on.
+This also corrects the polarity in the S58 table above.  Bits 1, 2 and 8 are
+*disables*.  Thus, capability bits 11 and 12 are cleared when symmetric and
+server are **disabled**, and they carry the advertisement when these modes
+are on.
 
 ### Half-dB steps are real, and Table 15/V.90 is the scale
 
-Confirmed from the Recommendation rather than from these images.  Table
-15/V.90, "Limits for the average power calculation", is indexed by "Maximum
-digital modem transmit power, dBm0" and runs **-0.5 to -16 dBm0 in 0.5 dB
-steps**, each row giving a squared amplitude limit from `(15124)^2` down to
-`(2540)^2`.  So V.90 does resolve digital-side transmit power to the half
-decibel.
+We confirmed this from the Recommendation, not from these images.  Table
+15/V.90, "Limits for the average power calculation", has the index "Maximum
+digital modem transmit power, dBm0".  It goes from **-0.5 to -16 dBm0 in
+0.5 dB steps**.  Each row gives a squared amplitude limit, from `(15124)^2`
+down to `(2540)^2`.  Thus, V.90 resolves digital-side transmit power to half
+a decibel.
 
-Two things follow for the `-6` question, and both point the same way as the
+There are two results for the `-6` question.  The two agree with the
 Enable/Disable reading above.
 
 **The scale is dBm0 and its ceiling is -0.5.**  0 dBm0 is not the standard
-power; it is not a permitted value at all - the table stops half a decibel
-short of it.  The ladder runs downward from there, so every real operating
-point is negative, and a bit named "-6dbm" is naming a row in the upper third
-of that ladder rather than an attenuation from a 0 dBm norm.
+power.  It is not a permitted value, because the table stops half a decibel
+before it.  The ladder goes down from there, so each real operating point is
+negative.  Thus, a bit with the name "-6dbm" identifies a row in the upper
+third of that ladder.  It is not an attenuation from a 0 dBm norm.
 
-**-6 against the customary -12 is exactly a 6 dB uplift.**  Both are rows in
-this table, twelve steps apart, and `(8028)^2` against `(4024)^2` is the
-factor of four in power that 6 dB means.  That is the shape of the feature the
-server MIB calls high-power and restricts by country.
+**-6 against the usual -12 is exactly an increase of 6 dB.**  The two are
+rows in this table, twelve steps apart.  `(8028)^2` against `(4024)^2` is the
+factor of four in power that 6 dB gives.  That is the shape of the feature
+that the server MIB calls high-power and restricts by country.
 
-**The table itself is in none of these images.**  Ten client builds
-(`IM010501` through `Ie030002`, plus the 4.03 Courier ROM) and ten server
+**The table itself is not in these images.**  We searched ten client builds
+(`IM010501` through `Ie030002`, and the 4.03 Courier ROM) and ten server
 images (`QF060003`, `QR060103`, `NM040103`, the HiPer DSP and NETServer
-payloads) were searched for it: no run of even three consecutive rows in
-table order at either word alignment, and the squared limits appear in no
-encoding tried - 32-bit little- or big-endian, either alignment.  Isolated
-matches on single amplitudes occur at the rate chance predicts, including in
-`IM020009`, which predates x2 by six months.  Which fits: the limit binds the
-*digital* modem's transmitter, x2 shipped two years before the
+payloads) for it.  There is no run of even three consecutive rows in table
+order at either word alignment.  The squared limits do not occur in the
+encodings that we tried: 32-bit little-endian or big-endian, at either
+alignment.  Isolated matches on single amplitudes occur at the rate that
+chance predicts.  They also occur in `IM020009`, which is six months older
+than x2.  This agrees with expectations.  The limit applies to the
+transmitter of the *digital* modem.  x2 shipped two years before the
 Recommendation, and a client never needs the table.
 
 ## What V.90 added to the same firmware
 
-Two axes, read from the eight I-modem images this tree holds, sorted by the
-date inside their archives rather than by version number - the numbering is
-not monotonic, and `IE020706` (April 1998) predates `IE020405` (August 1998).
+We read two axes from the eight I-modem images in this tree.  We sorted the
+images by the date in their archives, not by version number.  The numbering
+is not monotonic: `IE020706` (April 1998) is older than `IE020405` (August
+1998).
 
 ### The AT surface: x2 cost five bits, V.90 cost one
 
 [imodem_help.py](../tools/imodem_help.py) decodes the built-in help screens.
-They are tokenized: a length-prefixed word dictionary sits immediately before
-the text and ends flush against `ff`, so its 96 entries fix the first token at
-`a0`.  That yields `bd = Disable`, `ee = Enable`, `ed = " = "` and
-`cf = Reserved` - the Enable/Disable reading above, obtained without inference
-this time.
+They are tokenized.  A length-prefixed word dictionary is immediately before
+the text, and it ends directly against `ff`.  Thus, its 96 entries put the
+first token at `a0`.  This gives `bd = Disable`, `ee = Enable`,
+`ed = " = "` and `cf = Reserved`.  This is the Enable/Disable reading above,
+but this time without inference.
 
 S58 across the lineage:
 
@@ -1724,19 +1739,20 @@ S58 across the lineage:
 | 1998-09-24 | `IM020406` | same six |
 | - | `Ie030002` | same six |
 
-So x2's entire user-visible surface is five bits of one register, arriving
-whole in March 1997, and V.90's is a **single further bit in the same
-register** - a disable, so on by default.  The firmware treats V.90 as another
-mode of the x2 feature, not as a subsystem beside it.  Everything else that
-moves between these builds is ISDN wording and V.110/V.120 options.
+Thus, all of the user-visible surface of x2 is five bits of one register.
+These bits came together in March 1997.  The surface of V.90 is a **single
+more bit in the same register**.  It is a disable, so V.90 is on by default.
+The firmware handles V.90 as a different mode of the x2 feature, not as a
+subsystem next to it.  All other changes between these builds are ISDN
+wording and V.110/V.120 options.
 
 ### The DSP surface: V.90 brings one new command, tag `72`
 
-`IM020104` and `IE020202` contain no tag-`72` sender at all.  Every V.90-era
-build does, and it is gated by a predicate that ANDs S58 bit `20h` clear with
-the same environment checks the x2 predicate uses.
+`IM020104` and `IE020202` have no tag-`72` sender.  All V.90-era builds have
+one.  A predicate controls it.  This predicate does an AND of S58 bit `20h`
+clear with the same environment checks that the x2 predicate uses.
 
-In `IE020706` the payload is read straight from an S-register:
+In `IE020706`, the code reads the payload directly from an S-register:
 
 ```text
 b44c6  S58 bit 20h set (Disable V.90) -> give up
@@ -1746,16 +1762,16 @@ b450a  bx |= 0b70h
 b450e  send tag 72
 ```
 
-and that register is named in its own help text: **`S70 Power Level for
-V.90`**.  Sixteen usable steps, `6..15h`, on a scale the Recommendation
-resolves to the half decibel.
+The help text of that build gives the name of that register:
+**`S70 Power Level for V.90`**.  There are sixteen usable steps, `6..15h`, on
+a scale that the Recommendation resolves to half a decibel.
 
 ### The knob was taken away again
 
-`S70` reads "Power Level for V.90" in `IE020706` and **`Reserved` in every
-other image** - `IE020405` and `IM020406` mark it reserved, `Ie030002` has no
-S70 heading at all.  The register did not stop being read, though.  In
-`IE020405` (S58 at `d1b2`, so S70 at `d1be`):
+`S70` is "Power Level for V.90" in `IE020706` and **`Reserved` in all other
+images**.  `IE020405` and `IM020406` mark it reserved, and `Ie030002` has no
+S70 heading.  But the code still reads the register.  In `IE020405` (S58 at
+`d1b2`, so S70 at `d1be`):
 
 ```text
 b29b1  bx = [e6c0]                  ; the country-profile record
@@ -1767,21 +1783,22 @@ b29c7  else al = S70
 b29cb  ((n - 1) * 2 | 1) << 4 | 0a06h  -> tag 72
 ```
 
-Note the direction: `jb` keeps the country byte when S70 is **below** it, so
-the country value is a **lower bound** on the index and `10h` is the upper
-one.  The result is `clamp(S70, country, 16)`, not a ceiling.
+Note the direction.  `jb` keeps the country byte when S70 is **below** it.
+Thus, the country value is a **lower limit** on the index, and `10h` is the
+upper limit.  The result is `clamp(S70, country, 16)`, not a ceiling.
 
-So between April and August 1998 the V.90 transmit power stopped being a free
-number and became a clamp between a per-country value and 16, with S70's own
-range cut from 21 to 16 and its name removed from the help.  The command
-encoding changed with it - `0b70h | n` became `((n-1)*2|1) << 4 | 0a06h`.
+Thus, between April and August 1998, the V.90 transmit power stopped being a
+free number.  It became a clamp between a value for each country and 16.  The
+range of S70 decreased from 21 to 16, and the help text no longer gave its
+name.  The command encoding changed at the same time: `0b70h | n` became
+`((n-1)*2|1) << 4 | 0a06h`.
 
-That is the sharpest x2/V.90 contrast in the whole tree, and it lands exactly
-where Table 15/V.90 does: x2 controls the digital end's power with **one
-boolean** whose only documented constraint is "legal only in some countries",
-while V.90 controls it with a **numeric level on a half-dB ladder** - which
-this firmware first exposed and then clamped per country.
-
+That is the clearest x2/V.90 contrast in the full tree.  It is at exactly the
+same location as Table 15/V.90.  x2 controls the power of the digital end with
+**one boolean**.  The only documented constraint on it is "legal only in some
+countries".  V.90 controls the power with a **numeric level on a half-dB
+ladder**.  This firmware first made that level available to the user, and
+then clamped it for each country.
 ### The country table
 
 The record the clamp reads is a 26-entry country profile at `cs:c482` with
