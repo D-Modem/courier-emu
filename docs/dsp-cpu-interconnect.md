@@ -373,260 +373,273 @@ gated the edge on `RRST`, which is the reset bit of the receiver. This gated
 the 403 service on a register that the 403 never reads.
 ## If the link is serial, it is the *primary* port, not the second one
 
-The natural guess - the C50 has two serial ports, one is the codec's, so the
-other is the ASIC's - does not survive the firmware. The second port cannot
-carry the interprocessor link **in either direction**.
+The first guess is this: the C50 has two serial ports, one port is for the
+codec, thus the other port is for the ASIC. The firmware shows that this guess
+is wrong. The second port cannot carry the interprocessor link **in either
+direction**.
 
-**It cannot carry CPU to DSP.** That would need the DSP to read `TRCV`, and it
+**It cannot carry CPU to DSP.** For that, the DSP must read `TRCV`, and it
 never does:
 
-* `IMR` is written exactly once, at `0x809e`, with `0x002a`. `TRNT` is bit 6 and
-  `TXNT` bit 7; neither is enabled anywhere in the 27,710-word resident, so an
-  arriving word cannot interrupt. (`samm @04` is the only write that is certain
-  to reach `IMR`: `splk @04` is DP-relative, and every one of those in these
-  images is on a non-zero page. A raw opcode scan for `8804` finds one hit in
-  each of the 302 and 403 residents, both at `0x809e`.)
-* `TSPC` is touched exactly twice through MMR addressing, both at reset
-  (`samm @32` at `0x808a` and `0x808c`), and never read - so `RRDY` is never
-  polled either.
-* `TRCV` is never read through MMR addressing anywhere.
+* The code writes `IMR` only once, at `0x809e`, with `0x002a`. `TRNT` is bit 6
+  and `TXNT` is bit 7. No code in the 27,710-word resident enables them, thus
+  a word that arrives cannot cause an interrupt. (`samm @04` is the only write that
+  certainly gets to `IMR`. `splk @04` is DP-relative, and each `splk @04` in
+  these images is on a non-zero page. A raw opcode scan for `8804` finds one
+  hit in each of the 302 and 403 residents, both at `0x809e`.)
+* The code accesses `TSPC` through MMR addressing only twice, both at reset
+  (`samm @32` at `0x808a` and `0x808c`). It never reads `TSPC`. Thus it also
+  never polls `RRDY`.
+* No code reads `TRCV` through MMR addressing.
 * The one direct-addressed candidate, `lacl @30` at `0xaa4b`, is scratch on a
-  non-zero data page, and this is now checked rather than asserted: its helper
+  non-zero data page. We checked this, and it is not only a claim. Its helper
   at `0xaa68` **writes** `@30`-`@33` (`sacl @30`, `sach @31`, `sacl @32`,
-  `sach @33`) as a 64-bit rotate. Under `DP = 0` that would be storing to
-  read-only `TRCV` and rewriting `TSPC` inside a shift loop. It is not the TDM
-  block. (The surrounding `0xaa14`-`0xaa21` is a symmetric coefficient table
-  disassembled as code.)
+  `sach @33`) as a 64-bit rotate. With `DP = 0`, this helper would store to the
+  read-only `TRCV` and write `TSPC` again in a shift loop. Thus it is not the
+  TDM block. (The adjacent `0xaa14`-`0xaa21` is a symmetric coefficient table
+  that the disassembler shows as code.)
 
-**It does not carry DSP to CPU either.** Both senders use `OUT`, not `TDXR`:
-the mailbox at `0x83eb` writes ports `0x5e`/`0x5f`, and the stream coroutine at
+**It also does not carry DSP to CPU.** The two senders use `OUT`, not `TDXR`.
+The mailbox at `0x83eb` writes ports `0x5e`/`0x5f`. The stream coroutine at
 `0x84b7` writes port `0x60`.
 
-What the second port actually does is stream one way, constantly: the idle task
-at `0x81b7` packs two scaled bytes out of data `0x0302`/`0x0303` and writes
-`TDXR` every pass. Several routines re-point it at the same pair (`0xaa34`,
-`0xab50`, `0xc594`, `0xceff`), so *what* it streams is mode-dependent. That is a
-data sink, not a command channel, and its far end is still unidentified.
+The second port sends one continuous stream in one direction. The idle task at
+`0x81b7` packs two scaled bytes from data `0x0302`/`0x0303` and writes `TDXR` on
+each pass. Several routines point it again at the same pair (`0xaa34`,
+`0xab50`, `0xc594`, `0xceff`). Thus the mode controls *what* it sends. That is a
+data sink, not a command channel, and we do not know yet what is at its far end.
 
-Note also that the 'C5x's ports are **synchronous** - `CLKX`/`FSX`, not a
-start/stop UART - so nothing here would be a 16550. The ASIC end would be a
-shift register in the gate array. And on the second port the **DSP** is the
-master (`TSPC = 0x00f8`, `MCM = 1`, `TXM = 1`), so it would be clocked by the
-DSP, not by the ASIC.
+Also, the ports of the 'C5x are **synchronous** (`CLKX`/`FSX`). They are not a
+start/stop UART, thus no device here is a 16550. The ASIC end would be a shift
+register in the gate array. On the second port, the **DSP** is the master
+(`TSPC = 0x00f8`, `MCM = 1`, `TXM = 1`). Thus the DSP would supply the clock,
+not the ASIC.
 
 ### Which leaves the primary port, and one pin decides it
 
-On the primary port the DSP is a **slave**: `SPC = 0x40c8`, `MCM = 0` so `CLKX`
-is an input, `TXM = 0` so `FSX` is an input. Something else drives that bus.
+On the primary port, the DSP is a **slave**. `SPC = 0x40c8`. `MCM = 0`, thus
+`CLKX` is an input. `TXM = 0`, thus `FSX` is an input. A different device
+drives that bus.
 
-If that something is the AC01 in stand-alone/master mode, the ASIC is not on
-the serial link at all. If the AC01 is instead in **codec/slave** mode, then it
-is not driving the clock either, and the only remaining candidate is the ASIC -
-which would make the primary serial port the CPU-to-DSP path, with the ASIC's
-words arriving at `DRR` and landing in the ring at `0x0bd0` that the main loop
-walks. That reading is consistent with the board being serial, and it would tie
-the interconnect to the `ARCR` ring gate that is the live blocker.
+If that device is the AC01 in stand-alone/master mode, the ASIC is not on the
+serial link. If the AC01 is in **codec/slave** mode, it also does not drive the
+clock. Then the ASIC is the only other candidate. In that case, the primary
+serial port is the CPU-to-DSP path. The words from the ASIC arrive at `DRR`
+and go into the ring at `0x0bd0`, which the main loop reads. This theory agrees
+with a serial board. It would also connect the interconnect to the `ARCR` ring
+gate, which is the live blocker.
 
-The firmware **cannot** decide between those two, for the reason set out above:
-the role is the `M/S` **pin**, not a register bit, and free-run does not imply
-it. So this is one measurement, on an accessible package pin:
+The firmware **cannot** select one of these two, for the reason given above.
+The `M/S` **pin** sets the role, not a register bit, and free-run does not
+imply it. Thus one measurement on an accessible package pin is necessary:
 
 > **Probe `M/S` on the TLC320AC01CFN: pin 18 of the FN (PLCC) package**
-> (datasheet terminal table, whose numbers are for the FN package; `MCLK` is
-> pin 14 and `PWR DWN` pin 2 on the same numbering).
+> (from the terminal table of the datasheet, which gives numbers for the FN
+> package. With the same numbers, `MCLK` is pin 14 and `PWR DWN` is pin 2).
 >
-> * **High** - the AC01 is master. It clocks the primary bus, the ASIC is not
->   on it, and the interprocessor link is elsewhere.
-> * **Low** - the AC01 is a slave. Neither it nor the DSP drives `SCLK`/`FS`,
->   so a third device does, and the ASIC is the only candidate on that bus.
+> * **High**: the AC01 is master. It supplies the clock for the primary bus, the
+>   ASIC is not on it, and the interprocessor link is at a different location.
+> * **Low**: the AC01 is a slave. It does not drive `SCLK`/`FS`, and the DSP
+>   also does not. Thus a third device drives them, and the ASIC is the only
+>   candidate on that bus.
 
-That single reading settles the retraction recorded above, decides whether the
-`0x0bd0` ring is a codec buffer or the inbound command stream, and does it
-without tracing anything.
+That one reading resolves the retraction recorded above. It also shows if the
+`0x0bd0` ring is a codec buffer or the inbound command stream. It does this
+without a trace of the board.
 
 ## The physical objection, resolved
 
-The count still has to work. To capture `out` to `PA14`/`PA15` and answer reads
-of `PA7`, the ASIC needs the DSP's **16 data lines**, enough address to
-separate the ports (~4), and `IS` plus the read/write strobes: roughly **20-23
-connections**, not 32, and all of them taps onto nets that already exist. But
-they must still physically reach the ASIC.
+The count must still be correct. To capture `out` to `PA14`/`PA15` and to
+answer reads of `PA7`, the ASIC must have these connections: the **16 data
+lines** of the DSP, sufficient address lines to separate the ports (~4), and
+`IS` plus the read/write strobes. That is about **20-23 connections**, not 32.
+All of them are taps onto nets that already exist. But they must still
+physically get to the ASIC.
 
-If the board genuinely has no such connection - the reported inspection - then
-one of these is true, and this document cannot say which:
+The reported inspection found no such connection. If the board really has no
+such connection, then one of these items is true. This document cannot say
+which:
 
-1. **The taps exist and were missed.** The nets are shared with the SRAMs, and
-   the ASIC may sit physically between or beside the DSP and its RAMs, so
-   "traces go from the DSP to its RAMs" and "the ASIC is on those nets" look
-   the same from above. This is a continuity question, not a visual one.
-2. **I/O cycles alias into the shared RAM.** This is the hypothesis
-   `build_io_alias_probe` in `courier_emu/dsp_probe.py` was written to test, and
-   it fits the inspection best: if an `out` lands in the DSP's external RAM, and
-   the ASIC can already read that RAM - which it must, to load 30,172 words of
-   program into it - then the mailbox needs **no** I/O-specific wiring at all.
-   The probe writes one port and reads it back six ways, including from
-   external RAM at data `0x8053`. It is built but not wired to the CLI and has
-   never been run.
-3. **The return path is not what the kernel's code says.** Least likely - the
-   sender is three instructions - but it has not been independently checked.
+1. **The taps exist, and the inspection did not see them.** The SRAMs use the
+   same nets. The ASIC can be physically between or adjacent to the DSP and its
+   RAMs. Thus, from above, "traces go from the DSP to its RAMs" and "the ASIC
+   is on those nets" look the same. This is a continuity question, not a visual
+   one.
+2. **I/O cycles alias into the shared RAM.** We wrote `build_io_alias_probe` in
+   `courier_emu/dsp_probe.py` to test this hypothesis, and it agrees best with
+   the inspection. If an `out` goes into the external RAM of the DSP, the ASIC
+   can already read that RAM. It must read it, because it loads 30,172 words of
+   program into it. In that case, the mailbox needs **no** I/O-specific wiring.
+   The probe writes one port and reads it back in six ways, which include a
+   read from external RAM at data `0x8053`. The probe is built, but it is not
+   connected to the CLI, and nobody has run it.
+3. **The return path is not what the code of the kernel shows.** This is the
+   least probable item, because the sender is three instructions. But nobody
+   has checked it independently.
 
-Reading 2 would also reconcile the boot observation cleanly: the DSP could boot
-by **serial** download (its ROM loader, on the primary port) and still reach the
-supervisor at runtime through RAM-aliased I/O cycles. Serial boot and a working
-mailbox are not mutually exclusive.
+Item 2 would also agree with the boot observation. The DSP could boot by
+**serial** download (its ROM loader, on the primary port). At runtime, it could
+still get to the supervisor through RAM-aliased I/O cycles. Serial boot and a
+mailbox that works can both be true.
 
-**The decider is cheap and does not need the emulator:** run the I/O-alias
-probe on the board, or put a meter on the ASIC's pins against the DSP's data
-bus and `IS`.
+**The test that decides is easy, and it does not need the emulator:** run the
+I/O-alias probe on the board, or measure the continuity from the pins of the
+ASIC to the data bus of the DSP and `IS`.
 
 ### The data bus does reach the ASIC (2026-09-07)
 
-A board observation reports the DSP connected to the ASIC across its **16 data
-pins**. That chooses **reading 1** over the serial hypothesis, and it does so
-by removing the premise the serial reading rested on: the earlier inspection
-saw traces going only to the two `CY7C199`s, and that is what "the mailbox
-cannot be parallel" was built from. If the ASIC is on the data bus, nothing in
-this document needs a serial medium any more.
+A board observation reports that the DSP connects to the ASIC on its **16 data
+pins**. This selects **reading 1**, not the serial hypothesis. It does this
+because it removes the premise of the serial theory. The earlier inspection
+saw traces that went only to the two `CY7C199`s, and the statement "the mailbox
+cannot be parallel" came from that inspection. If the ASIC is on the data bus,
+no part of this document needs a serial medium.
 
-The shape fits. The SRAMs split the bus `D0`-`D7` / `D8`-`D15` - see
-[dsp-map-302.md](dsp-map-302.md) on the 32Kx8 parts - so a device on all
-sixteen is not hanging off one RAM, it is on the DSP's bus proper, which is
-exactly the "between or beside the DSP and its RAMs" arrangement reading 1
-predicts.
+The shape agrees. The SRAMs divide the bus into `D0`-`D7` / `D8`-`D15` (refer to
+[dsp-map-302.md](dsp-map-302.md) on the 32Kx8 parts). Thus a device on all
+sixteen lines is not on one RAM only. It is on the bus of the DSP itself. That
+is exactly the "between or beside the DSP and its RAMs" arrangement that
+reading 1 predicts.
 
-**Two things this does not do.**
+**This result does not do two things.**
 
-* **It does not separate reading 1 from reading 2.** Both put the ASIC on the
-  same sixteen wires. In reading 1 the ASIC decodes the I/O cycle; in reading 2
-  it is only watching the memory bus and an `out` lands in RAM it can already
-  read. The data pins are common to both, so they cannot choose between them.
-  The discriminator is unchanged and is a single pin: **`IS`, pin 90** - see
-  [dsp-pin-probes.md](dsp-pin-probes.md). `IS` at the ASIC means it decodes
-  `OUT`, and `PA0`-`PA15` are ASIC registers; `IS` going nowhere near it means
-  the alias reading, and the mailbox needs no I/O-specific wiring at all.
-* **It is not yet anchored to numbered pins.** This repository has no
-  `D0`-`D15` pin numbers from SPRU056D Table A-4; every other pin claim here is
-  anchored, and this one is not. Anchor it before treating it as established -
-  the same caution that the M/S pin numbering needed.
+* **It does not separate reading 1 from reading 2.** The two readings put the
+  ASIC on the same sixteen wires. In reading 1, the ASIC decodes the I/O cycle.
+  In reading 2, the ASIC only monitors the memory bus, and an `out` goes into
+  RAM that the ASIC can already read. The two readings use the same data pins,
+  thus these pins cannot select one reading. The test that decides is the same
+  as before, and it is one pin: **`IS`, pin 90** (refer to
+  [dsp-pin-probes.md](dsp-pin-probes.md)). If `IS` goes to the ASIC, the ASIC
+  decodes `OUT`, and `PA0`-`PA15` are ASIC registers. If `IS` does not go near
+  the ASIC, the alias reading is correct, and the mailbox needs no I/O-specific
+  wiring.
+* **It is not yet connected to numbered pins.** This repository does not have
+  the `D0`-`D15` pin numbers from SPRU056D Table A-4. All other pin claims here
+  have pin numbers, but this claim does not. Get the pin numbers before you
+  accept this claim as fact. The M/S pin numbers needed the same caution.
 
-And the method carries the same caveat as the inspection it overturns: seen
-from above, a net that passes near the ASIC and a net that lands on it look
-alike. Continuity to the ASIC's pins is the reading that counts, in both
+The method also has the same limit as the inspection that it overturns. From
+above, a net that goes near the ASIC and a net that ends on it look the same.
+The reading that counts is continuity to the pins of the ASIC, in the two
 directions.
 
-**Follow-up meter readings, cheapest first:** `IS` (90) to the ASIC; then
-enough address lines to separate the ports (~4); then `R/W` (92) and `STRB`
-(93). Neighbours for orientation on that edge: `DS` 89, `PS` 91.
+**More meter readings, with the easiest first:** `IS` (90) to the ASIC. Then
+sufficient address lines to separate the ports (~4). Then `R/W` (92) and `STRB`
+(93). Adjacent pins on that edge, to help you find the position: `DS` 89, `PS`
+91.
 
 ### `IS` is connected to the ASIC (2026-09-07)
 
-A meter on **pin 90** reports continuity to the ASIC. That closes the question
-this document has carried through three revisions.
+A meter on **pin 90** shows continuity to the ASIC. This answers the question
+that this document kept open through three revisions.
 
-`IS` has exactly one purpose. SPRU056D Table A-8 gives `DS`, `PS` and `IS` as
-three space-select strobes sharing one address/data bus, each "always high
-unless low level is asserted for communicating to a particular external space",
-and the SRAMs need only `DS` and `PS`. So `IS` goes low for an `IN`, an `OUT`,
-or an access to `PA0`-`PA15`, and nothing else. A device wired to it is wired
-to it in order to decode the DSP's I/O cycles; there is no other reason for
-that net to exist.
+`IS` has only one function. SPRU056D Table A-8 gives `DS`, `PS` and `IS` as
+three space-select strobes on one address/data bus, each "always high
+unless low level is asserted for communicating to a particular external space".
+The SRAMs need only `DS` and `PS`. Thus `IS` goes low only for an `IN`, an
+`OUT`, or an access to `PA0`-`PA15`. If a device connects to `IS`, the only
+purpose is to decode the I/O cycles of the DSP. That net has no other function.
 
-**So reading 1 is correct.** The ASIC sits on the nets that run from the DSP to
-its two `CY7C199`s, qualified by `IS`, and `PA0`-`PA15` are real ASIC
+**Thus reading 1 is correct.** The ASIC is on the nets that go from the DSP to
+its two `CY7C199`s, and `IS` qualifies it. `PA0`-`PA15` are real ASIC
 registers. `out @7d, 0x5e` is a parallel write into a hardware register on the
-gate array, and the poll of `PA7` is a parallel read back out of one.
+gate array. The poll of `PA7` is a parallel read from a hardware register.
 
 **What that retires:**
 
-* **The serial medium.** Not merely unsupported now - unnecessary. Every
-  statement in this document hedged as "nothing in the firmware contradicts a
-  serial link" can be dropped rather than defended.
-* **Reading 2, the RAM alias.** Its whole appeal was that it needed no
-  I/O-specific wiring. There is I/O-specific wiring. `build_io_alias_probe` in
-  `courier_emu/dsp_probe.py` no longer has a question to answer - it is still
-  unwired and unrun, and can stay that way.
-* **Reading 3, the return path being other than what the kernel's code says.**
-  It was already the least likely, and it was only ever needed to explain how
-  three `out` instructions reached the CPU if the bus did not carry them.
+* **The serial medium.** It is now not only unsupported but also unnecessary.
+  This document hedged some statements as "nothing in the firmware contradicts
+  a serial link". You can remove those statements. It is not necessary to
+  defend them.
+* **Reading 2, the RAM alias.** Its only advantage was that it needed no
+  I/O-specific wiring. But there is I/O-specific wiring. `build_io_alias_probe`
+  in `courier_emu/dsp_probe.py` has no question to answer now. It is still not
+  connected and nobody ran it, and this can stay so.
+* **Reading 3, a return path that is different from what the code of the
+  kernel shows.** It was already the least probable item. It was only necessary
+  to explain how three `out` instructions got to the CPU if the bus did not
+  carry them.
 
-**What it does not settle**, and these are now the open ones:
+**What it does not answer.** These items are now the open ones:
 
 * **How much address the ASIC has.** Answered: `A0`-`A3` (55-58) **and `A5`**
-  (60), with `A4` (59) absent. See "The decode is five lines" below - this is
-  no longer an open item, and it settles the alias question it was raised for.
-* **Whether the ASIC also answers `DS`.** `artifacts/dsp-boot-word-01/` has the
-  ASIC presenting `0x0083` at DSP **data** `0xffff`, which is a `DS` cycle, not
-  an `IS` one. With the gate array confirmed on the bus that reading is easier
-  to believe than it was - but an SRAM with `/CE` tied low would answer the
-  same cycle, so it is not yet the ASIC's word for certain. See
-  [dsp-map-302.md](dsp-map-302.md) on what drives the RAMs' chip selects.
+  (60), without `A4` (59). Refer to "The decode is five lines" below. This item
+  is not open now, and it answers the alias question that it was for.
+* **If the ASIC also answers `DS`.** In `artifacts/dsp-boot-word-01/`, the ASIC
+  supplies `0x0083` at DSP **data** `0xffff`. That is a `DS` cycle, not an `IS`
+  cycle. Now that the gate array is known to be on the bus, that reading is
+  easier to accept than before. But an SRAM with `/CE` tied low would answer
+  the same cycle. Thus it is not yet certain that this word comes from the
+  ASIC. Refer to [dsp-map-302.md](dsp-map-302.md) on what drives the chip
+  selects of the RAMs.
 
-**No emulator change follows.** The harness never simulated traces; it
+**No emulator change is necessary.** The harness does not simulate traces. It
 simulates what `out @7c, 0x5e` does on one side and what `in al, 0x5c` returns
-on the other, and that programming model was already right. This settles the
-board documentation, as the section above said it would. The blocker on
-CPU-DSP comms remains the mailbox poll rate - see
+on the other, and that programming model was already correct. This answers the
+board documentation question, as the section above predicted. The blocker on
+CPU-DSP communication is still the mailbox poll rate. Refer to
 [what-runs-and-what-blocks.md](what-runs-and-what-blocks.md).
 
 ### The decode is five lines: `A0`-`A3` and `A5`
 
-The follow-up reading came back: `A0`-`A3` (55-58) and **`A5`** (60) reach the
-ASIC, and **`A4`** (59) does not. That retires the alias predicted in the
-previous revision of this section - `0x60` is **not** `PA0`, and the stream
-sender at `0x84b7` writes a register of its own.
+The next reading came back. `A0`-`A3` (55-58) and **`A5`** (60) go to the ASIC,
+and **`A4`** (59) does not. This retires the alias that the previous revision
+of this section predicted. `0x60` is **not** `PA0`, and the stream sender at
+`0x84b7` writes its own register.
 
-**Every port the DSP actually uses is uniquely decoded by those five lines.**
-The firmware's whole I/O footprint is `0x57`, `0x5e`, `0x5f`, `0x60` and
-`0x68`-`0x6c`. Within `0x50`-`0x5f` the low nibble separates them; `0x60` and
-`0x68`/`0x6a`/`0x6c` carry `A5` high and `A4` low where the `PA` bank carries
-`A5` low and `A4` high, so the two groups cannot collide, and inside the second
-group the low nibble separates again.
+**These five lines give a unique decode for each port that the DSP uses.** The
+full I/O footprint of the firmware is `0x57`, `0x5e`, `0x5f`, `0x60` and
+`0x68`-`0x6c`. In `0x50`-`0x5f`, the low nibble separates them. `0x60` and
+`0x68`/`0x6a`/`0x6c` have `A5` high and `A4` low. The `PA` bank has `A5` low
+and `A4` high. Thus the two groups cannot collide. In the second group, the
+low nibble separates the ports again.
 
-**Skipping `A4` while taking `A5` is the informative part.** It is not an
-arbitrary saving. `0x5x` and `0x6x` differ in *both* bits 4 and 5, so one line
-distinguishes the banks and the other is redundant - and a gate array wired to
-one of the two is a designer who knew there were exactly two banks to tell
-apart. So this is positive evidence for the two-bank picture rather than merely
-being consistent with it:
+**The important point is that the ASIC uses `A5` but not `A4`.** This is not a
+random saving. `0x5x` and `0x6x` are different in *both* bits 4 and 5. Thus one
+line separates the banks, and the other line is redundant. A designer who
+connected the gate array to only one of the two lines knew that there were
+exactly two banks to separate. Thus this is positive evidence for the two-bank
+model, not only data that agrees with it:
 
 | bank | `A5` | ports | what it is |
 |---|---|---|---|
 | `0x50`-`0x5f` | low | `PA0`-`PA15` | the memory-mapped I/O ports, aliased into data space at `0x0050`-`0x005f` |
 | `0x60`-`0x6f` | high | `0x60`, `0x68`-`0x6c` | pure I/O space, no data-space alias |
 
-**So the register file is larger than sixteen after all**, and
-[what-the-asic-does.md](what-the-asic-does.md)'s "at most sixteen" is wrong for
-the reason first given. The correction stands; the doubt raised about it in the
-previous revision does not.
+**Thus the register file is larger than sixteen**, and the statement "at most
+sixteen" in [what-the-asic-does.md](what-the-asic-does.md) is wrong, for the
+reason given first. The correction stays. The doubt about it in the previous
+revision does not stay.
 
-**A falsifiable prediction, and a cheap one.** With `A4` unconnected, ports
-that differ *only* in bit 4 are indistinguishable to the ASIC. The firmware
-never touches those, but a probe can:
+**A falsifiable prediction, and an easy one.** Because `A4` is not connected,
+the ASIC cannot separate ports that are different *only* in bit 4. The firmware
+never uses those ports, but a probe can:
 
-* an `out` to port `0x40` should land in `PA0` (`0x50`)
-* an `out` to port `0x47` should land in `PA7` (`0x57`) - readable straight
-  back through the status latch at `0xff57`
-* an `out` to port `0x70` should land wherever `0x60` goes
+* an `out` to port `0x40` must go into `PA0` (`0x50`)
+* an `out` to port `0x47` must go into `PA7` (`0x57`), which you can read back
+  directly through the status latch at `0xff57`
+* an `out` to port `0x70` must go to the same location as `0x60`
 
-None of those can be tested by writing a value and reading it back: the ASIC's
-DSP-side registers are not general storage - `PA7` returns status bits whoever
-wrote it, and `PA0` is a sample sink and a boot-word source. So the test has to
-be **differential on an observable effect**, and the mailbox is the effect this
-repository has already driven end to end on hardware.
+You cannot test these items if you write a value and read it back. The
+DSP-side registers of the ASIC are not general storage. `PA7` returns status
+bits, independent of who wrote it. `PA0` is a sample sink and a boot-word
+source. Thus the test must be **differential on an effect that you can see**.
+The mailbox is that effect, and this repository already used it from start to
+end on hardware.
 
-`build_port_fold_probe` in `courier_emu/dsp_probe.py` is that kernel: the proven
-outbound sender, mailing a recognisable pattern, with the tag and data going out
-on **`0x4e`/`0x4f`** instead of `0x5e`/`0x5f`. Nothing else changes - not the
-frame, not the ack, not the host capture. The ack stays `samm @57`, which is a
-data-space MMR write rather than an I/O cycle and so is not part of what is
-under test.
+`build_port_fold_probe` in `courier_emu/dsp_probe.py` is that kernel. It is the
+proven outbound sender, and it sends a pattern that you can recognize. The tag
+and data go out on **`0x4e`/`0x4f`**, not on `0x5e`/`0x5f`. No other item
+changes: not the frame, not the ack, not the host capture. The ack stays
+`samm @57`. That is a data-space MMR write, not an I/O cycle, thus it is not
+part of the test.
 
 ```bash
 .venv/bin/python -m courier_emu.probe_transport \
   --reference IDSDL302.ROM --output artifacts/port-fold-01 --port-fold
 ```
 
-**Run the positive control first**, which is the same kernel on the real ports:
+**Run the positive control first.** It is the same kernel on the real ports:
 
 ```bash
 .venv/bin/python -m courier_emu.probe_transport \
@@ -634,7 +647,7 @@ under test.
   --port-fold --fold-tag-port 0x5e --fold-data-port 0x5f
 ```
 
-Reading the result:
+How to read the result:
 
 | control | folded | conclusion |
 |---|---|---|
@@ -642,13 +655,14 @@ Reading the result:
 | frame arrives | nothing | `A4` is decoded after all, and the visual reading of pin 59 is wrong |
 | nothing | either | the run did not work; the folded result means nothing |
 
-The third row is why the control is not optional. A negative result here is
+The third row shows why the control is necessary. Here, a negative result is
 silence, and silence has many causes.
 
 ### Run on the board: the fold is real (2026-09-07)
 
-`artifacts/dsp-port-fold-01/`. Three runs on the live unit, each image placed at
-`0x3000` with `ATGLK2W` and verified byte-exact before it was started.
+`artifacts/dsp-port-fold-01/`. Three runs on the live unit. We put each image
+at `0x3000` with `ATGLK2W` and verified that it was byte-exact before we
+started it.
 
 | run | ports | payload | result |
 |---|---|---|---|
@@ -656,41 +670,44 @@ silence, and silence has many causes.
 | **A4 fold** | `0x4e`/`0x4f` | `F700` | **`CDRP1 DONE`, 8 words, `SUM:B81C`** |
 | A5 control | `0x6e`/`0x6f` | `A500` | `CDRP1 START`, then `CDRP1 ERR TAG` |
 
-**`A4` is not decoded.** A mailbox frame sent to `0x4e`/`0x4f` arrives exactly as
-one sent to `0x5e`/`0x5f`. **`A5` is decoded**: `0x6e`/`0x6f` delivers nothing,
-which is what rules out the alternative reading that the ASIC ignores the
-address bus and answers any `IS` cycle. So the board's electrical behaviour
-confirms the visual reading of pins 55-58, 59 and 60 by their effect.
+**`A4` is not decoded.** A mailbox frame sent to `0x4e`/`0x4f` arrives in
+exactly the same way as a frame sent to `0x5e`/`0x5f`. **`A5` is decoded**:
+`0x6e`/`0x6f` delivers nothing. This result excludes the other reading, in which
+the ASIC ignores the address bus and answers each `IS` cycle. Thus the
+electrical behavior of the board confirms the visual reading of pins 55-58, 59
+and 60 by their effect.
 
-**The payload pattern is load-bearing.** The first fold attempt reused the
-control's `4E00`, and its frame was therefore indistinguishable from a re-run of
-the kernel the DSP already held in program RAM - the download could have failed
-silently and produced the same output. It is not counted. The run above carries
-`F700`, which only the freshly downloaded kernel could emit. `--fold-pattern`
-exists for this, and every run on the board should use its own.
+**The payload pattern is important.** The first fold attempt used the `4E00`
+of the control again. Thus its frame looked the same as a second run of the
+kernel that the DSP already held in program RAM. The download could fail
+without an indication and give the same output. We do not count that attempt.
+The run above sends `F700`, which only the newly downloaded kernel can send.
+`--fold-pattern` is for this purpose, and each run on the board must use its
+own pattern.
 
-**The emulator had it wrong, and now does not.** The harness compared
-`port == 0x5E` and predicted `CDRP1 ERR TAG` for the folded run; the board sent
+**The emulator was wrong, and now it is correct.** The harness compared
+`port == 0x5E` and predicted `CDRP1 ERR TAG` for the folded run. The board sent
 the frame. `bridge.ASIC_DSP_PORT_MASK` now models the measured decode, and all
-three runs reproduce the board's frames byte for byte. Note its stated limit:
-bits 6 and 7 were never tested, so the mask is possibly narrower than the
-board's decode and will accept `0x0e` where the board might not.
+three runs give the same frames as the board, byte for byte. Note its stated
+limit: nobody tested bits 6 and 7. Thus the mask can be narrower than the
+decode of the board, and it will accept `0x0e` where the board possibly does
+not.
 
-**Two procedural notes for anyone repeating this**, both cost a run here:
+**Two procedural notes for persons who do this test again.** Each item caused
+one failed run here:
 
-* `emit_ram_writes.py`'s `arm.txt` only hooks IVT vector 8, and on this board
-  that starts nothing. `T0CON` at `0xff36` reads `0x8021` - `EN=1`, `INT=0` -
-  so timer 0 runs and never interrupts. Starting the monitor takes a separate
-  `ATGLK2WFF36,A021`, which is what
+* The `arm.txt` of `emit_ram_writes.py` only hooks IVT vector 8, and on this
+  board that starts nothing. `T0CON` at `0xff36` reads `0x8021` (`EN=1`,
+  `INT=0`). Thus timer 0 runs but never causes an interrupt. To start the
+  monitor, a separate `ATGLK2WFF36,A021` is necessary. This is what
   [ram-probe-delivery.md](ram-probe-delivery.md) means by "enabling timer 0's
   interrupt".
-* **The board reboots after every run**, so a second run needs
-  `ATGLK2W0020,3000` / `ATGLK2W0022,0000` written again, or it produces no
-  output at all and looks like a failed probe. An earlier version of this note
-  said "the monitor restores vector 8", which was wrong - see
-  [ram-probe-delivery.md](ram-probe-delivery.md) on the watchdog reset, which
-  restores the vector, clears RAM and brings `AT` back as one event.
-
+* **The board reboots after each run.** Thus, before a second run, write
+  `ATGLK2W0020,3000` / `ATGLK2W0022,0000` again. If you do not, the run gives
+  no output, and it looks like a failed probe. An earlier version of this note
+  said "the monitor restores vector 8", which was wrong. Refer to
+  [ram-probe-delivery.md](ram-probe-delivery.md) on the watchdog reset. That
+  reset restores the vector, clears RAM and brings `AT` back as one event.
 ## The retraction: the ASIC is not shown to master the primary serial bus
 
 [second-serial-port.md](second-serial-port.md) argues that the ASIC generates
