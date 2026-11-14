@@ -1,18 +1,19 @@
 # x2 Symmetric and V.90 All-Digital: where 64000 comes from
 
-The Courier's result-code table carries `64000`, `64000/ARQ`, `64000/x2`,
-`64000/ARQ/x2` and `64000/V90`, `64000/ARQ/V90` in every image from 2.1.1
+The result-code table of the Courier has `64000`, `64000/ARQ`, `64000/x2`,
+`64000/ARQ/x2` and `64000/V90`, `64000/ARQ/V90` in all images from 2.1.1
 through 2.3.33 ([pcm-x2-v90.md](pcm-x2-v90.md)).  64000 is not an analog PCM
-rate - the client can never train to it over a subscriber loop - and the
-supervisor cannot ask for it either: the rate mask at `8fc9` is 15 bits over
-the x2 ladder's 15 analog rates (33333 … 57333), and 64000 sits outside it.
-It is the rate of a **digital-to-digital** connection, and the mode that
-reaches it is not in this firmware.  It is in the server.
+rate.  The client cannot train to it on a subscriber loop.  Also, the
+supervisor cannot request it.  The rate mask at `8fc9` has 15 bits, one for
+each of the 15 analog rates of the x2 ladder (33333 … 57333), and 64000 is
+not in that mask.
+64000 is the rate of a **digital-to-digital** connection.  The mode that gets
+this rate is not in this firmware.  It is in the server.
 
 ## The server has three x2 roles, not two
 
 The Total Control HDM MIB (`TCM/BIN/SNMPMIBS/ALLMIBS/HDM.MIB` in
-`docs/x2/tcmw551.zip`) and the Network Management Card's object table
+`docs/x2/tcmw551.zip`) and the object table of the Network Management Card
 (`docs/x2/3Com Software.zip`) give the x2 mode bits as S76:
 
 | bit | object | help text |
@@ -23,10 +24,10 @@ The Total Control HDM MIB (`TCM/BIN/SNMPMIBS/ALLMIBS/HDM.MIB` in
 | S76.3 | - | x2 fallback to V.34 |
 | S76.7 | `hdmScHighPowerConst` | x2 high-power constellation, legal only in some countries |
 
-So **x2 Symmetric is real, it is a distinct third x2 role, and it is a server
-S-register bit (S76.2), enabled by default.**  It is PCM in *both* directions
-at the same rate - up to the 64000 the speed enums carry - which is only
-reachable when neither end has an analog local loop.
+Thus, **x2 Symmetric is real.  It is a third x2 role, and it is a server
+S-register bit (S76.2) that is enabled by default.**  It is PCM in *both*
+directions at the same rate, up to the 64000 that the speed enums contain.
+This rate is possible only when neither end has an analog local loop.
 
 ## V.90 has the same three, and names them
 
@@ -38,15 +39,15 @@ The same MIB continues at S81:
 | `hdmScV90Digital` | S81.5 | "the V.90 server (**DPCM**) modulation" |
 | `hdmScV90AllDigital` | **S81.6** | "the V.90 **symmetric** modulation (**DDPCM**)" |
 
-The NMC table labels the last one "V.90 All Digital Mode (S81.6)".  So the
-user's hunch is right on both counts: x2's symmetric mode and V.90's
-all-digital mode are the same idea, and USR shipped both as server options
-with their own S-register bits.
+The NMC table gives the last one the label "V.90 All Digital Mode (S81.6)".
+Thus, the idea of the user is correct on two points.  The x2 symmetric mode
+and the V.90 all-digital mode are the same idea.  Also, USR shipped the two
+modes as server options, each with its own S-register bit.
 
 ## The RADIUS dictionary counts them as separate modulations
 
 `dictnary` in `docs/x2/ne050303.zip` (NETServer) reports the trained
-modulation per call:
+modulation for each call:
 
 ```
 x2                23      v90Analogue     33
@@ -55,46 +56,47 @@ x2symmetric       30      v90AllDigital   35
 piafs             31      v92             36
 ```
 
-and `Initial-Connect-Speed` value 39 is `64000-BPS`.  The HiPer ARC MIB keeps
-a per-rate call counter `usrCipSpeedStatisticsSpeed64000`, "the number of
-calls with speed of 64000" - a rate that would never increment if 64000 were
-only a string.
+Also, `Initial-Connect-Speed` value 39 is `64000-BPS`.  The HiPer ARC MIB has
+a call counter for each rate, `usrCipSpeedStatisticsSpeed64000`, "the number
+of calls with speed of 64000".  If 64000 were only a string, this counter
+would never increase.
 
 ## Where V.91 fits
 
 ITU-T **V.91** (approved May 1999, still in force) is
 "a digital modem operating at data signalling rates of up to 64 000 bit/s for
 use on a 4-wire circuit switched connection and on leased point-to-point
-4-wire digital circuits".  That is the standardised form of the same
-symmetric-64k idea, but it is a *4-wire / leased-circuit* recommendation, not
-a mode of V.90 - V.90 itself defines only the analog client and digital
-server halves.  DDPCM as USR shipped it is a vendor extension over the V.90
-PCM machinery, not V.91, and the name V.91 appears nowhere in this firmware
-or in any of the server archives.
+4-wire digital circuits".  That is the standard form of the same
+symmetric-64k idea.  But it is a *4-wire / leased-circuit* recommendation,
+not a mode of V.90.  V.90 itself defines only the analog client half and the
+digital server half.  DDPCM, as USR shipped it, is a vendor extension on the
+PCM machinery of V.90.  It is not V.91.  The name V.91 does not occur in this
+firmware or in the server archives.
 
 ## What this means for the Courier
 
-Nothing in the client image implements either mode:
+The client image does not implement the two modes:
 
-* `symmetric`, `all digital`, `DDPCM` and `V.91` appear in **no** Courier
+* `symmetric`, `all digital`, `DDPCM` and `V.91` occur in **no** Courier
   image (2.1.1, 2.2.05, 2.3.12/15/31/33, IDSDL302).
-* The Courier's PCM option register is S58 - bit 1 x2, bit 32 V.90
-  ([pcm-x2-v90.md](pcm-x2-v90.md)) - and it has no S76.2 or S81.6 equivalent.
-  Its x2 setup builds one capability word and sends it as tag `70`; there is
-  no second, digital-side capability path.
-* The 64000 result codes are there because the **result-code table is shared
-  across the product line**, not because a V.Everything can reach 64000.  A
-  Courier on an analog loop cannot: it has a DAA and a codec, which is the one
-  analog conversion the rate forbids.
+* The PCM option register of the Courier is S58, with bit 1 for x2 and bit 32
+  for V.90 ([pcm-x2-v90.md](pcm-x2-v90.md)).  It has no equivalent of S76.2 or
+  S81.6.  Its x2 setup makes one capability word and sends it as tag `70`.
+  There is no second capability path for the digital side.
+* The 64000 result codes are in the image because the **result-code table is
+  shared across the product line**.  They are not there because a
+  V.Everything can get 64000.  A Courier on an analog loop cannot get this
+  rate.  It has a DAA and a codec, and that is the one analog conversion that
+  the rate does not permit.
 
-The emulator should therefore keep 64000 as a reportable code and out of the
-negotiable rate mask, which is what the firmware itself does.
+Thus, the emulator must keep 64000 as a code that it can report, but not put
+it in the negotiable rate mask.  The firmware itself does the same.
 
 ## The server is not the same machine
 
-Nothing on the server side shares the Courier's silicon. Measured over the
-archives in `docs/x2/`, counting the C5x `call`/`b` encodings (`80 7a`,
-`80 79`) that saturate the Courier's DSP images:
+The server side does not share the silicon of the Courier.  We measured the
+archives in `docs/x2/`.  We counted the C5x `call`/`b` encodings (`80 7a`,
+`80 79`), which occur very frequently in the DSP images of the Courier:
 
 | image | `call` /KB | `b` /KB | what it is |
 |---|---:|---:|---|
@@ -104,18 +106,18 @@ archives in `docs/x2/`, counting the C5x `call`/`b` encodings (`80 7a`,
 | `DP030105.NAC` (Dual T1/PRI) | 0.07 | 0.05 | i386 (`RTSCOPE I386`) + VRTX |
 | `hd030512.dmf` (HiPer DSP) | 0.02 | 0.02 | PPC403, payload compressed |
 
-The NETServer and T1/PRI NACs are Livingston-lineage i386 boards - they still
-carry `Copyright 1989…1992 Livingston Enterprises` beside the USR notice - and
-carry no datapump at all.  The HiPer DSP card is a PowerPC: its `.dmf` opens
-with a PPC prologue (`9421 fff0 / 7c08 02a6 / 93e1 000c`), and its own release
-notes print `!!-----> SDL2 for the PPC403 <-------!!` at the download prompt
-and list the four images as "Boot Block, Board Manager, ACP, and DSP".  Only
-the first of those is readable here; the rest of the `.dmf` is compressed at
-7.94 bits/byte, so the modem DSP's instruction set is not determined by these
-archives.
+The NETServer and T1/PRI NACs are i386 boards of the Livingston lineage.
+They still have `Copyright 1989…1992 Livingston Enterprises` next to the USR
+notice, and they have no datapump.  The HiPer DSP card is a PowerPC.  Its
+`.dmf` starts with a PPC prologue (`9421 fff0 / 7c08 02a6 / 93e1 000c`).  Its
+release notes print `!!-----> SDL2 for the PPC403 <-------!!` at the download
+prompt.  They list the four images as "Boot Block, Board Manager, ACP, and
+DSP".  We can read only the first of these images.  The remainder of the
+`.dmf` is compressed at 7.94 bits/byte.  Thus, these archives do not show the
+instruction set of the modem DSP.
 
-What *is* shared is the supervisor lineage above the DSP.  The HDM MIB's speed
-enum is the Courier's result-code table in the same order:
+But the supervisor lineage above the DSP *is* shared.  The speed enum of the
+HDM MIB is the result-code table of the Courier, in the same order:
 
 ```
 18 bps33333 … 32 bps57333, 33 bps64000,          <- the x2 block, 15 rates + 64000
@@ -124,29 +126,30 @@ enum is the Courier's result-code table in the same order:
 42 bps58666 43 bps60000 44 bps61333 45 bps62666  <- exactly the V.90-only additions
 ```
 
-That is the same partition the Courier's flash uses - x2 codes first, the
-V.90-only rates appended in that order - and the same 15 analog x2 rates the
-mask at `8fc9` covers.  The rate tables and the S-register/AT surface are
-common; the processor and the datapump underneath them are not.
-
+That is the same partition that the flash of the Courier uses: x2 codes
+first, then the V.90-only rates added in that order.  These are also the same
+15 analog x2 rates that the mask at `8fc9` covers.  The rate tables and the
+S-register/AT surface are common.  The processor and the datapump below them
+are not common.
 ## The Courier I-modem is one of the server modems
 
-The vendor documentation in `docs/` names it directly.  The Quad Modem
-product reference (`24186500.PDF`, "Server Modems") lists the server side of
+The vendor documentation in `docs/` gives its name directly.  The Quad Modem
+product reference (`24186500.PDF`, "Server Modems") gives the server side of
 x2 as:
 
 > Server modems send data to analog x2 client modems at speeds up to 56K.
 > The following modems are examples of server modems: **Courier I-modem**,
 > HiPer DSP, Quad Modem, MP I-modem.
 
-and adds, of the Quad, "The Quad Modem does not support client mode" - these
-are server-role products, not clients with a server option.  The 1997
-NETServer x2 release notes say the same, and give the physical requirement:
-the host end must be digital - "a channelized T1, ISDN PRI, or ISDN BRI" - and
-trunk-side, with "ISDN PRI and BRI lines automatically trunk-side".  A Courier
-I-modem is a BRI device, so it *is* the digital end of the call.
+About the Quad, it also says: "The Quad Modem does not support client mode".
+Thus, these products have the server role.  They are not clients with a
+server option.  The 1997 NETServer x2 release notes say the same.  They also
+give the physical requirement.  The host end must be digital, "a channelized
+T1, ISDN PRI, or ISDN BRI", and on the trunk side, with "ISDN PRI and BRI
+lines automatically trunk-side".  A Courier I-modem is a BRI device.  Thus,
+it *is* the digital end of the call.
 
-The HiPer DSP reference (`24187300.PDF`) gives S76 in full, as disable bits:
+The HiPer DSP reference (`24187300.PDF`) gives all of S76, as disable bits:
 
 | S76 bit | value | disables |
 |---:|---:|---|
@@ -155,25 +158,26 @@ The HiPer DSP reference (`24187300.PDF`) gives S76 in full, as disable bits:
 | 2 | 4 | Symmetric mode |
 | 3 | 8 | x2/V.90 fallback to V.34 |
 
-and its `incompatibleX2modes` diagnostic states the pairing rule outright:
+Its `incompatibleX2modes` diagnostic gives the pairing rule directly:
 "Either one modem must be a server and the other a client, **or both must be
-symmetric**."  So symmetric is a third role both ends run, not a client or a
-server variant - which is why it needs its own bit and its own
-`x2symmetric` modulation code in the RADIUS dictionary.
+symmetric**."  Thus, symmetric is a third role that the two ends both use.
+It is not a variant of the client or of the server.  For this reason, it has
+its own bit and its own `x2symmetric` modulation code in the RADIUS
+dictionary.
 
-One correction to the section above, and a correction to that correction.
-The HiPer DSP text for `excessiveHFAttenuation` reads: "Some portion of the
-channeling is analog for x2 symmetric and V.90 all-digital modes."  That is
-not saying the data path is partly analog.  It is the **negotiation** that is
-analog-domain: V.8 call indicate and menu exchange, then the INFO0/INFO1A
-sequences, are audio-band signals carried through the channel before either
-end switches to PCM.  Symmetric and all-digital modes still run that dance, so
-high-frequency attenuation on the path can still kill the connection even when
-both ends are digitally attached - which is exactly what that diagnostic is
-for.
+Here is one correction to the section above, and a correction to that
+correction.  The HiPer DSP text for `excessiveHFAttenuation` is: "Some
+portion of the channeling is analog for x2 symmetric and V.90 all-digital
+modes."  This does not say that the data path is partly analog.  The
+**negotiation** is in the analog domain.  V.8 call indicate, the menu
+exchange and then the INFO0/INFO1A sequences are audio-band signals.  The
+channel carries them before the two ends change to PCM.  Symmetric and
+all-digital modes also use this sequence.  Thus, high-frequency attenuation
+on the path can stop the connection, also when the two ends have a digital
+attachment.  That diagnostic is for this condition.
 
-The image agrees.  The 403 carries a whole analog-negotiation report block at
-`49f39`, distinct from anything in the analog builds:
+The image agrees.  The 403 has a full analog-negotiation report block at
+`49f39`.  This block is different from all items in the analog builds:
 
 ```
 49f39  Remote X2/V90 INFO0 is:
@@ -184,19 +188,19 @@ The image agrees.  The 403 carries a whole analog-negotiation report block at
 4a00a  V.8 octets Remote:
 ```
 
-Both sides' V.8 octets, and INFO0 split by scheme - and
-`courier_emu.datapumps.v90_info1a_writer` finds the routine that builds INFO1A.
-So the digital end of an x2 call is running the same audio-band V.8/INFO
-opening as the analog end; it is the data phase that differs.
+The block has the V.8 octets of the two sides, and INFO0 divided by scheme.
+Also, `courier_emu.datapumps.v90_info1a_writer` finds the routine that makes
+INFO1A.  Thus, the digital end of an x2 call uses the same audio-band V.8/INFO
+opening as the analog end.  The data phase is different.
 
-The claim to keep from the section above is the narrower one: 64000 is the
-digital-side rate, and the analog **client** Courier cannot reach it because
-its own DAA and codec are an analog conversion.
+The claim to keep from the section above is the narrower one.  64000 is the
+rate of the digital side.  The analog **client** Courier cannot get this rate,
+because its DAA and codec are an analog conversion.
 
 ### The I-modem image says it in its own help text
 
-`Ie030002.nac` - the one image in this tree that identifies itself as
-`I-Modem` - replaces S58 outright.  Its help block reads:
+`Ie030002.nac` is the one image in this tree that identifies itself as
+`I-Modem`.  It replaces S58 fully.  Its help block is:
 
 ```
 S58 x2 Mode and Remote Server Xmit
@@ -208,51 +212,54 @@ S58 x2 Mode and Remote Server Xmit
   32   V.90
 ```
 
-against the analog Courier's S58, which is `1 x2`, `2 BLER monitor`,
-`32 V.90`, with bits 4, 8, 16, 64 and 128 present but with their text blanked.
-So on the I-modem the same register carries **server mode** and **symmetric
-mode** as named bits - and there is no client-mode bit at all, matching the
-Quad Modem manual's "does not support client mode" for the server-role
-products.  Bit 4 "Force x2 A-law mode" and bit 16 "-6dbm constellation" are
-the server-side controls the analog build leaves unnamed; the latter is the
-Total Control MIB's `hdmScHighPowerConst` (S76.7) under another name.
+Compare this with S58 of the analog Courier, which is `1 x2`,
+`2 BLER monitor`, `32 V.90`.  In that S58, bits 4, 8, 16, 64 and 128 are
+present, but their text is blank.  Thus, on the I-modem the same register has
+**server mode** and **symmetric mode** as named bits.  It has no client-mode
+bit.  This agrees with the Quad Modem manual, which says "does not support
+client mode" for the server-role products.  Bit 4 "Force x2 A-law mode" and
+bit 16 "-6dbm constellation" are the server-side controls that the analog
+build does not name.  Bit 16 is the `hdmScHighPowerConst` (S76.7) of the Total
+Control MIB with a different name.
 
-Its result codes follow: alongside the usual `.../x2` and `.../V90` ladders it
-carries a `/DIGITAL` set - `56000/DIGITAL`, `56000/ARQ/DIGITAL`,
-`64000/DIGITAL`, `64000/ARQ/DIGITAL`, and `300/DIGITAL` upward - plus
-`TURBO PPP`, `112000` and `128000` for bonded B channels.
+Its result codes agree.  In addition to the usual `.../x2` and `.../V90`
+ladders, it has a `/DIGITAL` set: `56000/DIGITAL`, `56000/ARQ/DIGITAL`,
+`64000/DIGITAL`, `64000/ARQ/DIGITAL`, and `300/DIGITAL` and higher.  It also
+has `TURBO PPP`, `112000` and `128000` for bonded B channels.
 
-What is still open on the I-modem image: whether V.90's symmetric
-(all-digital, DDPCM) role is present as well.  S58 bit 8 is named "symmetric
-mode" under a heading that says x2, and the I-modem's S81/S82 are X.75 layer 2
-and layer 3, not the Total Control V.90 register.  Its DSP overlay set has
-not been extracted either - the overlay-table segment compares this tree's
-reader looks for are absent from that loader, so the comparison in
-[isdn-vs-analog-dsp.md](isdn-vs-analog-dsp.md) has not yet been run against
-the real ISDN image.
+One question about the I-modem image is still open: is the symmetric
+(all-digital, DDPCM) role of V.90 also present?  S58 bit 8 has the name
+"symmetric mode" below a heading that says x2.  Also, S81/S82 of the I-modem
+are X.75 layer 2 and layer 3.  They are not the V.90 register of Total
+Control.  We did not extract its DSP overlay set either.  The overlay-table
+segment compares that the reader of this tree looks for are not in that
+loader.  Thus, we did not yet do the comparison in
+[isdn-vs-analog-dsp.md](isdn-vs-analog-dsp.md) on the real ISDN image.
 
 ### What the analog ID_SDL ROMs show
 
-The images this tree calls 302 and 403 are **analog** Courier V.Everything
-ROMs with the ID_SDL extended-help build (supervisor dates 03/13/98 and
-04/30/98), not ISDN.  What they add over the stock `MAIN_*.XMF` payloads is
-diagnostics: the failure enum at `1c246` (`Remote modem is not a Server`,
-`Multiple CODECs in channel`, `Incompatible versions`, `Channel is x2-capable
-but feature not installed`) and, in the 403 only, the negotiation report block
-at `49f39`.  Those are a client's view of a failed x2 call, which is what a
-V.Everything is.  The x2 setup path itself is identical in all of them - one
-capability builder matching the same 26-byte pattern at `8f43` (403), `8eb3`
-(302), `25112` (2.1.1), `252c3` (2.2.05), `218db` (2.3.31), each followed by a
-single `mov ax, 70`.
+The images that this tree calls 302 and 403 are **analog** Courier
+V.Everything ROMs with the ID_SDL extended-help build (supervisor dates
+03/13/98 and 04/30/98).  They are not ISDN.  In addition to the standard
+`MAIN_*.XMF` payloads, they have diagnostics.  These are the failure enum at
+`1c246` (`Remote modem is not a Server`, `Multiple CODECs in channel`,
+`Incompatible versions`, `Channel is x2-capable but feature not installed`)
+and, in the 403 only, the negotiation report block at `49f39`.  These items
+show a failed x2 call from the view of a client, and a V.Everything is a
+client.  The x2 setup path itself is the same in all of them.  It is one
+capability builder that agrees with the same 26-byte pattern at `8f43` (403),
+`8eb3` (302), `25112` (2.1.1), `252c3` (2.2.05) and `218db` (2.3.31).  Each
+builder has one `mov ax, 70` after it.
 
 ## The I-modem's DSP: seven images, and none of them is the client receiver
 
-The I-modem's overlay loader is not this tree's reader's shape - it takes the
-index, masks `and ax, 0x000f`, multiplies by six against a table at `cs:d682`,
-and picks the source segment from a *second* table at `cs:d6ca` indexed by
-`(index - 5) * 2` (`83 e3 0f / 80 eb 05 / d1 e3 / 2e 8e 87 ca d6`).  With
-`cs = 0xa400` the two tables read out cleanly, and every row's start is zero -
-each image has its own segment:
+The overlay loader of the I-modem does not have the shape that the reader of
+this tree expects.  It takes the index and masks it with `and ax, 0x000f`.
+It multiplies by six and uses the result as an offset into a table at
+`cs:d682`.  It gets the source segment from a *second* table at `cs:d6ca`,
+indexed by `(index - 5) * 2` (`83 e3 0f / 80 eb 05 / d1 e3 / 2e 8e 87 ca d6`).
+With `cs = 0xa400`, we can read the two tables clearly.  The start of each
+row is zero, and each image has its own segment:
 
 | idx | segment | file | words | loads at |
 |---:|---|---|---:|---|
@@ -264,14 +271,16 @@ each image has its own segment:
 | 10 | `dceb` | `9ceb0` | 7,536 | `d100` |
 | 11 | `e099` | `a0990` | **15,997** | `9260` |
 
-Seven images against the analog Courier's four, they tile the DSP region
-`90d60`-`aab0c` contiguously, and the load addresses are its own - `a000`,
-`b800`, `9260`, `d100` - not the analog's `9d00`/`b000`/`dc00`.  The resident
-is 4,670 words where the analog's is 26,080-30,170: this DSP is organised
-differently, with the weight in the loadable images.
+There are seven images, but the analog Courier has four.  The images are
+adjacent and fill the DSP region `90d60`-`aab0c`.  The load addresses are its
+own, `a000`, `b800`, `9260`, `d100`.  They are not the `9d00`/`b000`/`dc00` of
+the analog build.  The resident part has 4,670 words, but in the analog build
+it has 26,080-30,170 words.  Thus, this DSP has a different organization, with
+most of the code in the loadable images.
 
-**Image 11 is the PCM one, and it is the only one that touches the PCM
-parameter cells.**  Counting the cells the x2/V.90 setup path writes:
+**Image 11 is the PCM image, and it is the only image that touches the PCM
+parameter cells.**  This table counts the cells that the x2/V.90 setup path
+writes:
 
 | image | `fff3` | `fff4` | `3fff` | `fff7` |
 |---|---:|---:|---:|---:|
@@ -281,11 +290,11 @@ parameter cells.**  Counting the cells the x2/V.90 setup path writes:
 | 10 | 0 | 0 | 0 | 5 |
 | **11** | **6** | **4** | **1** | **8** |
 
-And image 11 is 15,997 words against the analog PCM overlay's 6,197 - **2.6
-times the size**.
+Also, image 11 has 15,997 words, but the analog PCM overlay has 6,197 words.
+Image 11 is **2.6 times the size**.
 
-**None of the seven is the analog client receiver.**  Coverage against the
-analog 2.3.31 segments, byte-exact runs of ≥12:
+**None of the seven images is the analog client receiver.**  This table gives
+the coverage against the analog 2.3.31 segments, with byte-exact runs of ≥12:
 
 | I-modem image | vs analog resident | vs ov6 | vs ov7 | vs **ov8 (PCM)** |
 |---|---:|---:|---:|---:|
@@ -297,18 +306,17 @@ analog 2.3.31 segments, byte-exact runs of ≥12:
 | 10 (7,536 w) | 26.9% | 0.5% | 0.2% | **0.0%** |
 | 11 (15,997 w) | 36.4% | 1.4% | 1.8% | **0.0%** |
 
-The longest shared run with the analog PCM overlay, across all seven images,
-is 14 bytes.  Elsewhere the same metric finds 24-54% and runs of hundreds of
-bytes, so this is not the metric being harsh: the analog's PCM *downstream
-receiver* is simply absent from the I-modem, and image 11 was written for a
-different job.
+Across all seven images, the longest run that is shared with the analog PCM
+overlay is 14 bytes.  In other places, the same metric finds 24-54% and runs
+of hundreds of bytes.  Thus, the metric is not too strict.  The PCM
+*downstream receiver* of the analog build is not in the I-modem, and image 11
+has a different function.
 
-That is what "server and symmetric, no client" looks like in the image.  A
-server does not need the client receiver; it needs a PCM sender, and symmetric
-mode needs both halves at once - which is a plausible reading of an image 2.6
-times the size of the one it replaces, though what is inside image 11 still
-has to be disassembled to say so outright.
-
+That is how "server and symmetric, no client" looks in the image.  A server
+does not need the client receiver.  It needs a PCM sender.  Symmetric mode
+needs the two halves at the same time.  This is a possible explanation of an
+image that is 2.6 times the size of the image that it replaces.  But we must
+disassemble image 11 before we can say this with certainty.
 ## Where V.90 all-digital sits in the standards
 
 DDPCM was never standardised in this form.  V.90 itself defines only the
