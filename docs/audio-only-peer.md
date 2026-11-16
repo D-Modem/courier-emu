@@ -1,12 +1,13 @@
 # Two independent firmware instances over PCM
 
-The `link` command launches two separate emulator processes. Add
+The `link` command starts two separate emulator processes. Add
 `--line-audio-only` to exchange only a sample count and signed little-endian
-PCM16 at 8,000 samples/second. Both ends must select this protocol. Each side
-resamples between the common wire rate and its firmware-programmed codec rate.
-Frames contain 100 ms of audio and synchronize the two processes. The socket
-advances on each codec's conversion-frame clock, including silent frames;
-CPU instruction counts do not determine the amount of audio exchanged.
+PCM16 at 8,000 samples/second. The two ends must select this protocol. Each
+side resamples between the common wire rate and the codec rate that its
+firmware programs. Frames contain 100 ms of audio and synchronize the two
+processes. The socket advances on the conversion-frame clock of each codec,
+and this includes silent frames. CPU instruction counts do not set the
+quantity of audio that the processes exchange.
 
 ```sh
 ./courier link artifacts/courier-board-21210-capture-403/courier-board.rom \
@@ -17,65 +18,69 @@ CPU instruction counts do not determine the amount of audio exchanged.
   --instructions 85000000 --summary
 ```
 
-Side A first sets `ATX0`, then sends `ATDT5551234`; side B answers with `ATA`.
-`ATX0` disables waiting for exchange dial tone. There is no telephone exchange,
-ringing, or dial tone in this
-direct connection. Use explicit A/B commands: the older `link` default is
-`ATA` on both sides. The default DIP preset in the command above also avoids
-the older dedicated-line preset's carrier-detect override.
+Side A first sets `ATX0`, then sends `ATDT5551234`. Side B answers with `ATA`.
+`ATX0` disables the wait for the dial tone of the exchange. This direct
+connection has no telephone exchange, ringing or dial tone. Use explicit A/B
+commands: the older default of `link` is `ATA` on the two sides. The default
+DIP preset in the command above also prevents the carrier-detect override of
+the older dedicated-line preset.
 
-For separately launched processes, use `courier run` with the same ROM,
-fixture, timer, and board options on both. Pass `--line-link
-/tmp/courier-audio.sock --line-audio-only` to both, `--line-listen --at ATX0 --at ATDT5551234`
+For processes that you start separately, use `courier run` with the same ROM,
+fixture, timer and board options on the two processes. Give `--line-link
+/tmp/courier-audio.sock --line-audio-only` to the two processes, `--line-listen --at ATX0 --at ATDT5551234`
 to the first, and `--at ATA` to the second. The socket listener role does not
-determine the modem's originate/answer role. Start the second within 30 seconds.
-Use `--line-record PREFIX` on a standalone instance to record `PREFIX-tx.wav`
-and `PREFIX-rx.wav`. `link --audio-dir DIR` assigns prefixes `a` and `b`.
-These are recordings at the socket boundary, before the receiving modem's
-local hook gate. They are mono PCM16 WAV files at 8 kHz.
+set the originate/answer role of the modem. Start the second process in 30
+seconds or less. On a standalone instance, use `--line-record PREFIX` to
+record `PREFIX-tx.wav` and `PREFIX-rx.wav`. `link --audio-dir DIR` gives the
+prefixes `a` and `b`. These recordings are at the socket boundary, before the
+local hook gate of the receiving modem. They are mono PCM16 WAV files at 8 kHz.
 
-Audio-only mode does not transmit CPU instruction counts, hook state, ring
-state, decoded bits, or modem commands. Local relay state gates local audio.
-It disables command-parser seizure shortcuts, synthetic mailbox replies,
-host-driven training entry, and synthetic carrier/CONNECT events. Firmware
-mailbox traffic still passes through the emulated hardware registers.
+Audio-only mode does not send CPU instruction counts, hook state, ring state,
+decoded bits or modem commands. The local relay state gates the local audio.
+The mode disables the seizure shortcuts of the command parser, synthetic
+mailbox replies, host-driven entry to training, and synthetic carrier/CONNECT
+events. Firmware mailbox traffic continues to go through the emulated
+hardware registers.
 
 ## Verified result and remaining failure
 
 `artifacts/audio-only-peer-01/summary.json` records the 4.03d pair above:
-40 million CPU instructions per side, 78 frames and 62,400 samples sent and
-received by each, with no socket errors and no synthetic connection events.
-Both CPUs seize their local relay. Their DSP report tags differ (0008 on
-originate, 000a on answer), but neither receives nonzero audio in this run.
-That short run stopped just after the commands began executing, around
-instruction 38 million; the initial conclusion that training audio never
-reached the peer was premature.
+40 million CPU instructions for each side, and 78 frames and 62,400 samples
+sent and received by each side. There are no socket errors and no synthetic
+connection events. The two CPUs seize their local relay. Their DSP report
+tags are different (0008 on originate, 000a on answer), but neither side
+receives nonzero audio in this run. That short run stopped immediately after
+the commands started to execute, at about instruction 38 million. Thus the
+first conclusion, that training audio never got to the peer, was too early.
 
 `artifacts/audio-only-peer-02/before.json` repeats the original CPU-paced
 transport for 150 million instructions with plain `ATDT5551234` and `ATA`.
-The first answer audio arrives around instruction 40.9 million, after the
-earlier run ended. The caller returns `NO DIAL TONE`, and the answerer's
-transmit backlog grows to 115,429 line samples (14.4 seconds).
+The first answer audio arrives at about instruction 40.9 million, after the
+end of the earlier run. The caller returns `NO DIAL TONE`. The transmit
+backlog of the answerer increases to 115,429 line samples (14.4 seconds).
 
-The codec-paced run with `ATX0` before `ATDT5551234` delivers audio in both
-directions. Its largest transmit backlog is 21 samples (2.6 ms). Socket
-recordings decode as `5551234` at the answerer's receive side. The answerer
-sends a tone near 2100 Hz and a later changing waveform. These results verify
-DTMF and waveform transport, **not completed training or data transfer**:
-neither firmware reports `CONNECT` in the 150-million-instruction run.
+The codec-paced run with `ATX0` before `ATDT5551234` delivers audio in the two
+directions. Its largest transmit backlog is 21 samples (2.6 ms). The socket
+recordings decode as `5551234` at the receive side of the answerer. The
+answerer sends a tone near 2100 Hz and, after it, a changing waveform. These
+results verify the DTMF and waveform transport, **not completed training or
+data transfer**: neither firmware reports `CONNECT` in the
+150-million-instruction run.
 
-The frame trace in each side's `dsp_bridge.line.audio_trace` separates the
-pre-hook transmit peak, actual socket transmit/receive peaks, codec-input
-peak, and transmit backlog. This distinguishes buffering from hook muting.
+The frame trace in `dsp_bridge.line.audio_trace` of each side shows these
+items separately: the transmit peak before the hook, the actual
+transmit/receive peaks of the socket, the codec-input peak, and the transmit
+backlog. This makes it possible to distinguish buffering from hook muting.
 The trace keeps the latest 512 frames.
 
-The 85-million-instruction recorded run is in `recorded-run.json`, with
-waveform checks in `audio-analysis.json`. Every received PCM byte matches its
-peer's transmitted stream. The caller sends one final 100 ms frame after the
-answerer reaches its instruction limit; EOF at that point is test shutdown.
-`audio/call-excerpt.wav` contains seconds 8–18, with the caller on the left
-channel and answerer on the right. The four full recordings remain mono.
+The recorded run of 85 million instructions is in `recorded-run.json`, with
+waveform checks in `audio-analysis.json`. Each received PCM byte agrees with
+the transmitted stream of its peer. The caller sends one last 100 ms frame
+after the answerer gets to its instruction limit. EOF at that point is the
+test shutdown. `audio/call-excerpt.wav` contains seconds 8–18, with the caller
+on the left channel and the answerer on the right. The four full recordings
+stay mono.
 
-The older link mode remains available without the flag, including its hook/
-ring side channel and behavioral call shortcuts. Its CONNECT result is not
-evidence that the audio-only pair has trained.
+The older link mode is still available without the flag. This includes its
+hook/ring side channel and its behavioral call shortcuts. Its CONNECT result
+is not evidence that the audio-only pair has trained.

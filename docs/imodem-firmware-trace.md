@@ -1,9 +1,9 @@
 # The I-modem's ISDN stack logs itself, in English
 
-Everything else this repository knows about the I-modem's ISDN stack was
-recovered by disassembly and inference.  It did not have to be.  **The stack
-is instrumented, and the instrumentation is symbolic** - it names the
-developers' own primitives, and a run can read it back for the cost of two
+We recovered all other information in this repository about the ISDN stack of the I-modem
+by disassembly and inference. That was not necessary. **The stack
+is instrumented, and the instrumentation is symbolic.** It gives the names of the
+primitives of the developers, and a run can read it back with two
 memory reads.
 
 ```
@@ -11,36 +11,36 @@ LINE_ACTIVE Detected
 l4_DISCONN : modem primitive
 ```
 
-That is an `ATDT` in the firmware's own words, and it answers a question three
-separate configuration hypotheses had failed to: the dial *does* reach layer
+That is an `ATDT` in the words of the firmware. It answers a question that three
+separate configuration hypotheses could not answer: the dial *does* get to layer
 3, and it arrives there as a **disconnect**, not a setup.
 
 ## How it works
 
-There is a printer at `0x77fc2`.  Callers pass it a far pointer to a string;
-it packs the characters two to a word into a ring at `ds:0xa79a` and keeps the
-count of words used at `ds:0xb79a`, appending a CRLF after each entry.
+There is a printer at `0x77fc2`. Callers give it a far pointer to a string.
+It packs the characters two in each word into a ring at `ds:0xa79a`, and it keeps the
+count of used words at `ds:0xb79a`. It adds a CRLF after each entry.
 
-`ds` is `ce0` - the segment the initialiser relocates `0x41c0` bytes into from
-image `0x98d50`, which is why every other address in this stack is quoted
-against it.  Resolving the string offsets against that block is what turned
-`push 0x1594` into `l4_DISCONN : modem primitive`.
+`ds` is `ce0`. This is the segment into which the initialiser relocates `0x41c0` bytes from
+image `0x98d50`. For this reason, we give all other addresses in this stack relative to it.
+When we resolved the string offsets against that block,
+`push 0x1594` became `l4_DISCONN : modem primitive`.
 
-It is a **fill-once** log, not a wrap-around one: the guards at `0x78039` and
-`0x78051` compare the index against `0x7fd` and `0x7ef` and stop appending.  A
-long run's log ends rather than losing its beginning.  Capacity is 2048 words.
-Because the characters are packed low byte first, the ring read as raw bytes
-is already the text; an odd trailing character is padded with a space by the
-`or ax, 0x2000` at `0x77ff6`.
+It is a **fill-once** log, not a wrap-around log. The guards at `0x78039` and
+`0x78051` compare the index with `0x7fd` and `0x7ef`, and then stop the additions. Thus, the
+log of a long run stops at the end, and it does not lose its start. The capacity is 2048 words.
+The characters are packed low byte first. Thus, when you read the ring as raw bytes,
+it is already the text. The `or ax, 0x2000` at `0x77ff6` pads an odd trailing character
+with a space.
 
-`courier_emu/imodem_trace.py` reads it, and `isdn-run` carries it in every
-report as `firmware_trace`.  An index outside the ring reads as empty rather
-than decoding whatever is at the address, so a wrong segment says nothing
-instead of saying something false.
+`courier_emu/imodem_trace.py` reads it, and `isdn-run` includes it in each
+report as `firmware_trace`. An index outside the ring reads as empty. The reader does not
+decode the data at the address. Thus, a wrong segment gives no information,
+and it does not give false information.
 
 ## The vocabulary
 
-465 strings sit in that block.  A sample of what the ISDN side carries:
+That block contains 465 strings. This is a sample of the strings of the ISDN side:
 
 ```
 l4_SETUP : modem primitive          code =l4_SETUP
@@ -63,31 +63,31 @@ PROGRESS_IND Detected                 B_CHANNELS AVAILABLE
                                     SETUP not compatible INTL, release call
 ```
 
-Those names line up with what was already recovered the hard way and confirm
-it.  The handler at `0x75882` dispatches a "modem primitive" on a character -
-`'@'` logs `l4_SETUP`, `'B'` logs `l4_DISCONN`, `'C'` and `'a'` the others -
-and the layer-2 arms at `0x7743c`, `0x7744f`, `0x77468` and `0x77481` are
-`SPID_ERR`, `LINE_ACTIVE`, `LINE_NOT_ACTIVE` and `MISC_INFO` respectively.
-`0x7744f` setting `ce0:8d7c` is therefore exactly what its name says, which
-independently confirms the reading in
+Those names agree with the items that we already recovered with much work, and they confirm
+them. The handler at `0x75882` dispatches a "modem primitive" on a character:
+`'@'` logs `l4_SETUP`, `'B'` logs `l4_DISCONN`, and `'C'` and `'a'` log the others.
+The layer-2 arms at `0x7743c`, `0x7744f`, `0x77468` and `0x77481` are
+`SPID_ERR`, `LINE_ACTIVE`, `LINE_NOT_ACTIVE` and `MISC_INFO`.
+Thus, when `0x7744f` sets `ce0:8d7c`, this is exactly what its name says. This
+independently confirms the interpretation in
 [imodem-config-sector.md](imodem-config-sector.md).
 
 ## What it says about ATD, and about this harness
 
-Dialling with nothing else going on:
+A dial with no other activity gives:
 
 ```
 LINE_ACTIVE Detected
 l4_DISCONN : modem primitive
 ```
 
-The AT layer did hand layer 3 a disconnect - but it did not *choose* to.
-Following it through settles the question completely, and the answer is not
-in the AT layer at all.  See
+The AT layer gave a disconnect to layer 3, but it did not *decide* to do this.
+When we follow it, we get the full answer, and the answer is not
+in the AT layer. Refer to
 [the ATD path](#atd-never-builds-a-setup-and-the-reason-is-layer-2) below.
 
-Dialling with the network peer presenting an incoming call first says
-something else:
+A dial while the network peer first presents an incoming call gives
+a different result:
 
 ```
 LINE_ACTIVE Detected
@@ -97,21 +97,21 @@ default of n_stat_in detected
 l4_DISCONN : modem primitive
 ```
 
-That was first written up here as a defect in `courier_emu/bri.py`.  **It is
-not**, and the way it was ruled out is worth keeping, because "our peer must
-be breaking it" is the comfortable answer and it was wrong.
+At first, we wrote this up here as a defect in `courier_emu/bri.py`. **It is
+not a defect there.** The method that excluded it is important to keep, because "our peer must
+be the cause" is the easy answer, and it was wrong.
 
-* The peer never touches the line after activation.  A watch on
-  `Am79C30.set_liu_state` records exactly three changes in the whole run -
-  F1→F2, F2→F6, F6→F7 - all during activation, none near the frame.
-* The chip model is not mangling the frame.  35 bytes delivered, **35 bytes
-  read back** by the firmware, and DRCR reports 35.
-* The firmware re-reads the line itself at `0x71b3d`, computes `(LSR & 7) + 2`
-  = **8**, stores F7 - and then raises the status anyway.  Its own stored
-  state says the line is up while it reports that it is not.
-* It is not the broadcast data link, and it is not the information elements.
-  Injecting four different frames and reading the log back separates them
-  completely:
+* The peer never changes the line after activation. A watch on
+  `Am79C30.set_liu_state` records exactly three changes in the full run:
+  F1→F2, F2→F6, F6→F7. All of them occur during activation, and none near the frame.
+* The chip model does not damage the frame. It delivers 35 bytes, the firmware **reads back
+  35 bytes**, and DRCR reports 35.
+* The firmware reads the line again itself at `0x71b3d`, calculates `(LSR & 7) + 2`
+  = **8**, and stores F7. Then it raises the status. Its own stored
+  state says that the line is up, while it reports that the line is not up.
+* The cause is not the broadcast data link, and it is not the information elements.
+  We injected four different frames and read the log back. This separates them
+  fully:
 
   | frame | firmware's verdict |
   |---|---|
@@ -120,41 +120,41 @@ be breaking it" is the comfortable answer and it was wrong.
   | UI, SAPI 0 / TEI 127, bare SETUP, no IEs | `LINE_NOT_ACTIVE`, `001A` |
   | UI, SAPI 0 / TEI 127, full SETUP | `LINE_NOT_ACTIVE`, `001A` |
 
-A junk UI down the same broadcast path does nothing.  Only a **valid Q.931
-SETUP** does it.  So this is the firmware's own layer 3 reacting to an
-incoming call it owns no TEI for, and `001A` is a status code its
-`n_stat_in` dispatcher has no arm for - the `default` at `0x774ac`.
+A junk UI on the same broadcast path has no effect. Only a **valid Q.931
+SETUP** causes it. Thus, this is the layer 3 of the firmware itself. It reacts to an
+incoming call for which it has no TEI. `001A` is a status code for which its
+`n_stat_in` dispatcher has no arm: the `default` at `0x774ac`.
 
 ### What was actually wrong with the peer
 
-Chasing it did find two real defects, both of which made the firmware's
-behaviour harder to read rather than causing it:
+The examination found two real defects. The two made the behaviour of the firmware
+more difficult to interpret, but they did not cause it:
 
-* **No T303.**  The peer sent one SETUP and then reported `call_state:
-  call-present` for the rest of the run, so a call nobody took looked like a
-  call in progress.  Q.931 has the network retransmit once after four
-  seconds and then clear.  It does now, and says so.
-* **No notion of the line going down underneath it.**  The peer only ever
-  read back the state it had set, so had the firmware deactivated its LIU the
-  peer would have gone on reporting a data link that could not exist.  It now
-  notices, drops its layer-2 and call state, and does not walk the line
-  straight back up - re-activating would hide exactly the behaviour worth
-  seeing.
+* **No T303.** The peer sent one SETUP and then reported `call_state:
+  call-present` for the remaining part of the run. Thus, a call that nobody answered looked like a
+  call in progress. In Q.931, the network retransmits one time after four
+  seconds and then clears. The peer now does this, and it reports it.
+* **No model of the line going down below it.** The peer only
+  read back the state that it had set. Thus, if the firmware had deactivated its LIU, the
+  peer would have continued to report a data link that could not exist. It now
+  sees the change, drops its layer-2 and call state, and does not activate the line
+  again immediately. A new activation would hide exactly the behaviour that we want to
+  see.
 
-Both are covered by `tests/test_bri.py`.  Neither changes the trace above,
-which is the point: the firmware was never reacting to them.
+`tests/test_bri.py` covers the two fixes. Neither changes the trace above.
+This is the important point: the firmware never reacted to them.
 
 
 ## ATD never builds a SETUP, and the reason is layer 2
 
-`l4_DISCONN` turned out to be a red herring, and tracing it is what showed
-that.  The routine that issues it, at `0xc5519`, pushes `0x42`
-**unconditionally** - it is the hang-up routine, not a decision - and during
-an `ATD` it is reached from `0xab2ef`, a teardown sequence that calls it
-without a test.  So `l4_DISCONN` is the cleanup *after* the dial failed, not
+`l4_DISCONN` was not the cause, and the trace of it showed
+that. The routine that issues it, at `0xc5519`, pushes `0x42`
+**unconditionally**. It is the hang-up routine, not a decision. During
+an `ATD`, the code gets to it from `0xab2ef`, a teardown sequence that calls it
+without a test. Thus, `l4_DISCONN` is the cleanup *after* the dial failed. It is not
 the dial.
 
-The dial itself is easy to find once you look for the other primitive.  Of
+The dial itself is easy to find when you look for the other primitive. Of
 the nine call sites of the primitive handler at `0x75882`, exactly **one**
 pushes `0x40`, `l4_SETUP`:
 
@@ -166,8 +166,8 @@ cbf98  push 0x40              ; l4_SETUP
 cbf9a  lcall 7561:0272
 ```
 
-and that block never executes.  Nothing in `0xcbf20`-`0xcbfb8` runs during an
-`ATD` at all, because it is only reached from `0xcbe81`:
+That block never executes. Nothing in `0xcbf20`-`0xcbfb8` runs during an
+`ATD`, because the only path to it is from `0xcbe81`:
 
 ```
 cbe7f  or al, al
@@ -184,8 +184,8 @@ cbe39  shl bl, 1
 cbe3b  call word ptr cs:[bx + 0x607]
 ```
 
-in segment `cbb8`, so the table is at `0xcbe87`.  `'D'` resolves to
-**`0xcc6a3`**, and the handler runs to this, at `0xcc84b`:
+This is in segment `cbb8`. Thus, the table is at `0xcbe87`. `'D'` resolves to
+**`0xcc6a3`**, and the handler runs to this code at `0xcc84b`:
 
 ```
 cc84b  lcall 6757:0a9e            ; refresh the layer-2 status
@@ -200,25 +200,25 @@ cc87e  or byte [0xca57], 0x80
 cc883  stc ; ret                  ; the error return
 ```
 
-Those are the same two bytes `ATI12` prints as `Physical Interface` and
-`Data Link Layer`.  Reading them at the gate in a live run:
+Those are the same two bytes that `ATI12` prints as `Physical Interface` and
+`Data Link Layer`. We read them at the gate in a live run:
 
 ```
 ATD reads  data link ce0:8d7d = 0, physical ce0:8d7c = 1
         -> error return, no SETUP is ever built
 ```
 
-The handler returns carry, the interpreter ends the command with `al = 3` -
-Hayes result code 3, `NO CARRIER` - and the teardown that follows calls the
-hang-up routine, which is where the `l4_DISCONN` in the log comes from.
+The handler returns carry. The interpreter stops the command with `al = 3`,
+that is, Hayes result code 3, `NO CARRIER`. The teardown that follows calls the
+hang-up routine. This is the source of the `l4_DISCONN` in the log.
 
 ### What that settles
 
-**`ATD` is gated on the data link being established.**  It was never going to
-dial, under any switch protocol, dialing mode, bearer capability or DIP
-switch setting, because every one of those was tested with `ATI12` still
-reporting `Data Link Layer   :  Inactive`.
+**`ATD` is gated on the data link being established.** It could never
+dial, with any switch protocol, dialing mode, bearer capability or DIP
+switch setting, because we tested each of those while `ATI12` still
+reported `Data Link Layer   :  Inactive`.
 
-So the two questions this repository has been carrying collapse into one.
-There is no separate "why does the AT layer refuse to dial" problem; there is
-only **layer 2 does not come up**, and everything else follows from it.
+Thus, the two questions of this repository become one question.
+There is no separate problem of "why does the AT layer refuse to dial". There is
+only one problem: **layer 2 does not come up**. All other symptoms come from it.

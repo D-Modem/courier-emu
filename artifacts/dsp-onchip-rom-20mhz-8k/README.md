@@ -1,20 +1,20 @@
 # The 20.16 MHz board's full 8K on-chip ROM
 
 Board: ID_SDL v4.03d, supervisor 7.4.16, DSP 3.1.2, 20.16 MHz, serial
-`0009540034268322` - the unit `artifacts/courier-board-21210-capture-403` and
-`artifacts/dsp-onchip-rom-01` came from. Read 2026-09-13 on
-`/dev/cu.usbserial-FT4TQOFT` (the adapter name the 25 MHz board also used; the
-serial number and clock are what identify the unit, not the port).
+`0009540034268322`. This is the unit that `artifacts/courier-board-21210-capture-403` and
+`artifacts/dsp-onchip-rom-01` came from. We read it on 2026-09-13 on
+`/dev/cu.usbserial-FT4TQOFT`. The 25 MHz board also used this adapter name. The
+serial number and the clock identify the unit, not the port.
 
-Eight 1K windows, `c5x-onchip-rom-8k.bin`,
+The image has eight 1K windows, `c5x-onchip-rom-8k.bin`,
 `sha256 d57bc46e1bcd6d4dc8872b97bba2d98ba8fb6b8661440c566b534f0b3f82fac9`.
 
 ## It is the same part, and mostly the same ROM
 
-`memtest` is **word-for-word identical** to the 25 MHz board's
+`memtest` is **identical word for word** to the result of the 25 MHz board
 (`artifacts/dsp-memory-test-2806/run-a`): `PMST` = `00b0`, `MP/MC` = 0, `RAM`
-and `OVLY` already set, `0x0800` and `0x1800` ignoring a write and `0x2400`
-following it. Both boards carry a **'C51**.
+and `OVLY` are already set, `0x0800` and `0x1800` ignore a write, and `0x2400`
+follows it. The two boards have a **'C51**.
 
 | region | 20.16 MHz | 25 MHz |
 |---|---|---|
@@ -24,39 +24,39 @@ following it. Both boards carry a **'C51**.
 | `1000`-`1F7F` | array pattern | array pattern |
 | `1F80`-`1FFF` | 128-word mailbox block | **byte-identical** |
 
-Everywhere the ROM is genuinely programmed the two parts agree exactly. The
-whole difference between the two 8K images is **96 words at `0x0F9D`-`0x0FFC`**.
+In all locations where the ROM is really programmed, the two parts agree exactly. The
+full difference between the two 8K images is **96 words at `0x0F9D`-`0x0FFC`**.
 
 ## The 0x0F80 block is not mask content
 
 An earlier commit called it "a 128-word block the mask carries twice, at `0x0F80`
-and `0x1F80`". That is wrong. The mask carries it **once**, at `0x1F80`. The
-25 MHz part also returns it from `0x0F80`; this part does not, and returns pure
+and `0x1F80`". That is not correct. The mask has it **once**, at `0x1F80`. The
+25 MHz part also returns it from `0x0F80`. This part does not, and it returns only the
 array pattern there.
 
-Neither reading is a fluke - each board was read through two independent
-execution paths, a kernel at external `0x8000` and a gadget staged into on-chip
-SARAM, and on each board the two paths agree with each other:
+No reading is an accident. We read each board through two independent
+execution paths: a kernel at external `0x8000`, and a gadget staged into on-chip
+SARAM. On each board, the two paths agree:
 
 | | via `0x8000` | via SARAM |
 |---|---|---|
 | 25 MHz, `0F80` block | present | present |
 | 20.16 MHz, `0F80` block | absent | absent |
 
-So it is a property of the part, not of the read. A mask that duplicated a block
-on one die and not another is not credible, which leaves a decode difference -
-the top row of the array answering with `A12` treated as a don't-care on one part
-- as the likely shape. **Not established**, and nothing here depends on it: the
-programmed ROM is `0x0000`-`0x077F` plus `0x1F80`-`0x1FFF`, identical on both.
+Thus, it is a property of the part, not of the read. A mask that duplicates a block
+on one die and not on another is not credible. The probable cause is thus a decode difference:
+on one part, the top row of the array answers and ignores `A12`.
+This is **not established**, and nothing here depends on it. The
+programmed ROM is `0x0000`-`0x077F` plus `0x1F80`-`0x1FFF`, and it is identical on the two parts.
 
 ## Reproducing
 
-Same runner as the 25 MHz set:
+Use the same runner as for the 25 MHz set:
 
 ```sh
 python artifacts/dsp-onchip-rom-2806/run-board.py \
     artifacts/dsp-onchip-rom-20mhz-8k/at0c00 /dev/cu.usbserial-FT4TQOFT
 ```
 
-Every run restored the board - `AT` answering and the timer-0 vector back,
-checked each time.
+Each run restored the board: `AT` answered and the timer-0 vector came back.
+We checked this each time.

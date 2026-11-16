@@ -1,12 +1,12 @@
 # QF060003 ATI and ATY command responses — 2026-09-10
 
-Measured using the opt-in CPU byte-terminal adapter, with a fresh modem instance for each command and `ATQ0V1` first. All 43 commands consumed their input and returned to the idle dispatcher without an emulator error. Seven-bit terminal decoding is shown below; raw UART bytes are preserved in `results.json`.
+We measured these responses with the opt-in CPU byte-terminal adapter. Each command had a fresh modem instance, and `ATQ0V1` came first. All 43 commands consumed their input and returned to the idle dispatcher without an emulator error. The text below shows the seven-bit terminal decoding. `results.json` keeps the raw UART bytes.
 
-These are emulator-state reports, not measurements of a physical Quad. DSP/link measurements, DIP switches, slot/channel identity and NVRAM values reflect the incomplete board model. The adapter boundary is documented in `docs/quad-at-terminal.md`.
+These are reports of the emulator state. They are not measurements of a physical Quad. The DSP/link measurements, the DIP switches, the slot/channel identity and the NVRAM values come from the incomplete board model. `docs/quad-at-terminal.md` documents the adapter boundary.
 
-Reproduce: `PYTHONPATH=. .venv/bin/python tools/probe_quad_identify.py`.
+To do this again, run `PYTHONPATH=. .venv/bin/python tools/probe_quad_identify.py`.
 
-`ATI2` includes the non-text bytes `55 aa` in its reply (shown as `U*` by seven-bit decoding), followed by two `OK` lines. Its full raw output is `8d0a55aa0acf4b8d0a8d0acf4b8d0a`.
+The reply of `ATI2` includes the non-text bytes `55 aa` (the seven-bit decoding shows them as `U*`). Two `OK` lines follow them. Its full raw output is `8d0a55aa0acf4b8d0a8d0acf4b8d0a`.
 
 ## ATI
 

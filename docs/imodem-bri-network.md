@@ -1,40 +1,40 @@
 # Putting a network on the I-modem's S interface
 
-[imodem-d-channel.md](imodem-d-channel.md) brought layer 1 up and
+[imodem-d-channel.md](imodem-d-channel.md) started layer 1, and
 [imodem-config-sector.md](imodem-config-sector.md) gave the modem a real
-configuration, and both ended in the same place: the modem never transmits a
-layer-2 frame, so layer 2 never starts.  The reason turns out to be simpler
-than the pointer chase that page ended on.  **There was nobody on the line.**
+configuration. The two pages stopped at the same point: the modem never
+transmits a layer-2 frame, so layer 2 never starts. The reason is simpler than
+the pointer search at the end of that page. **There was nobody on the line.**
 
-A BRI terminal does not talk to itself.  On a point-to-point line it waits for
-the network to establish the data link; on a multipoint line it asks for a TEI
-when it has traffic.  Either way the first move belongs to the far end, and
-this repository had no far end.
+A BRI terminal does not talk to itself. On a point-to-point line, it waits for
+the network to establish the data link. On a multipoint line, it requests a
+TEI when it has traffic. In the two cases, the first action belongs to the far
+end, and this repository had no far end.
 
-`courier_emu/bri.py` is one.  It is not a model of anything on the board - the
-board's side is the Am79C30A and the firmware - it is a peer, built from Q.921
-and Q.931, and it reaches the modem only through the chip's own receive and
-transmit buffers, `deliver_frame` and `take_sent`.  It never writes the
-modem's memory and never pokes its registers, which is what keeps it evidence
-rather than a stand-in.
+`courier_emu/bri.py` is a far end. It is not a model of a part of the board -
+the side of the board is the Am79C30A and the firmware. It is a peer, built
+from Q.921 and Q.931. It gets to the modem only through the receive and
+transmit buffers of the chip, `deliver_frame` and `take_sent`. It never writes
+the memory of the modem and never writes its registers. This is why it is
+evidence and not a substitute.
 
 ```sh
 .venv/bin/python -m courier_emu isdn-run Ie030002.nac \
     --instructions 60000000 --line-activate 3000000 --bri-network
 ```
 
-`--bri-establish network|terminal` chooses which end establishes,
-`--bri-tei` the TEI the network addresses, and `--bri-call-at` places a call
-at the modem.  The run reports everything the peer did under `bri`.
+`--bri-establish network|terminal` selects which end establishes. `--bri-tei`
+selects the TEI that the network addresses. `--bri-call-at` makes a call to
+the modem. The run reports all actions of the peer under `bri`.
 
-Note there is no `--line-activate` in that command.  **The NT terminates the
-S bus, so the line is its to drive**, and the peer walks the terminal up
-through F2, F6 and F7 the way INFO2 and INFO4 do - F2 first because the
-firmware's layer-1 machine dispatches on the state it is already in and
-drops an event that skips ahead.  `--line-activate` still names *when*, and
-`--no-bri-activate` stands the NT down for a run that wants to drive the
-line some other way.  `--bri-deactivate-at` drops it back to F3, which is
-the only way to ask the firmware what it does when the network goes away.
+Note that there is no `--line-activate` in that command. **The NT terminates the S bus, so the NT drives the
+line.** The peer moves the terminal up through F2, F6 and F7, as INFO2 and
+INFO4 do. F2 is first, because the layer-1 machine of the firmware dispatches
+on its current state and discards an event that skips a state.
+`--line-activate` still tells *when*. `--no-bri-activate` stops the NT, for a
+run that drives the line in a different way. `--bri-deactivate-at` sets the
+line back to F3. This is the only way to find what the firmware does when the
+network goes away.
 
 ## What the peer speaks
 
@@ -44,22 +44,23 @@ the only way to ask the firmware what it does when the network goes away.
   retransmissions.
 * **Q.931** - SETUP, CALL PROCEEDING, ALERTING, CONNECT, CONNECT
   ACKNOWLEDGE, DISCONNECT, RELEASE, RELEASE COMPLETE, and the information
-  elements those carry: bearer capability, channel identification, called
-  and calling party number, cause.
+  elements that those messages carry: bearer capability, channel
+  identification, called and calling party number, cause.
 
-`tests/test_bri.py` checks the encodings against the standards, including the
-one asymmetry that is easy to get backwards - Q.921 gives the C/R bit
-opposite senses on the two sides, so the same octet is a command from the
+`tests/test_bri.py` compares the encodings with the standards. This includes
+the one asymmetry that is easy to reverse by mistake - Q.921 gives the C/R bit
+opposite meanings on the two sides. Thus the same octet is a command from the
 user and a response from the network.
 
 ## B-channel media
 
-Once Q.931 reaches Active, the peer binds media to the channel selected by the
-Channel Identification information element.  It queues network-to-terminal
-octets into that B1/B2 input and captures terminal-to-network octets after the
-firmware's MCR routing has carried them between the Am79C30 and DSP.  The bytes
-stay opaque at this boundary: a speech call may contain G.711 audio, while an
-unrestricted 64 kbit/s call may use all eight bits as data.
+When Q.931 gets to Active, the peer connects the media to the channel that the
+Channel Identification information element selects. It puts the octets from
+the network to the terminal in the queue of that B1/B2 input. It captures the
+octets from the terminal to the network after the MCR routing of the firmware
+has moved them between the Am79C30 and the DSP. The bytes stay opaque at this
+boundary: a speech call can contain G.711 audio, and an unrestricted
+64 kbit/s call can use all eight bits as data.
 
 The CLI can inject and capture that stream directly:
 
@@ -68,27 +69,28 @@ The CLI can inject and capture that stream directly:
     --bri-network --bri-rx-g711 far-end.g711 --bri-tx-g711 modem.g711
 ```
 
-Input is held until the call becomes active.  Output recorded before CONNECT
-is discarded, so the capture cannot mistake the idle DS0 for connected media.
-The run's `bri.media` report names the selected channel and gives delivered,
-captured, and non-`ff` octet counts.  It deliberately does not call `ff` silence:
-the B channel is opaque here, and its meaning depends on the negotiated bearer.
+The input is held until the call becomes active. The output that is recorded
+before CONNECT is discarded. Thus the capture cannot mistake the idle DS0 for
+connected media. The `bri.media` report of the run names the selected channel,
+and gives the counts of delivered, captured and non-`ff` octets. It
+intentionally does not call `ff` silence: the B channel is opaque here, and
+the meaning of `ff` depends on the negotiated bearer.
 
-On an answered call it *is* silence, and
+On an answered call, it *is* silence.
 [imodem-b-channel-silence.md](imodem-b-channel-silence.md) follows it back to
-the single DSP command that is never taken.  That page also carries the two
-things a SETUP must get right before the modem will ring at all - the called
-number and the bearer - which supersedes the "incompatible" question the
+the single DSP command that the modem never takes. That page also gives the two
+items that a SETUP must have correct before the modem rings - the called
+number and the bearer. This replaces the "incompatible" question that the
 sections below leave open.
 
 ## What it found, on the first run
 
 With a record whose switch protocol is ETSI NET3 and a point-to-point line,
-the peer sends SABME to TEI 0 and the modem does not answer.  It is not
-ignoring it: the chip's counters show the frames arriving, and a trace shows
-the firmware reading every byte of them.
+the peer sends SABME to TEI 0, and the modem does not answer. It does not
+ignore it: the counters of the chip show that the frames arrive, and a trace
+shows that the firmware reads each byte of them.
 
-The receive path is fully accounted for now:
+Now we know all of the receive path:
 
 | where | what it does |
 |---|---|
@@ -97,7 +99,8 @@ The receive path is fully accounted for now:
 | `0x72f07` | posts the frame up as **message `0x33`** |
 | `0x6674c` | the Q.921 entity's receive handler, reached from the dispatcher at `0x66734` |
 
-and so is the validation the entity does, which is where our SABME dies:
+We also know the validation that the entity does. This is where our SABME
+stops:
 
 ```
 667b1  test es:[bx+1], 1      ; octet 2's EA bit must be set
@@ -109,28 +112,29 @@ and so is the validation the entity does, which is where our SABME dies:
 668a2  lcall 6757:2fe         ; otherwise look the data link up
 ```
 
-and the lookup at `0x6786e` walks a six-byte-per-entry table at `[0x6b88]`,
-indices 3 to 12, matching the interface id, the SAPI and the TEI, with two
-further passes that accept `0xfe` and `0xfc` as wildcards.  **No entry
-matches SAPI 0 / TEI 0**, so the frame is discarded and the modem is right to
-stay silent: it is configured for automatic TEI assignment, so it does not
-own TEI 0 and a network addressing that TEI is addressing nobody.
+The lookup at `0x6786e` goes through a table at `[0x6b88]` with six bytes for
+each entry, indices 3 to 12. It compares the interface id, the SAPI and the
+TEI. Two more passes accept `0xfe` and `0xfc` as wildcards. **No entry agrees
+with SAPI 0 / TEI 0.** Thus the frame is discarded, and it is correct that
+the modem stays silent. The modem is configured for automatic TEI assignment.
+Thus it does not own TEI 0, and a network that addresses that TEI addresses
+nobody.
 
-That is a real answer to the question the previous page left open, and it
-replaces the hypothesis there.  The transmit path at `0x71cb0` is not
-unreachable through some missing pointer; it is simply never asked, because
-no data link exists.
+That is a real answer to the question that the previous page left open, and it
+replaces the hypothesis there. The transmit path at `0x71cb0` is not
+unreachable because of a missing pointer. Nothing asks for it, because no data
+link exists.
 
 ## The broadcast data link is the door
 
-The point-to-point attempt above dies because the modem owns no TEI.  A
-network end has another way in, and it is the one Q.931 specifies for an
-incoming call on a multipoint bus: the network does not know which terminal
-wants the call, so it puts the SETUP on the **broadcast data link** - a UI
-frame to TEI 127 - and whichever terminal takes it gets a TEI and
-establishes to answer.  That path needs nothing of the terminal in advance,
-which makes it the only one that can reach a modem that has never
-transmitted.  The peer uses it automatically when it has no data link.
+The point-to-point attempt above fails because the modem owns no TEI. A
+network end has a different method, and Q.931 specifies it for an incoming
+call on a multipoint bus. The network does not know which terminal wants the
+call. Thus it puts the SETUP on the **broadcast data link** - a UI frame to
+TEI 127. The terminal that takes it gets a TEI and establishes the link to
+answer. That path needs nothing from the terminal before. Thus it is the only
+path that can get to a modem that has never transmitted. The peer uses it
+automatically when it has no data link.
 
 ```sh
 .venv/bin/python -m courier_emu isdn-run Ie030002.nac \
@@ -138,8 +142,8 @@ transmitted.  The peer uses it automatically when it has no data link.
     --bri-call-at 20000000 --bri-call-to 5551212
 ```
 
-And it gets in.  Traced through, the broadcast SETUP is accepted where the
-point-to-point SABME was discarded:
+And it gets in. The trace shows that the modem accepts the broadcast SETUP,
+where it discarded the point-to-point SABME:
 
 | where | what happens |
 |---|---|
@@ -148,75 +152,78 @@ point-to-point SABME was discarded:
 | `0x66882` | raises event `0x16` - one of the types the handler at `0x76acf` dispatches |
 | `0x6724d` | walks data-link entries 3 to 12 and, for each whose interface matches, posts message `0x35` and calls `6757:8ed` |
 
-The body at `0x672bd` executes, so **layer 3 is notified of the incoming
-call**.  That is as far as it goes: the modem does not answer, does not ring
-the AT interface, and transmits nothing.  Offering the call as speech
-rather than unrestricted digital (`--bri-bearer speech`) changes nothing,
-so it is not the bearer capability being refused.
+The body at `0x672bd` executes. Thus **layer 3 gets the notification of the
+incoming call**. It goes no further: the modem does not answer, does not ring
+the AT interface, and transmits nothing. If we offer the call as speech and not
+as unrestricted digital (`--bri-bearer speech`), nothing changes. Thus the
+modem does not refuse the bearer capability.
 
-The frontier has moved, though, and it is worth being precise about where.
-It is no longer "the modem never transmits a layer-2 frame and nothing is
-known about why" - it is "the firmware's own call control has been handed a
-SETUP and does not act on it".
+But the limit of our knowledge has moved, and it is important to tell exactly
+where. It is no longer "the modem never transmits a layer-2 frame, and we do
+not know why". Now it is "the call control of the firmware received a SETUP
+and does not act on it".
 
 ## What is still open
 
-Two things stand between this and a call, and both are on the modem's side of
-the configuration rather than the peer's:
+Two items are between this and a call. The two items are on the configuration
+side of the modem, not of the peer:
 
-* ~~**The modem's TEI request is never transmitted.**~~  It is now.  Driving
-  the LIU to the value the part actually uses for an activated interface
-  ([imodem-liu-state-field.md](imodem-liu-state-field.md)) is what freed it:
-  runs today show `ID_REQUEST` arriving and a TEI being assigned, layer 2
-  establishing from the modem's own SABME, and the call ringing.  The queued
-  frame in [imodem-tei-request.md](imodem-tei-request.md) was the symptom of
-  the layer-1 state, not a transmit-path defect.
-* **`ATD` is gated on the data link, so it is not a second problem.**  The
-  `'D'` handler at `0xcc6a3` reads `ce0:8d7d` - the byte `ATI12` prints as
-  `Data Link Layer` - and returns an error when it is zero, before the one
-  site in the image that issues `l4_SETUP` is ever reached.  See
-  [imodem-firmware-trace.md](imodem-firmware-trace.md).  Every configuration
-  hypothesis tested against `ATD` was therefore tested against a gate that
-  none of them could open.
+* ~~**The modem's TEI request is never transmitted.**~~ It is transmitted now.
+  The correction was to drive the LIU to the value that the part actually uses
+  for an activated interface
+  ([imodem-liu-state-field.md](imodem-liu-state-field.md)). The runs now show
+  that `ID_REQUEST` arrives and a TEI is assigned, that layer 2 is established
+  from the SABME of the modem, and that the call rings. The queued frame in
+  [imodem-tei-request.md](imodem-tei-request.md) was a symptom of the layer-1
+  state. It was not a defect of the transmit path.
+* **`ATD` is gated on the data link, so it is not a second problem.** The
+  `'D'` handler at `0xcc6a3` reads `ce0:8d7d` - the byte that `ATI12` prints as
+  `Data Link Layer`. It returns an error when that byte is zero, before it gets
+  to the one site in the image that issues `l4_SETUP`. Refer to
+  [imodem-firmware-trace.md](imodem-firmware-trace.md). Thus we tested each
+  configuration hypothesis with `ATD` against a gate that none of them could
+  open.
 
-One thing the peer cannot do yet, and the reason is the firmware's:
-**terminal-initiated activation**.  In I.430 a TE that wants the line up
-sends INFO1, and on this board that would be the firmware writing the
-Am79C30A's `LIU_LMR1`.  It writes it once at init, `0x40`, and never again
-in any run observed here - so there is no request to answer, and inventing a
-bit that means one would be asserting something the image has not shown.
-The NT activating on its own is what the runs above use.
+The peer cannot yet do one thing, and the reason is in the firmware:
+**terminal-initiated activation**. In I.430, a TE that wants the line to start
+sends INFO1. On this board, that would be a write of the firmware to
+`LIU_LMR1` of the Am79C30A. The firmware writes it one time at init, `0x40`,
+and never again in the runs that we observed. Thus there is no request to
+answer. If we invented a bit with that meaning, we would assert something that
+the image has not shown. The runs above use the activation by the NT itself.
 
-Also worth writing down, because it cost a detour: the ISDN block's TEI field
-is at **index 88**, two ASCII characters, not the index 86 that
-[imodem-config-sector.md](imodem-config-sector.md) lists.  `AT*T1=0` followed
-by `AT&W` stores `30 30` there, which `ATI12` reads back as `Automatic TEI`.
+We also record this, because it caused a detour: the TEI field of the ISDN
+block is at **index 88**, two ASCII characters. It is not at index 86, as
+[imodem-config-sector.md](imodem-config-sector.md) says. `AT*T1=0` followed by
+`AT&W` stores `30 30` there, and `ATI12` reads it back as `Automatic TEI`.
 
 ## The store makes this repeatable
 
-None of the above needs a sector cut out by hand any more.  `isdn-run` keeps
-the part's non-volatile region - the 32 KiB above the update payload, which
-is the three top boot sectors - in `flashnvram.sav` between runs, so a
-session that types settings and `AT&W` leaves them there for the next one.
-`--no-flash-nvram` runs against an erased store.
+None of the above needs a sector cut out by hand now. `isdn-run` keeps the
+non-volatile region of the part - the 32 KiB above the update payload, which is
+the three top boot sectors - in `flashnvram.sav` between runs. Thus, if a
+session types settings and `AT&W`, the settings stay there for the next
+session. `--no-flash-nvram` runs against an erased store.
 
 ## The peer's timers, and what it does not pretend
 
-Two corrections to the peer, both found by reading the firmware's own trace
-log ([imodem-firmware-trace.md](imodem-firmware-trace.md)):
+We made two corrections to the peer. We found both when we read the trace log
+of the firmware ([imodem-firmware-trace.md](imodem-firmware-trace.md)):
 
-* **T303.**  A SETUP with no response is retransmitted once after four
-  seconds and the call is then cleared, as Q.931 has the network do.  Before
-  that the peer reported `call-present` for the rest of a run, which made a
-  call no terminal ever took look like one in progress.
-* **A line that goes down underneath it.**  The peer only ever read back the
-  line state it had set itself.  If the firmware deactivates its own LIU the
-  peer now notices, drops its layer-2 and call state, and leaves the line
-  down rather than walking it straight back up - an NT that immediately
-  re-activated would hide the thing worth looking at.
+* **T303.** If a SETUP gets no response, the peer transmits it again one time
+  after four seconds, and then clears the call, as Q.931 tells the network to
+  do. Before this correction, the peer reported `call-present` for the
+  remaining part of a run. Thus a call that no terminal took looked like a call
+  in progress.
+* **A line that goes down below it.** Before, the peer only read back the line
+  state that it had set itself. Now, if the firmware deactivates its own LIU,
+  the peer sees this. It drops its layer-2 and call state, and keeps the line
+  down. It does not move the line back up immediately - an NT that activated
+  again immediately would hide the thing that we want to see.
 
-Worth being precise about the second one, because it is a safety net rather
-than a fix for anything observed: in the incoming-call runs the LIU **does
-not** move.  The firmware reports `LINE_NOT_ACTIVE` while its own stored
-state still says F7.  That is the firmware's layer-1 machine changing its
-mind, not the line changing, and no peer change affects it.
+It is important to be exact about the second correction, because it is a
+safety net and not a fix for an observed problem: in the incoming-call runs,
+the LIU **does not** move. The firmware reports `LINE_NOT_ACTIVE` while its own
+stored state still says F7. That is the layer-1 machine of the firmware that
+changes its decision. The line does not change, and no change to the peer has
+an effect on it.

@@ -1,39 +1,38 @@
 # Inbound SIP: a real Courier calls the I-modem
 
-This run reverses the existing live-call direction. A physical analogue
-Courier originates a call through Asterisk; Asterisk sends the INVITE to the
-emulator; the virtual NT presents a 3.1 kHz, mu-law Q.931 SETUP to the I-modem.
-The SIP response follows what the I-modem actually does: 100 Trying on INVITE,
-180 Ringing on ALERTING. Q.931 CONNECT starts the local bearer, but SIP 200 OK
-with PCMU SDP waits for the DSP's answer waveform: at least 160 samples with
-32 samples of decoded magnitude at least 128. The beginning of that waveform
-is buffered and transmitted after accepting the call. This avoids exposing
-the caller to the several seconds of idle bearer seen before the answer tone
-in the 2026-10-03 physical Courier capture. Physical training with this change
-still needs a live retest.
+This run uses the opposite direction of the existing live call. A physical analogue
+Courier starts a call through Asterisk. Asterisk sends the INVITE to the
+emulator. The virtual NT sends a 3.1 kHz, mu-law Q.931 SETUP to the I-modem.
+The SIP response follows the actual behavior of the I-modem: 100 Trying on INVITE,
+180 Ringing on ALERTING. Q.931 CONNECT starts the local bearer. But the SIP 200 OK
+with the PCMU SDP waits for the answer waveform of the DSP: a minimum of 160 samples, with
+32 samples of decoded magnitude of 128 or more. The emulator keeps the start of that waveform
+in a buffer and transmits it after it accepts the call. Thus, the caller does not get
+the idle bearer of some seconds that occurred before the answer tone
+in the physical Courier capture of 2026-10-03. A live retest is still necessary to see the
+physical training with this change.
 
-`--bri-sip-register` registers the local contact using the configured username
-and password. Without it, configure the Asterisk extension as a static contact.
-Registration is renewed at 80% of the registrar's accepted lifetime, with a
-fresh authentication attempt on each renewal. The requested lifetime is 300
-seconds; without renewal, the extension disappears after five minutes even
-though the emulator is still running.
-The `--bri-sip` address must be the Asterisk signalling address because the UDP
-socket accepts the INVITE and subsequent dialog requests from that peer.
+`--bri-sip-register` registers the local contact with the configured username
+and password. If you do not use it, configure the Asterisk extension as a static contact.
+The emulator renews the registration at 80% of the lifetime that the registrar accepted. It makes a
+new authentication attempt at each renewal. The requested lifetime is 300
+seconds. Without renewal, the extension disappears after five minutes, although
+the emulator continues to run.
+The `--bri-sip` address must be the signalling address of Asterisk, because the UDP
+socket accepts the INVITE and the subsequent dialog requests from that peer.
 
-Incoming calls can be repeated in the same process after call clearing. The
-incoming-call check uses the current idle call state, independently of the
-one-shot guard for `--bri-call-at`. Clearing also resets the ringing flag and
-answer/receive buffers, including when a caller cancels before answer.
+You can receive more incoming calls in the same process after the call clears. The
+incoming-call check uses the current idle call state. It is independent of the
+one-shot guard for `--bri-call-at`. The call clearing also resets the ringing flag and the
+answer/receive buffers. This also occurs when a caller cancels before the answer.
 
-Create an artifact directory, then run the emulator in terminal mode so it
-stays available while the physical Courier originates:
+Make an artifact directory. Then run the emulator in terminal mode, so that it
+stays available while the physical Courier starts the call:
 
-The launcher defaults to 8N1, including when loading an older custom flash
-profile. Set the physical Courier terminal to 8N1 too. Use `--dte-framing stored`
-to preserve an explicitly saved serial format, or choose a format explicitly
-with `--dte-framing`. Inspect ATI4 if received text has unexpected high-bit
-characters.
+The launcher uses 8N1 by default. This also applies when it loads an older custom flash
+profile. Set the terminal of the physical Courier to 8N1 too. To keep an explicitly saved serial format,
+use `--dte-framing stored`. To select a format explicitly, use
+`--dte-framing`. If the received text has unexpected characters with the high bit set, examine ATI4.
 
 ```sh
 mkdir -p artifacts/imodem-inbound-sip-live
@@ -48,12 +47,12 @@ mkdir -p artifacts/imodem-inbound-sip-live
     --bri-tx-g711 artifacts/imodem-inbound-sip-live/imodem-to-caller.g711
 ```
 
-At the I-modem terminal, enter `ATS0=1`. Once it replies `OK`, dial the
-extension from the real Courier. End the run with Ctrl-]. Save the JSON report
-printed on stderr as `artifacts/imodem-inbound-sip-live/run.json` (or redirect
-stderr when starting the command).
+At the I-modem terminal, enter `ATS0=1`. When it replies `OK`, dial the
+extension from the real Courier. To stop the run, push Ctrl-]. Save the JSON report
+that the emulator prints on stderr as `artifacts/imodem-inbound-sip-live/run.json`. (You can also redirect
+stderr when you start the command.)
 
-Analyze both directions and make listenable WAV files:
+Analyze the two directions and make WAV files that you can listen to:
 
 ```sh
 .venv/bin/python tools/analyze_bri_sip_audio.py \
@@ -64,86 +63,86 @@ Analyze both directions and make listenable WAV files:
 
 The evidence has three independent parts:
 
-1. `bri.media_peer.sip.rtp_octets_received` says how many caller octets reached
-   the RTP socket. `bri.media_peer.octets.received_from_rtp` counts how many
-   were taken by the B-channel bridge. The exact bearer accounting identity is
-   `received_from_rtp + silence_filled == bri.media.rx_delivered`; received RTP
-   can exceed the consumed count by a final queued partial block.
-2. `imodem-to-caller.g711` is captured at the DSP-facing B channel before RTP.
-   A strong 2100 Hz window (and, over a sufficiently long interval, the 15 Hz
-   ANSam modulation sidebands) shows that the I-modem's answer signal reached
-   the bearer.
-3. `caller-to-imodem.g711` contains only actual received RTP payload, never
-   silence inserted for pacing. Non-idle audio with V.8 V.21 energy near
-   980/1180 Hz demonstrates that the originating Courier's negotiation traffic
-   reached the bridge; the delivered counter above closes the path to the DSP
+1. `bri.media_peer.sip.rtp_octets_received` gives the number of caller octets that got to
+   the RTP socket. `bri.media_peer.octets.received_from_rtp` counts the octets that
+   the B-channel bridge took. The exact accounting identity of the bearer is
+   `received_from_rtp + silence_filled == bri.media.rx_delivered`. The received RTP
+   can be larger than the consumed count by a final partial block in the queue.
+2. The emulator captures `imodem-to-caller.g711` at the B channel on the DSP side, before RTP.
+   A strong 2100 Hz window shows that the answer signal of the I-modem got to
+   the bearer. Over a sufficiently long interval, the 15 Hz
+   ANSam modulation sidebands also show this.
+3. `caller-to-imodem.g711` contains only actual received RTP payload. It never contains
+   silence that the emulator added for pacing. Audio that is not idle, with V.8 V.21 energy near
+   980/1180 Hz, shows that the negotiation traffic of the originating Courier
+   got to the bridge. The delivered counter above completes the path to the DSP
    bearer.
 
-The original outbound scenario is unchanged: supplying `--bri-sip-target` (or
-letting the modem's dialled digits populate it) still makes `BearerSipLine`
-call `SipSession.start_call()` and use the existing authenticated INVITE flow.
+The original outbound scenario does not change. If you supply `--bri-sip-target` (or
+let the dialled digits of the modem fill it), `BearerSipLine` still
+calls `SipSession.start_call()` and uses the existing authenticated INVITE flow.
 
-During a live SIP B channel, the C51 digital-PCM peripheral is paced from
-monotonic wall time at 40.32 MHz. The supervisor PIT and periodic RTOS/mailbox
-service interrupts use wall time during the same live call. Previously those
-timers followed CPU instruction progress, which could run substantially slower
-than the real-time DSP under load. Clock transitions preserve elapsed time
-across hangup and subsequent calls. The report's `pit.time_seconds` and
-`pit.cpu_time_seconds` expose the difference. Offline instruction-budget runs
-keep deterministic instruction coupling. A focused regression
-checks that 100 ms produces 800 bearer frames and that leaving the call starts
-a fresh clock epoch rather than catching up idle time.
+During a live SIP B channel, monotonic wall time at 40.32 MHz paces the C51 digital-PCM
+peripheral. The supervisor PIT and the periodic RTOS/mailbox
+service interrupts use wall time during the same live call. Before, those
+timers followed the progress of the CPU instructions. Under load, this could be much slower
+than the real-time DSP. The clock transitions keep the elapsed time
+across hangup and subsequent calls. The `pit.time_seconds` and
+`pit.cpu_time_seconds` values of the report show the difference. Offline runs with an instruction budget
+keep the deterministic coupling to instructions. A focused regression
+checks that 100 ms gives 800 bearer frames. It also checks that when the call stops, a
+new clock epoch starts, and the clock does not catch up the idle time.
 
-Live DSP catch-up yields at a PCM-frame boundary after a one-millisecond
-host-time slice so the supervisor can service interrupts during a backlog.
-The absolute DSP target is retained for subsequent slices. Clock-source
-agreement alone does not prove that the firmware receives every tick:
-`pit.coalesced_timer_edges` counts timer requests lost to multiple elapsed
-periods or an already-pending PIC request. The timestamped capture launcher
-is `python -m tools.run_imodem_inbound_trace --extension 2903`; it saves each
-run in a fresh directory and uses the existing PBX test account.
+The live DSP catch-up yields at a PCM-frame boundary after a host-time slice of one millisecond.
+Thus, the supervisor can service interrupts during a backlog.
+The absolute DSP target stays for the subsequent slices. If the clock sources
+agree, this alone does not prove that the firmware receives each tick.
+`pit.coalesced_timer_edges` counts timer requests that were lost because multiple
+periods elapsed, or because a PIC request was already pending. The capture launcher with timestamps
+is `python -m tools.run_imodem_inbound_trace --extension 2903`. It saves each
+run in a new directory, and it uses the existing PBX test account.
 
-The 2026-10-03 hardware call reached V.34 at 31,200/33,600 with 37.5 dB
-reported SNR, but was not error-free: the Courier reported 100 retransmissions
-and 23 block errors; the I-modem reported 88 retransmissions and 826 block
-errors. The endpoints reported roughly four minutes versus 52 seconds of
-connected time. This prompted the supervisor clock correction; it does not
-establish that timer drift caused the x2 failure. The pre-fix report and G.711
-captures are preserved in `artifacts/real-courier-call-clock-audit-20261003/`.
-A new hardware call is required to verify the effect on training and errors.
+The hardware call of 2026-10-03 got to V.34 at 31,200/33,600 with a reported SNR of 37.5 dB.
+But it had errors. The Courier reported 100 retransmissions
+and 23 block errors. The I-modem reported 88 retransmissions and 826 block
+errors. The endpoints reported about four minutes against 52 seconds of
+connected time. Because of this, we corrected the supervisor clock. It does not
+show that timer drift caused the x2 failure. The report and the G.711
+captures from before the fix are kept in `artifacts/real-courier-call-clock-audit-20261003/`.
+A new hardware call is necessary to verify the effect on training and errors.
 
 ## Live result, 2026-09-13
 
-Extension 6000 was registered on local UDP 5062 and a physical Courier on
-`/dev/cu.usbserial-1140` (source extension 8403) dialled `ATDT6000`. Because the
-I-modem's directory number is 7349195, the run used
+Extension 6000 was registered on local UDP 5062. A physical Courier on
+`/dev/cu.usbserial-1140` (source extension 8403) dialled `ATDT6000`. The
+directory number of the I-modem is 7349195. Thus, the run used
 `--bri-call-to 7349195` to map the PBX extension to that Q.931 number.
 
 The signalling capture contains REGISTER/401/authenticated REGISTER/200,
 INVITE/100/180/200/ACK, and BYE/200. Q.931 contains SETUP, ALERTING, CONNECT,
 DISCONNECT cause 16, and RELEASE_COMPLETE. The active bearer delivered 107,871
-octets, of which 107,681 came from RTP and only 190 were pacing fill. It emitted
-107,871 octets toward RTP, 101,805 of them non-idle.
+octets. Of these, 107,681 came from RTP, and only 190 were pacing fill. It sent
+107,871 octets to RTP, and 101,805 of them were not idle.
 
 The caller capture has a strong 1300 Hz calling tone and V.21 energy at 980 and
 1180 Hz. The I-modem capture has a 2100 Hz carrier with sideband-to-carrier
-ratios 0.0915 at 2084.95 Hz and 0.0736 at 2115.05 Hz: ANSam reached the DSP
-bearer. Both modems nevertheless ended `NO CARRIER`; transport is established,
-but training did not complete. The machine-readable result, PCAP, raw G.711,
-WAV files, and spectral report are in
+ratios of 0.0915 at 2084.95 Hz and 0.0736 at 2115.05 Hz. Thus, ANSam got to the DSP
+bearer. But the two modems stopped with `NO CARRIER`. The transport operates,
+but the training did not complete. The machine-readable result, the PCAP, the raw G.711,
+the WAV files, and the spectral report are in
 `artifacts/imodem-inbound-sip-live-20260913/`.
 
 ## Pacing retest, 2026-09-13
 
-The same physical Courier and `6000/6000` Asterisk account were used after the
+We used the same physical Courier and the `6000/6000` Asterisk account after the
 wall-clock correction. The connected leg received 107,840 RTP octets and sent
-108,320: 13.480 and 13.540 seconds respectively, a 0.45% duration difference.
-The BRI bridge clocked 108,457 frames (13.557 seconds) and filled 1,314 frames
-of genuine startup/network underrun. This replaces the earlier run's 13.48
-seconds of transmitted bearer during a 29.74-second call.
+108,320. This is 13.480 and 13.540 seconds, a duration difference of 0.45%.
+The BRI bridge clocked 108,457 frames (13.557 seconds). It filled 1,314 frames
+of real startup/network underrun. The earlier run had only 13.48
+seconds of transmitted bearer during a call of 29.74 seconds. This run replaces it.
 
 The new caller capture contains V.21 energy at 980 and 1180 Hz. The I-modem
-capture again has a strong 2100 Hz ANSam carrier and sideband-to-carrier ratios
+capture again has a strong 2100 Hz ANSam carrier, with sideband-to-carrier ratios
 of 0.0817 at 2084.95 Hz and 0.0689 at 2115.05 Hz. The physical call still did
-not train to carrier, but the DSP bearer and RTP clock now agree; the evidence
+not train to carrier. But the DSP bearer and the RTP clock now agree. The evidence
 is in `artifacts/imodem-inbound-sip-paced-20260913/`.

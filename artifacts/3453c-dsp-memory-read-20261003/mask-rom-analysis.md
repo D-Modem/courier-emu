@@ -1,14 +1,14 @@
 # Mask ROM assessment
 
-The full capture does **not** expose the internal mask-ROM array.
+The full capture does **not** show the internal mask-ROM array.
 
-- Words `0000..0FFD`: all 4,094 match downloaded firmware segment 7 exactly.
-- Words `1000..7623`: all 26,148 match the patched resident segment 5 exactly.
-- The captured resident startup sets PMST to `18B8`: bit 3 (`MP/MC`) is 1, disabling the internal ROM in program space. This is static startup evidence, not a direct live PMST measurement.
+- Words `0000..0FFD`: all 4,094 words are exactly the same as downloaded firmware segment 7.
+- Words `1000..7623`: all 26,148 words are exactly the same as the patched resident segment 5.
+- The captured resident startup sets PMST to `18B8`. Bit 3 (`MP/MC`) is 1, and this disables the internal ROM in program space. This is static evidence from the startup code. It is not a direct live measurement of PMST.
 
-The dump command reads the current program map and never changes MP/MC. A separate ROM-mapping probe is required to obtain the actual silicon ROM; ROM size/protection on this part remain to be established. The repository’s older-board recovered ROM is not a reference image for this different DSP mask.
+The dump command reads the current program map and never changes MP/MC. To get the actual silicon ROM, a separate ROM-mapping probe is necessary. The ROM size and the ROM protection on this part are not yet known. The recovered ROM of the older board in the repository is not a reference image for this different DSP mask.
 
-[TI C5x User’s Guide](https://www.ti.com/lit/ug/spru056d/spru056d.pdf), section 2.3.1, documents removing boot ROM by setting PMST.MP/MC.
+The [TI C5x User’s Guide](https://www.ti.com/lit/ug/spru056d/spru056d.pdf), section 2.3.1, tells how to remove the boot ROM: set PMST.MP/MC.
 
 Captured startup instructions:
 

@@ -1,31 +1,35 @@
 # I-modem terminal diagnosis, 2026-09-12
 
-See [the diagnosis](../../docs/imodem-terminal-framing.md).
+Refer to [the diagnosis](../../docs/imodem-terminal-framing.md).
 
-All runs used local `Ie030002.nac`, the existing `flashnvram.sav` loaded
-read-only, default external enclosure, no DSP execution, and unfiltered
-serial output with the parity bit removed for readability.
+All runs used these conditions:
 
-* `raw-session.json`: AT, ATI, ATI6, ATY11, AT, ATI3, AT, spaced by 5M
-  instructions after a 5M warmup. Shows the unintended keypress abort.
-* `spaced-session.json`: ATI, ATI6, ATY11, AT, ATI3 at 20M intervals. Shows
-  aborts and accumulated old diagnostics even with widely spaced input.
-* `route.json`: one ATI command; parser entry, buffer contents, `[d16f]=1`,
-  carry-set return, and the branch into call handling.
-* `suffix-session.json`: CR, I, I6, Y11, CR at 20M intervals. Shows that
-  removing the prefix produces OK but alone does not reset the buffer.
+- The local `Ie030002.nac`.
+- The existing `flashnvram.sav`, loaded read-only.
+- The default external enclosure.
+- No DSP execution.
+- Serial output without a filter, with the parity bit removed to make it easier to read.
+
+* `raw-session.json`: AT, ATI, ATI6, ATY11, AT, ATI3, AT, with 5M
+  instructions between them after a 5M warmup. It shows the keypress abort that we did not intend.
+* `spaced-session.json`: ATI, ATI6, ATY11, AT, ATI3 at 20M intervals. It shows
+  aborts and old diagnostics that accumulate, also when the input has wide spaces.
+* `route.json`: one ATI command. It shows the parser entry, the buffer contents, `[d16f]=1`,
+  the return with carry set, and the branch into call handling.
+* `suffix-session.json`: CR, I, I6, Y11, CR at 20M intervals. It shows that
+  when you remove the prefix, you get OK, but this alone does not reset the buffer.
 * `prefix-handler-session.json`: AT, ATI, ATI6, ATY11, AT at 20M intervals
-  with the diagnostic external RX handler selection. All five return OK.
-* `verified-responses.json`: the successful experiment's output grouped by
-  command. Checked for five OK result codes, a zero disconnect cause, and
-  absence of old diagnostic reports in later responses.
+  with the diagnostic selection of the external RX handler. All five return OK.
+* `verified-responses.json`: the output of the successful experiment, in groups for each
+  command. We checked for five OK result codes, a zero disconnect cause, and
+  no old diagnostic reports in later responses.
 
-`probe.py` reproduces a five-command session in legacy raw, suffix-only, or
-prefix-handler mode. Run it from the repository root; use `--help` for its
-arguments. Since the normal emulator now selects the prefix handler, the raw
-and suffix modes deliberately restore the former body-receiver dispatch for
-comparison. The saved traces predate the production fix.
+`probe.py` does a five-command session again in one of these modes: legacy raw, suffix-only, or
+prefix-handler. Run it from the root of the repository. For its arguments, use `--help`.
+The normal emulator now selects the prefix handler. Thus, the raw
+and suffix modes intentionally restore the former body-receiver dispatch for
+comparison. The saved traces are from before the production fix.
 
-The JSON event count `n` is the guest instruction count. Addresses in
-`state`/`mem` are offsets within segment 2600; write-hook `address` and `pc`
-values are physical addresses. State bytes are hexadecimal in memory order.
+The JSON event count `n` is the guest instruction count. The addresses in
+`state`/`mem` are offsets in segment 2600. The write-hook `address` and `pc`
+values are physical addresses. The state bytes are hexadecimal, in memory order.

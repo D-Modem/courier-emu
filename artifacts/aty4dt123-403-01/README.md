@@ -1,8 +1,9 @@
 # ATY4DT123 on emulated 403
 
-Ran the exact command `ATY4DT123` for 80,000,000 supervisor instructions,
-with the recovered boot ROM, board ID 7, fixture EEPROM, a 5 ms tick and a
-behavioral dial-tone DAA. No physical modem or external call was used.
+We ran the exact command `ATY4DT123` for 80,000,000 supervisor instructions.
+The run used the recovered boot ROM, board ID 7, the fixture EEPROM, a 5 ms
+tick and a behavioral dial-tone DAA. We did not use a physical modem or an
+external call.
 
 Serial response:
 
@@ -10,23 +11,24 @@ Serial response:
 CALL PROGRESS
 ```
 
-The firmware consumed the entire command, asserted the panel's hook relay at
-instruction 37,704,462, and sent the DSP's tag-13 tone-selector commands
-`0013:0001`, `0013:0002`, `0013:0003`, once each. These match digits 1, 2 and 3
-in the recovered 3.1.2 tone-selector mapping.
+The firmware consumed all of the command. It asserted the hook relay of the
+panel at instruction 37,704,462. It sent the tag-13 tone-selector commands of
+the DSP, `0013:0001`, `0013:0002`, `0013:0003`, one time each. These agree with
+digits 1, 2 and 3 in the recovered 3.1.2 tone-selector mapping.
 
-The run ended at its instruction limit, with no CONNECT or terminal failure
-response. The DSP remained active with no error and zero ROM holes.
+The run stopped at its instruction limit. It did not give a CONNECT or a
+terminal failure response. The DSP stayed active, with no error and zero ROM
+holes.
 
-The panel reports off-hook, but the behavioral DAA remains idle/on-hook with
-zero generated samples. Thus the configured dial-tone source did not reach the
-line model on this ROM path. The bridge's `dial_digits` summary is also empty;
-the firmware mailbox trace, not that helper field, is the evidence for the
-three requested digits. This run does not establish emitted DTMF audio or a
-working connection.
+The panel reports off-hook, but the behavioral DAA stays idle/on-hook with
+zero generated samples. Thus the configured dial-tone source did not get to
+the line model on this ROM path. The `dial_digits` summary of the bridge is
+also empty. The evidence for the three requested digits is the firmware
+mailbox trace, not that helper field. This run does not show emitted DTMF
+audio or a working connection.
 
-`report.json` contains the full run; `serial.txt` has parity-decoded output.
-Reproduce from the repository root with:
+`report.json` contains the full run. `serial.txt` has the parity-decoded
+output. To reproduce it from the repository root, use this command:
 
 ```sh
 .venv/bin/python artifacts/aty4dt123-403-01/run.py

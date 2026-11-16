@@ -1,51 +1,59 @@
 # Reading the board through its monitor, and the DSP mask ROM
 
 The physical target is the 20.16 MHz unit on `/dev/cu.usbserial-21210`, serial
-`0009540034268322` - US/Canada external, 512 KiB flash, 64 KiB RAM, supervisor
-7.3.14 / DSP 3.0.13 dated 03/13/98. Those version strings match the reference
-`IDSDL302.ROM` but do not prove identical firmware.
+`0009540034268322`. It is a US/Canada external unit with 512 KiB flash and
+64 KiB RAM, supervisor 7.3.14 / DSP 3.0.13, dated 03/13/98. These version
+strings are the same as in the reference `IDSDL302.ROM`. But they do not prove
+that the firmware is identical.
 
 > **Provenance.** `firmware/legacy-usrobotics/IDSDL302.ENG` describes a
-> *modified* 20.16 MHz release based on the stock 03/13/98 SDL, adding
-> configuration and memory-editing commands. Do not treat the reference ROM as
-> an unmodified stock replacement for this unit. The captured image differs from
-> the pinned reference in 11,295 bytes.
+> *modified* 20.16 MHz release. It is based on the stock 03/13/98 SDL and adds
+> commands for configuration and for memory edits. Do not use the reference ROM
+> as an unmodified stock replacement for this unit. The captured image is
+> different from the pinned reference in 11,295 bytes.
 
 ## The mask ROM has not been read, and the readback route is closed
 
 A TMS320C52 has a **4K x 16 mask-programmable ROM at program words
-`0000..0fff`** - not throughout `0000..7fff`. The downloaded image starts at
-`8000`; lower addresses like `23f0`, `2100..2593` and `7a80` can be external or
-installed program RAM but cannot be part of the ROM array.
+`0000..0fff`**. The ROM does not fill all of `0000..7fff`. The downloaded image
+starts at `8000`. Lower addresses, for example `23f0`, `2100..2593` and `7a80`,
+can be external program RAM or installed program RAM. But they cannot be part
+of the ROM array.
 
-Three separate questions, not one:
+There are three separate questions:
 
 | question | current answer |
 |---|---|
-| Does a C52 die contain mask-ROM hardware? | Yes: 4K words at `0000..0fff`. The package marking still needs photographing to make the identification physical rather than instruction-set inference. |
-| Is this unit's ROM programmed with the Courier bootstrap? | Strongly suggested, not hardware-proven. The unit accepts and starts a download at `8000` after reset, but an ASIC sequencer writing external DSP program RAM while the core is reset remains an architectural alternative. |
-| Can externally supplied code or JTAG read it? | Unknown until the mask-programmable protection option is tested on this unit. |
+| Does a C52 die contain mask-ROM hardware? | Yes: 4K words at `0000..0fff`. We must photograph the package marking to make the identification physical. Now it is only an inference from the instruction set. |
+| Is this unit's ROM programmed with the Courier bootstrap? | This is very probable, but the hardware does not prove it. After reset, the unit accepts and starts a download at `8000`. But an ASIC sequencer that writes external DSP program RAM while the core is in reset is still an alternative architecture. |
+| Can externally supplied code or JTAG read it? | Unknown, until we do a test of the mask-programmable protection option on this unit. |
 
-TI's protection option, if programmed, makes an instruction fetched from
-off-chip memory read invalid bus data for an on-chip program operand, and blocks
-the emulator - so a downloaded `8000` probe and an ordinary JTAG dump both fail
-by design. **On-chip SARAM is not on that exclusion list**, which is the one
-gap in it.
+If the TI protection option is programmed, an instruction fetched from off-chip
+memory reads invalid bus data for an on-chip program operand. The option also
+blocks the emulator. Thus a downloaded `8000` probe and a usual JTAG dump both
+fail by design. **On-chip SARAM is not on that exclusion list.** This is the
+one gap in the protection.
 
-The non-destructive discriminator, if a scope goes on the board: photograph the
-DSP marking and match it against the C52/C52LC PJ or PZ pinout; **observe
-`MP/MC` at DSP reset** (low maps the internal ROM, high maps external program
-memory - the pin is sampled only at reset, while the `PMST` bit can change
-later); and watch `PS`, `STRB` and enough address lines during reset. An
-external program fetch at address zero supports `MP/MC = 1`; no such fetch while
-the download handshake executes supports internal ROM execution.
+This is the non-destructive discriminator, if you put an oscilloscope on the
+board:
+
+1. Photograph the DSP marking and compare it with the C52/C52LC PJ or PZ
+   pinout.
+2. **Monitor `MP/MC` at DSP reset.** Low maps the internal ROM, and high maps
+   external program memory. The pin is sampled only at reset, but the `PMST`
+   bit can change later.
+3. Monitor `PS`, `STRB` and sufficient address lines during reset.
+
+An external program fetch at address zero supports `MP/MC = 1`. If there is no
+such fetch while the download handshake executes, that supports execution from
+the internal ROM.
 
 ### Why the host-side route closes
 
-The DSP has a real bulk readback channel to the host - arm it with a mailbox
-tag, pump it with `0x1c` bit 2, read words at ports `0x60`/`0x62`. It is
-verified end to end on hardware. Tag `46` is the closest it comes to a dump,
-because its handler table-reads four **program** words before streaming them:
+The DSP has a real bulk readback channel to the host. You arm it with a mailbox
+tag, pump it with `0x1c` bit 2, and read words at ports `0x60`/`0x62`. We
+verified it end to end on hardware. Tag `46` is the nearest to a dump, because
+its handler reads four **program** words from a table before it streams them:
 
 ```text
 84d4  splk  @1e, #8617         ; arm: 16 words from ff80
@@ -55,12 +63,12 @@ because its handler table-reads four **program** words before streaming them:
 84dc  tblr  *+  ...            ; four program words into ff80..ff83
 ```
 
-The arithmetic is unmasked, so the index reaches any 16-bit program address, the
-mask ROM included. **Every piece a dump needs is present except control of the
-index**, and the index cannot be controlled.
+The arithmetic has no mask. Thus the index can get to all 16-bit program
+addresses, which include the mask ROM. **All parts that a dump needs are
+present, except control of the index.** And we cannot control the index.
 
-`03db` has exactly two writers. `9773` only reads it; `ae98` writes what `ae12`
-returns, and `ae12` is a **six-way priority encoder**:
+`03db` has exactly two writers. `9773` only reads it. `ae98` writes the return
+value of `ae12`, and `ae12` is a **six-way priority encoder**:
 
 ```text
 ae12  call  ade8
@@ -73,30 +81,30 @@ ae21  bit   14, @7d ; lacl #01 ; retc tc
 ae24  lacl  #00 ; ret
 ```
 
-It tests five bits, highest first, and falls through to zero. **Its output is
-`0..5` by construction**, so no control over its input can widen the range. The
-reader's address is confined to `860b..8610` by the shape of the encoder, not by
-a clamp that might be bypassed. That closes the `84d3` route regardless of what
-feeds it.
+It does a test of five bits, from the highest bit, and gives zero if no bit is
+set. **By construction, its output is `0..5`.** Thus no control of its input can
+make the range larger. The shape of the encoder limits the address of the
+reader to `860b..8610`. This is not a clamp that you can bypass. Thus the
+`84d3` route is closed, whatever its input is.
 
-Tracing the input anyway found something worth keeping: `ade8` ANDs four cells
-at `ffb0..ffb3`, and **`ffb1` is host-writable through tag `48`**, whose handler
-is `smmr @7a, #ffb1 ; ret` with no range test at all - the only completely
-unclamped host write into DSP data space found. `ffb2` derives from it in turn.
-It does not help here, because an AND only clears bits and the other two terms
-come from a call-setup routine an idle unit has not run: tested directly in
-`artifacts/dsp-window-index-01/`, tag `48` with `ffff` then tag `46` armed and
-pumped still returned index `0`.
+We traced the input all the same, and we found an important item. `ade8` does
+an AND of four cells at `ffb0..ffb3`. **The host can write `ffb1` through tag
+`48`.** The handler of that tag is `smmr @7a, #ffb1 ; ret`, with no range test.
+This is the only host write into DSP data space that we found with no clamp.
+`ffb2` is derived from it. But it does not help here. An AND can only clear
+bits, and the other two terms come from a call-setup routine that an idle unit
+has not run. We did a direct test in `artifacts/dsp-window-index-01/`: tag `48`
+with `ffff`, then tag `46` armed and pumped. The index was still `0`.
 
-**The sharpest remaining lead** is `ffb8`/`fff8`. A streamer whose source address
-lives in a data cell would be an arbitrary DSP *data* read if that cell could be
-reached, and the host-writable set includes `fff0`-`fff3` - adjacent to `fff8`,
-but not it.
+**The best remaining lead** is `ffb8`/`fff8`. A streamer has its source address
+in a data cell. If a host could write that cell, the streamer would give an
+arbitrary DSP *data* read. The set that the host can write includes
+`fff0`-`fff3`. That is adjacent to `fff8`, but it does not include it.
 
 ### And the datapump is already in hand anyway
 
-The DSP's program is **downloaded over the I/O ports at every boot**, and the
-load base is pinned:
+The supervisor **downloads the program of the DSP through the I/O ports at each
+boot**, and the load base is known:
 
 - source flash `0x29080`, length `0xd87c` bytes = **27,710 words**
 - extent flash `0x29080..0x368fc`
@@ -106,35 +114,44 @@ load base is pinned:
 flash_offset = 0x29080 + 2 * (dsp_word - 0x8000)
 ```
 
-Two independent checks agree. Flash `0x29080` holds the DSP reset code
-(`LDP #0; SPLK #ffff,@57; SETC INTM`) and maps to word `0x8000`, the address
-`e3aa` requests; and the resident sender at words `83d6..83ff` maps to flash
-`0x2982c..0x2987e`, inside the `[0x29080,0x29880)` startup/sender region
-identified separately. The older `0x29800 + 2·prog` hypothesis puts word `0x8000`
-at `0x39800` and should be discarded.
+Two independent checks agree:
 
-So flash `0x29080..0x368fc` of `courier-board.rom` is, byte for byte, what the
-DSP executes from word `0x8000`. **Reading that out of the DSP would recover a
-copy of something already captured.** What the mask ROM would add is the
-**internal boot ROM** at words `0x0000..0x0fff`, which is the part not in flash.
+- Flash `0x29080` holds the DSP reset code
+  (`LDP #0; SPLK #ffff,@57; SETC INTM`). It maps to word `0x8000`, the address that `e3aa` requests.
+- The resident sender at words `83d6..83ff` maps to flash `0x2982c..0x2987e`.
+  That is in the `[0x29080,0x29880)` startup/sender region, which we identified
+  separately.
 
-One low-memory question stays open. The image proves only the explicit
-`23f0..23f2` write. The loader at `812b` reads its initial `BMAR` from external
-ASIC cell `ff62`, copies four words obtained through `ff58`, increments `BMAR`
-per word and writes the final value back - so nothing in the payload fixes that
-external starting value to `2100..2593`. An exhaustive scan closed the apparent
-lead that five more `bldp` sites install those coefficients: seven payload words
-carry the `57xx` opcode byte, only two are instructions (the fixed `bldp *+` at
-`80a7` and the shared loader at `812b`), and the other five sit inside tables
-rooted at `967a`, `a29a`, `a82a`, `c3a4` and `dc50` with no branch into any of
-them. **That was coefficient data being decoded as code.**
+The older hypothesis `0x29800 + 2·prog` puts word `0x8000` at `0x39800`. Do not
+use it.
+
+Thus flash `0x29080..0x368fc` of `courier-board.rom` is, byte for byte, the code
+that the DSP executes from word `0x8000`. **If we read this code out of the DSP,
+we would only get a copy of data that we already have.** The mask ROM would add
+the **internal boot ROM** at words `0x0000..0x0fff`. That part is not in flash.
+
+One question about low memory is still open. The image proves only the explicit
+`23f0..23f2` write. The loader at `812b` reads its initial `BMAR` from the
+external ASIC cell `ff62`. It copies four words that it gets through `ff58`,
+increments `BMAR` for each word, and writes the final value back. Thus no part
+of the payload sets that external start value to `2100..2593`. There was an
+apparent lead that five more `bldp` sites install those coefficients. An
+exhaustive scan closed that lead:
+
+- Seven payload words contain the `57xx` opcode byte.
+- Only two of them are instructions: the fixed `bldp *+` at `80a7` and the
+  shared loader at `812b`.
+- The other five are in tables with roots at `967a`, `a29a`, `a82a`, `c3a4` and
+  `dc50`. No branch goes into these tables.
+
+**That was coefficient data that we decoded as code.**
 
 ## The monitor
 
 `ATGLK2` is the installed handler at flash `25ba9`. The prefix check is
-`cmp word ptr [si],'LK'` then `cmp byte ptr [si+2],'2'`; after `add si,3` /
-`sub cx,3`, `jcxz` leaves `BL` holding the outer `G`, so a bare `ATGLK2` matches
-no selector. Seven selectors:
+`cmp word ptr [si],'LK'` and then `cmp byte ptr [si+2],'2'`. After `add si,3` /
+`sub cx,3`, `jcxz` leaves the outer `G` in `BL`. Thus a bare `ATGLK2` matches no
+selector. There are seven selectors:
 
 | suffix | target | operation |
 |---|---|---|
@@ -146,33 +163,35 @@ no selector. Seven selectors:
 | `N` | inline `25c3d` | `or byte ptr [25e],1`; sets a flag, prints nothing |
 | `U` | inline `25c8d` | `clc; ret`; accepted and ignored |
 
-Addresses are hex CPU `segment:offset`. Each `=`/`R` request is fixed at 256
-bytes and the offset increments as a 16-bit register, so a request crossing
-`ffff` wraps within the same segment. With only one address number the reader
-uses segment zero.
+Addresses are hex CPU `segment:offset`. Each `=`/`R` request has a fixed length
+of 256 bytes. The offset increments as a 16-bit register, thus a request that
+goes past `ffff` wraps in the same segment. If you give only one address number,
+the reader uses segment zero.
 
 **The modified reference dispatches differently.** On the reference, `25ba9`
-skips `LK2` and dispatches the next character through `c800:0024` to an
-extension at flash `49022`; the physical handler *requires* `LK2` and calls the
-byte reader at `26e20` / word reader at `26e8b` directly. The readers themselves
-match. Do not assume the reference's extension call or optional-prefix behaviour
-on this board.
+skips `LK2`. It sends the next character through `c800:0024` to an extension at
+flash `49022`. The physical handler *must* have `LK2`, and it calls the byte
+reader at `26e20` / word reader at `26e8b` directly. The readers are the same.
+Do not assume that this board has the extension call or the optional-prefix
+behaviour of the reference.
 
-**Hazards.** `I`, `O` and `B` operate on CPU **I/O space**, which is the only
-way to reach `0x40..0x5e` and `0x1c` - the ASIC bootstrap window and mailbox
-latches - since `=` and `R` cannot address I/O at all. But I/O reads are not
-side-effect free: the supervisor's own receive path consumes mailbox replies by
-reading `58..5e`, and `B` sweeps 256 **consecutive** ports unconditionally with
-no way to narrow the range. **Treat `B` as disruptive to a live call and to any
-in-flight mailbox transaction.** `O` is a write, not a diagnostic.
+**Hazards.** `I`, `O` and `B` operate on CPU **I/O space**. This is the only
+method to get to `0x40..0x5e` and `0x1c` (the ASIC bootstrap window and the
+mailbox latches), because `=` and `R` cannot address I/O. But I/O reads can
+have side effects. The receive path of the supervisor consumes mailbox replies
+when it reads `58..5e`. Also, `B` reads 256 **consecutive** ports without
+condition, and you cannot make the range smaller. **`B` can cause problems to a
+live call and to a mailbox transaction that is in progress.** `O` is a write,
+not a diagnostic.
 
-**Every complete response ends with `ERROR`, and the data before it is good.**
-The cause is a parser count defect: `LODSB` at `26e2b` consumes the colon
-without decrementing `CX`, unlike the hex parser's character consumption. An
-isolated execution of the captured handler prints the exact expected 256 bytes
-for `LK2=8000:0000`, returns carry clear, and leaves `CX=1` with `SI` at the
-carriage return. That test bypasses the outer AT dispatcher, so it is a likely
-explanation rather than a reproduced end-to-end result.
+**Each complete response ends with `ERROR`, but the data before it is
+correct.** The cause is a count defect in the parser. `LODSB` at `26e2b`
+consumes the colon but does not decrement `CX`. The hex parser does decrement
+`CX` when it consumes a character. An isolated execution of the captured
+handler for `LK2=8000:0000` prints exactly the 256 expected bytes and returns
+with carry clear. It leaves `CX=1`, with `SI` at the carriage return. That test
+bypasses the outer AT dispatcher. Thus this is a probable explanation, not a
+reproduced end-to-end result.
 
 ## What has been captured off this board
 
@@ -182,50 +201,57 @@ explanation rather than a reproduced end-to-end result.
 | RAM | `0000..feff` | two passes, 65,280 bytes each, 139.44 s, differing at 44 addresses |
 | upper window | physical `10000..1ffff` | two passes, 65,536 bytes each, 144.79 s, differing at 17 bytes |
 
-All three are read-only: `AT`, `ATI7` and `ATGLK2=` only, no upload and no
-memory-write command. Each has an offline audit that re-parses the saved
-responses against the stored blocks and hashes.
+The three captures are read-only. They use only `AT`, `ATI7` and `ATGLK2=`, with
+no upload and no memory-write command. Each capture has an offline audit. The
+audit parses the saved responses again and compares them with the stored blocks
+and hashes.
 
-The first 256 bytes of flash match the reference exactly, including the
-`INT80186 Modem Functions` text. The captured reset stub decodes to flash base
-`80000` and entry `fc00:11e9`. The DSP reset/download block `[e370,e598)`, the
-CPU byte/word readers `[26e20,26eec)` and the DSP startup/sender region
-`[29080,29880)` match the reference exactly; 11,295 bytes elsewhere do not. The
-64 KiB windows at physical `d0000` and `e0000` read entirely `ff`, and erased
-reads cannot distinguish separate blank banks from aliases.
+The first 256 bytes of flash are exactly the same as in the reference. This
+includes the text `INT80186 Modem Functions`. The captured reset stub decodes
+to flash base `80000` and entry `fc00:11e9`. These regions are exactly the same
+as in the reference:
 
-**The upper window is the same RAM.** Five fresh lower/upper/lower groups match
-completely, each upper pass differs from the lower at 45 of 65,280 comparable
-bytes, and 249 of 255 whole pages match exactly - which is the live-RAM churn
-rate the two lower passes already show, not a different device.
+- the DSP reset/download block `[e370,e598)`
+- the CPU byte/word readers `[26e20,26eec)`
+- the DSP startup/sender region `[29080,29880)`
 
-**The RAM capture supplied the cached settings block**, which the emulator was
-missing:
+11,295 bytes in other areas are different. The 64 KiB windows at physical
+`d0000` and `e0000` read as `ff` in all bytes. Erased reads cannot show if
+these are separate blank banks or aliases.
+
+**The upper window is the same RAM.** Five new lower/upper/lower groups match
+fully. Each upper pass is different from the lower pass at 45 of 65,280
+comparable bytes. 249 of 255 full pages match exactly. This is the same rate of
+live-RAM change that the two lower passes show. It is not a different device.
+
+**The RAM capture gave the cached settings block.** The emulator did not have
+this block before:
 
 ```text
 RAM 0752..0763: 64 96 03 08 0b 1a 64 96 03 ef 87 1d ef 87 1d ef 87 1d
 Settings 1..6:  0, 30, 7, 30, 0, 0
 ```
 
-All three redundant copies agree. Setting 3 is `7`, whose bit 0 satisfies the
-serial-output enable condition traced in the firmware.
+The three redundant copies agree. Setting 3 is `7`. Its bit 0 satisfies the
+enable condition for serial output that we traced in the firmware.
 
 ## The CPU I/O port map
 
-Every densely used port is **even and byte-wide**, from `0x00` to `0x62`, a
-peripheral bank at a stride of two. The physical readback confirms the stride
-and extends the bank to `0x7e` - 64 registers rather than the 50 the static
-sites reach.
+All frequently used ports are **even and byte-wide**, from `0x00` to `0x62`.
+They are a peripheral bank with a stride of two. The physical readback confirms
+the stride and extends the bank to `0x7e`. That is 64 registers, not the 50
+registers that the static sites use.
 
-Produced with `tools/io_port_scan.py` over the captured image. A linear sweep
-desynchronizes inside the little-endian datapump and the coefficient table, so
-the scanner accepts an `IN`/`OUT` opcode only when at least four disassemblies
-started at earlier offsets converge on it, and scans only `0x00000..0x29800`,
-`0x44000..0x7c000` and `0x7e000..0x80000`. Ports loaded into `DX` resolve only
-when an immediate `mov dx` reaches the site with no intervening branch, call or
-non-immediate redefinition. The run accepted **971 sites** and left **295 `DX`
-sites unresolved**, so every count below is a lower bound. Consensus decoding is
-a heuristic, and a site's existence does not make its path reachable.
+We made this map with `tools/io_port_scan.py` on the captured image. A linear
+sweep loses synchronization in the little-endian datapump and in the
+coefficient table. Thus the scanner accepts an `IN`/`OUT` opcode only when a
+minimum of four disassemblies that started at earlier offsets agree on it. It
+scans only `0x00000..0x29800`, `0x44000..0x7c000` and `0x7e000..0x80000`. A port
+loaded into `DX` resolves only when an immediate `mov dx` gets to the site with
+no branch, call or non-immediate redefinition between them. The run accepted
+**971 sites** and did not resolve **295 `DX` sites**. Thus each count below is a
+lower limit. Consensus decoding is a heuristic. Also, if a site exists, that
+does not show that its path is reachable.
 
 | port | sites | direction | function |
 |---|---:|---|---|
@@ -242,57 +268,59 @@ a heuristic, and a site's existence does not make its path reachable.
 | `0x50`-`0x5e` | 125 | r/w | Window B and the runtime mailbox. `0x58`/`0x5a` carry tag low/high, `0x5c`/`0x5e` data low/high |
 | `0x60`, `0x62` | 27 | read only | Third 16-bit read window, high byte at `0x62`, low at `0x60` |
 
-The `0x40..0x4e` / `0x50..0x5e` split matches the alternating-window downloader
-at `e47b`: four words through the first bank with strobe 1, four through the
-second with strobe 2.
+The `0x40..0x4e` / `0x50..0x5e` split agrees with the alternating-window
+downloader at `e47b`. It sends four words through the first bank with strobe 1,
+and four words through the second bank with strobe 2.
 
-Sixteen-bit and odd-address forms appear in the scan (`0x03`, `0x05`, `0x0d`,
-`0x11`, `0x1f`, `0x2d`, `0x4f`, `0x57`, `0xc3`), each at one or two isolated
-sites, none corroborated by an emulator run - more likely decode noise than real
-registers. No odd port is driven on hardware, though a dump cannot separate an
-unmapped odd port from a mapped one reading zero.
+The scan also shows sixteen-bit forms and odd-address forms (`0x03`, `0x05`,
+`0x0d`, `0x11`, `0x1f`, `0x2d`, `0x4f`, `0x57`, `0xc3`). Each occurs at one or two
+isolated sites, and no emulator run confirms them. They are more probably decode
+noise than real registers. The hardware does not drive an odd port. But a dump
+cannot show the difference between an unmapped odd port and a mapped port that
+reads zero.
 
-**The `0x60`/`0x62` window** is read-only to the CPU - no write site at either
-port anywhere in the scanned regions. All 27 sites fall in one routine at
-`01fe0..02128`, driven through an indirect continuation vector at `[0x02d3]`
-that each step rewrites to the next, dispatched by `call word ptr [0x2d3]` at
-`00674`. Every step reads 16 bits as `in al,0x62` then `in al,0x60` and appends
-to a buffer walked through `[0x08a2]`, with a countdown at `[0x02d1]`. The
-high-then-low convention is the same one the supervisor uses on `5a`/`58` and
-`5e`/`5c`, so this is a third inbound 16-bit window in the same family. **Its
-producer is the DSP** - see the streamers below.
+**The `0x60`/`0x62` window** is read-only for the CPU. No write site for these
+ports exists in the scanned regions. All 27 sites are in one routine at
+`01fe0..02128`. An indirect continuation vector at `[0x02d3]` controls this
+routine. Each step writes the address of the next step into the vector, and
+`call word ptr [0x2d3]` at `00674` dispatches it. Each step reads 16 bits as
+`in al,0x62` and then `in al,0x60`. It adds the result to a buffer through
+`[0x08a2]`, with a countdown at `[0x02d1]`. The supervisor uses the same
+high-then-low convention on `5a`/`58` and `5e`/`5c`. Thus this is a third
+inbound 16-bit window in the same family. **The DSP is its producer.** Refer to
+the streamers below.
 
-**Nothing reads `0x64`-`0x7e`.** No instruction found in the supervisor reads or
-writes any port in that block; the only code touching it is the `0x60`/`0x62`
-reader. That rests on a raw-byte refutation of every candidate, not on a
-boundary heuristic, and it is not a proof of absence - a `DX` loaded from
-memory, as the downloader does at `0e515`, could in principle reach those ports
-on a path this analysis cannot bound.
+**No code reads `0x64`-`0x7e`.** No instruction that we found in the supervisor
+reads or writes a port in that block. The only code that touches it is the
+`0x60`/`0x62` reader. This result comes from a raw-byte refutation of each
+candidate, not from a boundary heuristic. But it does not prove absence. A `DX`
+loaded from memory, as the downloader does at `0e515`, can possibly get to those
+ports on a path that this analysis cannot limit.
 
-**And the streaming reading of that block is refuted.** Repeated reads do not
-pop, advance or otherwise disturb it, so those are sixteen stable registers and
-the `01fe0` machine is polling one register rather than draining a queue. A
-register that returns the same value on every read cannot carry a stream, which
-removes the block from consideration as a bulk inbound path.
+**Also, the streaming reading of that block is refuted.** Repeated reads do not
+pop, advance or change the block in other ways. Thus these are sixteen stable
+registers, and the `01fe0` machine polls one register. It does not empty a
+queue. A register that gives the same value on each read cannot carry a stream.
+Thus the block is not a candidate for a bulk inbound path.
 
-**The `0xc0`-`0xc6` cluster** is a separate coherent block at `08332..083b5`: it
-sets `PACS` to `0xe000`, sets `[0xff18]` to `0x10`, then reads `0xc2`/`0xc0` and
-writes `0xc4`/`0xc6` while streaming `0x1554` words from segment `0xe000`. It is
-entered from an `AT` handler that first checks for the literal `L` at `08327`.
-Because it reprograms a chip select and drives an otherwise unused port bank,
-treat it as a **device-programming path, not a diagnostic read**, and do not
-invoke it on the physical modem while its function is unknown.
+**The `0xc0`-`0xc6` cluster** is a separate coherent block at `08332..083b5`. It
+sets `PACS` to `0xe000` and sets `[0xff18]` to `0x10`. Then it reads
+`0xc2`/`0xc0` and writes `0xc4`/`0xc6` while it streams `0x1554` words from
+segment `0xe000`. An `AT` handler enters it, after a check for the literal `L`
+at `08327`. This block programs a chip select again and drives a port bank that
+no other code uses. Thus it is a **device-programming path, not a diagnostic
+read**. Do not start it on the physical modem while its function is unknown.
 
 ## The output latches, and how to drive them safely
 
-`ATGLK2O` writes CPU I/O ports, so the three output latches at `0x10`, `0x12`
-and `0x14` are drivable from the AT interface. Part of what follows is physical
-**write** evidence - the first writes of any kind issued to a unit in this
-investigation.
+`ATGLK2O` writes CPU I/O ports. Thus you can drive the three output latches at
+`0x10`, `0x12` and `0x14` from the AT interface. Part of the text that follows is
+physical **write** evidence. These were the first writes of any type that we
+sent to a unit in this investigation.
 
-Two helpers drive the latches, `0x2771` (set bits) and `0x279b` (clear), with
-the port table at `0x27c7`. `AH` is the bit mask and `AL` a descriptor whose bit
-3 must be set; `AL & 3` selects both port and RAM shadow:
+Two helpers drive the latches: `0x2771` (set bits) and `0x279b` (clear bits).
+The port table is at `0x27c7`. `AH` is the bit mask. `AL` is a descriptor, and
+its bit 3 must be set. `AL & 3` selects the port and the RAM shadow:
 
 | `AL` | port | shadow |
 |---|---|---|
@@ -301,40 +329,41 @@ the port table at `0x27c7`. `AH` is the bit mask and `AL` a descriptor whose bit
 | `0a` | `0x14` | `[0x310]` |
 | `0b` | `0x12` | `[0x311]` - no call site uses it |
 
-**The latches are write-only.** Reading `0x10`/`0x12`/`0x14` returns input
-signals, not latch contents, which is why the firmware keeps shadows and does a
-`cli`-protected read-modify-write against them. Initialization at `0x2728` fills
-`0x30e..0x312` with `0xff`, then forces `[0x30e]=0xfe` and `[0x30f]=0x7f`. The
-captured idle RAM holds `fe 7d f5 ff` at `0x30e..0x311`, readable live with
-`ATGLK2=0000:0300`. Nothing reads `[0x310]`, and there is no direct `out 0x14`
-in that bank, so port `0x14` holds whatever is written until the next helper
-call.
+**The latches are write-only.** A read of `0x10`/`0x12`/`0x14` gives input
+signals, not the latch contents. For this reason, the firmware keeps shadows
+and does a read-modify-write on them, protected by `cli`. The initialization at
+`0x2728` fills `0x30e..0x312` with `0xff`. Then it sets `[0x30e]=0xfe` and
+`[0x30f]=0x7f`. The captured idle RAM holds `fe 7d f5 ff` at `0x30e..0x311`. You
+can read it live with `ATGLK2=0000:0300`. No code reads `[0x310]`, and there is
+no direct `out 0x14` in that bank. Thus port `0x14` keeps the value written to
+it until the next helper call.
 
 **`O` is a bare `out dx,al`.** It writes all eight bits and does not update the
-shadow. So a single-bit poke must be composed by hand from the current shadow -
-`ATGLK2O0014,40` does not set bit 6, it clears the other seven - and after a
-write the shadow and the latch disagree. The firmware believes its shadow and
-will not restore the latch on its own; a bit left flipped stays flipped until an
-explicit write or a power cycle. Observed: setting `0x12` bit 1 turned MR off
-and it stayed off. The firmware's own read-modify-write is interrupt-protected;
-a shadow read followed by a separate `O` write is not atomic against it.
+shadow. Thus you must calculate a single-bit write manually from the current
+shadow. `ATGLK2O0014,40` does not set bit 6. It clears the other seven bits.
+After a write, the shadow and the latch do not agree. The firmware uses its
+shadow and does not restore the latch itself. A changed bit stays changed until
+an explicit write or a power cycle. Observed: when we set `0x12` bit 1, MR went
+off and stayed off. The read-modify-write of the firmware has protection from
+interrupts. A shadow read followed by a separate `O` write is not atomic
+relative to it.
 
 ### Do not write port `0x10`
 
-`0x1490` starts from `[0x30e]`, forces bit 5 high and bit 3 low, `out 0x0e,0x6f`
-to select, then toggles bit 6 as a clock with `in al,0x10` reading data back;
-`0x1540` restores the shadow and writes `out 0x0e,7`. That is the bit-banged
-serial EEPROM holding the modem's saved profiles, and the same pattern recurs at
-`0x27a6e..0x27b64` in another bank. These bits are driven by direct `out 0x10`
-writes that bypass the helper API, so a scan of helper call sites does not see
-them. **An arbitrary byte written to port `0x10` can clock the NVRAM
-interface.**
+`0x1490` starts from `[0x30e]`. It sets bit 5 high and bit 3 low, and does
+`out 0x0e,0x6f` to select. Then it changes bit 6 as a clock, and `in al,0x10`
+reads the data back. `0x1540` restores the shadow and writes `out 0x0e,7`. This
+is the bit-banged serial EEPROM that holds the saved profiles of the modem. The
+same pattern occurs again at `0x27a6e..0x27b64` in a different bank. Direct
+`out 0x10` writes drive these bits and bypass the helper API. Thus a scan of
+helper call sites does not see them. **An arbitrary byte written to port `0x10`
+can clock the NVRAM interface.**
 
 ### Confirmed function of the driven bits
 
-Established by strobing single bits on a physical unit and watching the front
-panel - user-reported observations, not captured transcripts. Port `0x14` is
-active low: `0` lights the indicator.
+We found these functions when we strobed single bits on a physical unit and
+monitored the front panel. These are observations that the user reported, not
+captured transcripts. Port `0x14` is active low: `0` lights the indicator.
 
 | port | bit | function | evidence |
 |---|---|---|---|
@@ -354,28 +383,29 @@ active low: `0` lights the indicator.
 | `0x10` | 0 | CD line to the DTE | `0x92b1`/`0x9380` set on connect, `0x93a2`/`0x93d9`/`0x96a7` clear on teardown, all gated on `[0x5b4] & 2`; `0x0b45` clears on timer expiry |
 | `0x10` | 3, 5, 6 | serial EEPROM bit-bang | `0x1490`..`0x15a5` |
 
-> **Two rows conflict with [board-verified-403.md](board-verified-403.md), which
-> strobed the same bits on this same unit.** That file's sweep puts **no lamp**
-> on `0x14` bit 6 and identifies it as the front-panel button - which the
-> firmware supports, since `0x877cd` gates the self test on that bit *reading
-> low* and `0x87e34` spins while it stays low, an input being released. It puts
-> **HS** on `0x12` bit 4, where the row above records an audible pop. Five other
-> attributions agree exactly between the two. Both sides are user-reported panel
-> observations, so neither transcript arbitrates; re-strobing those two bits one
-> at a time, watching and listening, settles it. Until then neither attribution
-> should be built on.
+> **Two rows do not agree with [board-verified-403.md](board-verified-403.md),
+> which strobed the same bits on this same unit.** The sweep in that file puts
+> **no lamp** on `0x14` bit 6. It identifies that bit as the front-panel button.
+> The firmware supports this: `0x877cd` starts the self test only when that bit
+> *reads low*, and `0x87e34` loops while it stays low, as for an input that is
+> released. That file puts **HS** on `0x12` bit 4, where the row above records an
+> audible pop. Five other attributions agree exactly between the two files. The
+> two sides are panel observations that the user reported, thus no transcript
+> can decide. To find the answer, strobe these two bits again, one at a time, and
+> watch and listen. Until then, do not use either attribution as a base for more
+> work.
 
-Port `0x14` bit 0 driving the CD *lamp* while `0x10` bit 0 drives the CD *line*
-is consistent: `&C` controls the line, the lamp follows carrier. The panel
-indicators with no latch bit - RD, SD, TR, RS - are the ones expected to be
-wired to the UART and control lines in hardware.
+Port `0x14` bit 0 drives the CD *lamp* and `0x10` bit 0 drives the CD *line*.
+This agrees: `&C` controls the line, and the lamp follows the carrier. Some
+panel indicators have no latch bit: RD, SD, TR and RS. We expect that the
+hardware connects these to the UART and to the control lines.
 
 ### The self-test table, and why strobing was considered safe
 
-`0x26a8` walks a nine-entry table at `cs:0x26f2`, calls clear on every entry,
-delays, then calls set on every entry with interrupts masked. It is reached by
-`lcall 8000:26a4` from a dispatcher at `0x26247` when the parsed value is `5`;
-the AT syntax that reaches that dispatcher has not been identified.
+`0x26a8` reads a nine-entry table at `cs:0x26f2`. It calls clear on each entry
+and waits. Then it calls set on each entry, with interrupts masked. A dispatcher
+at `0x26247` calls it with `lcall 8000:26a4` when the parsed value is `5`. We
+did not identify the AT syntax that gets to that dispatcher.
 
 | entry | `AX` | port | bit | entry | `AX` | port | bit |
 |---|---|---|---|---|---|---|---|
@@ -385,110 +415,125 @@ the AT syntax that reaches that dispatcher has not been identified.
 | 3 | `010a` | `0x14` | 0 | 8 | `200a` | `0x14` | 5 |
 | 4 | `0108` | `0x10` | 0 | | | | |
 
-The firmware drives each of these in both directions itself, so doing so by hand
-reaches no state the firmware does not. **That argument survives; the reading
-that the group is purely front-panel does not** - entry 0 produced an audible
-pop, so this is a broader self-test than a lamp test. Entry 4 is on port `0x10`
-and should be excluded on the NVRAM grounds above despite appearing here. Port
-`0x12` bits 3 and 5 are driven by the firmware but are *not* in this table, so
-they lack that cover, and the latch is now known to reach the analog path.
+The firmware itself drives each of these bits in the two directions. Thus a
+manual drive gets to no state that the firmware does not also get to. **That
+argument is still correct. But the reading that the group is only front-panel
+bits is not correct.** Entry 0 caused an audible pop. Thus this is a wider self
+test than a lamp test. Entry 4 is on port `0x10`. Do not use it, because of the
+NVRAM risk above, although it is in this table. The firmware drives port `0x12`
+bits 3 and 5, but they are *not* in this table. Thus this argument does not
+cover them, and we now know that the latch can get to the analog path.
 
 ### Port `0x14` bit 2, probed 2026-09-04
 
-Live shadows read `fe 7d f5 ff`, matching the earlier RAM capture exactly, so
-the strobe was `f1` and the restore `f5`. Sequence: `AT`, `ATI7`,
-`ATGLK2=0000:0300`, two `ATGLK2B0000` sweeps, the write, two sweeps, the
-restore, two sweeps - each phase requiring two byte-identical sweeps before
-being accepted, with the restore in a `finally` block. `artifacts/io-latch-bit2-01/`.
+The live shadows read `fe 7d f5 ff`. This is exactly the same as the earlier RAM
+capture. Thus the strobe was `f1` and the restore was `f5`. This was the
+sequence:
 
-**Zero of the 256 ports changed while bit 2 was held low**, and the
-post-restore sweep is byte-identical to the baseline. Because port `0x14` has no
-refresh path, the bit genuinely stayed low across both intervening sweeps.
+1. `AT`, `ATI7`, `ATGLK2=0000:0300`.
+2. Two `ATGLK2B0000` sweeps.
+3. The write, then two sweeps.
+4. The restore, then two sweeps.
 
-That is a null result about **feedback, not function**. A sweep sees only what
-the CPU can read back; a latch bit routed to a DSP pin, a lamp or an analog gate
-would not appear in the peripheral bank at all. What it establishes is that bit
-2 is not wired into anything the supervisor can observe through I/O space, and
-that the write/restore cycle disturbs nothing else. Whether the bit is visible
-on the front panel was not checked.
+Each phase needed two byte-identical sweeps before we accepted it. The restore
+was in a `finally` block. The records are in `artifacts/io-latch-bit2-01/`.
+
+**None of the 256 ports changed while bit 2 was low.** The sweep after the
+restore is byte-identical to the baseline. Port `0x14` has no refresh path, thus
+the bit really stayed low during the two sweeps between the write and the
+restore.
+
+That is a null result about **feedback, not about function**. A sweep sees only
+the values that the CPU can read back. If a latch bit goes to a DSP pin, a lamp
+or an analog gate, it does not show in the peripheral bank. The result shows
+that bit 2 does not connect to a device that the supervisor can monitor through
+I/O space. It also shows that the write/restore cycle does not change other
+items. We did not examine if the bit has an effect on the front panel.
 
 ### Bearing on the DSP
 
-No bit the firmware drives is a DSP control line: every one resolves to a
+No bit that the firmware drives is a DSP control line. Each bit is a
 front-panel indicator, a DTE control line, the NVRAM interface or the analog
-path. That is **not** the same as establishing the latch bank contains no DSP
-control - `0x14` bit 2, `0x12` bits 0, 2 and 6, and `0x10` bits 1, 2, 4 and 7
-have no located driver, and absence of a driver is not evidence that nothing is
-wired to the pin. The positive evidence that DSP reset is elsewhere is
-`0xe3ab`/`0xe429` driving `[0xff56]` bit 1 directly, a CPU port pin rather than
-an ASIC latch; that covers reset specifically and does not exclude some other
-DSP-related strap or enable.
+path. But this does **not** show that the latch bank has no DSP control. We
+found no driver for `0x14` bit 2, `0x12` bits 0, 2 and 6, and `0x10` bits 1, 2,
+4 and 7. If there is no driver, that is not evidence that no device connects to
+the pin. The positive evidence that DSP reset is in a different location is
+this: `0xe3ab`/`0xe429` drive `[0xff56]` bit 1 directly. That is a CPU port pin,
+not an ASIC latch. This applies only to reset. It does not exclude a different
+strap or enable that is related to the DSP.
 
 ## The mailbox, from the host's side
 
 **A tag is a command index, not an address.** It selects one of 121 handlers
-from a jump table at program `8401`, and anything above `0x7f` never reaches the
-table. So the `host_write(address, value)` shape the native core models is
-**wrong**, and the plan of writing DSP data `03e6` through the mailbox was never
-going to work with or without a commit edge. That - not a missing strobe - is
-why `dsp-mailbox-write-01` and the queue runs saw nothing.
+from a jump table at program `8401`. A value above `0x7f` never gets to the
+table. Thus the `host_write(address, value)` shape that the native core models
+is **not correct**. The plan to write DSP data `03e6` through the mailbox could
+never operate, with or without a commit edge. That is why
+`dsp-mailbox-write-01` and the queue runs saw nothing. A missing strobe was not
+the cause.
 
-**The host interface is not in the datapump's `8000+` image, and it is not mask
-ROM either.** The accessor at `23f0` is installed into low program memory at boot
-by the `bldp` at `80a7` and recovers as `lacc * ; lamm * ; ret`. The message
-cells are `ff57`, `ff5e` and `ff5f` in high data space. **The datapump contains
-no `IN` instruction at all**; everything the host sends arrives through this
+**The host interface is not in the `8000+` image of the datapump, and it is also
+not in the mask ROM.** The `bldp` at `80a7` installs the accessor at `23f0` into
+low program memory at boot. The accessor decodes as `lacc * ; lamm * ; ret`. The
+message cells are `ff57`, `ff5e` and `ff5f` in high data space. **The datapump
+contains no `IN` instruction.** All data from the host comes through this
 installed helper.
 
 **The wire format.** An outbound message is a 16-bit tag word on `58`/`5a` and a
-16-bit value on `5c`/`5e`, low byte at the lower port. The compact path at
-`0fddb` sends a one-byte tag and a one-byte value, zeroing the two high lanes;
-the variant at `12cbb` sends two full words out of a ring at `029e..02cd`, so
-both halves really are 16 bits wide.
+16-bit value on `5c`/`5e`, with the low byte at the lower port. The compact path
+at `0fddb` sends a one-byte tag and a one-byte value, and sets the two high
+lanes to zero. The variant at `12cbb` sends two full words from a ring at
+`029e..02cd`. Thus the two halves really are 16 bits wide.
 
-**Reads and writes are separate latches.** The interrupt writes `58`/`5a` for
-outbound and reads the same addresses for inbound, and a hardware attempt read
-back `58`/`5a` unchanged after writing them. So an `ATGLK2I` of these ports
-observes the **board's** side, not the host's - which is what a readback wants.
+**Reads and writes use separate latches.** The interrupt writes `58`/`5a` for
+outbound data and reads the same addresses for inbound data. A hardware test
+wrote `58`/`5a` and then read them back unchanged. Thus an `ATGLK2I` of these
+ports sees the side of the **board**, not the side of the host. A readback must
+see that side.
 
-**Bit 0 of `0x1c` is a standing request, and answering it is the commit.** The
-interrupt ends by writing the status word back to `1c` and `1e`; only the path
-that had nothing to send clears bit 0 first, so writing that bit back **set** is
-what says a word was placed in the window. An idle unit reads `1c` as `fd` on
-every poll - bit 0 permanently asserted - because the supervisor in command mode
-never has traffic and never answers. A host driving these ports through
-`ATGLK2O` has to supply that edge itself.
+**Bit 0 of `0x1c` is a standing request, and the answer to it is the commit.**
+At its end, the interrupt writes the status word back to `1c` and `1e`. Only the
+path that had nothing to send clears bit 0 first. Thus when the interrupt writes
+that bit back **set**, it shows that a word is in the window. An idle unit reads
+`1c` as `fd` on each poll, with bit 0 always asserted. This is because the
+supervisor in command mode never has traffic and never answers. A host that
+drives these ports through `ATGLK2O` must supply that edge itself.
 
-**Twelve tags are unimplemented** - `4c`, `5b`-`5d`, `64`-`6b`. Their table entry
-is zero, so `bacc` would take the DSP to program word `0000`. **Nothing should
-ever send them.**
+**Twelve tags have no implementation**: `4c`, `5b`-`5d`, `64`-`6b`. Their table
+entry is zero, thus `bacc` would send the DSP to program word `0000`. **Never
+send these tags.**
 
 ### No host-writable cell yields a program read of the mask ROM
 
-The host's writable set was swept against the handlers that use it. The clamps
-hold: tag `39` admits `0..5`, tag `41` admits `0..12`, and `LAMM` zero-extends -
-TI documents it and `op_lamm` in `native/c5x_ops.ipp` implements it that way - so
-a large host word cannot come out negative and slip past the `retc geq`.
+We compared the set of cells that the host can write with the handlers that use
+them. The clamps are effective:
 
-And the one read that *is* a program read is not a data read. `c551` is a
-six-entry table of routine addresses, `ca5b ca68 ca75 ca82 ca8f ca9c`, and
-`tblr @4d` fetches a jump target that the following code arms. **The word never
-travels back to the host**, so even the twelve addresses tag `41` reaches are not
-observable. The intersection of "host-writable" and "reads program memory" is a
-single six-entry jump table behind a clamp.
+- Tag `39` accepts `0..5`.
+- Tag `41` accepts `0..12`.
+- `LAMM` does a zero extension. TI documents this, and `op_lamm` in
+  `native/c5x_ops.ipp` implements it in that way. Thus a large host word cannot
+  become negative and go past the `retc geq`.
 
-**One hazard falls out of it.** Tag `41`'s bound of thirteen is looser than the
-six-entry table it indexes, so indices `6..12` fetch the following instruction
-words as routine addresses. Entry six is `7a80`, below the downloaded base but
-outside the C52's `0000..0fff` ROM window - an uncontrolled jump into program
-memory whose installed contents are not established. **Never send tag `41` with a
-value above five.**
+Also, the one read that *is* a program read is not a data read. `c551` is a
+six-entry table of routine addresses, `ca5b ca68 ca75 ca82 ca8f ca9c`.
+`tblr @4d` gets a jump target, and the code that follows arms it. **The word
+never goes back to the host.** Thus the host cannot see even the twelve
+addresses that tag `41` gets to. The only item that is both "host-writable" and
+"reads program memory" is a single six-entry jump table behind a clamp.
+
+**This gives one hazard.** The limit of thirteen for tag `41` is larger than the
+six-entry table that it indexes. Thus indices `6..12` get the instruction words
+that follow the table as routine addresses. Entry six is `7a80`. This is below
+the downloaded base but outside the `0000..0fff` ROM window of the C52. Thus it
+is an uncontrolled jump into program memory, and we do not know its installed
+contents. **Never send tag `41` with a value above five.**
 
 ## The DSP's streamers, enumerated and count-verified
 
-Following the jump table at program `8401` through each handler settles which
-host tag reaches each streamer variant and whether its source block holds
-program memory or live data. `tests/test_dsp_window_stream.py` pins the result.
+We followed the jump table at program `8401` through each handler. This shows
+which host tag gets to each streamer variant. It also shows if the source block
+of each variant holds program memory or live data. `tests/test_dsp_window_stream.py`
+records the result.
 
 | tag | handler | arm stub | source | words | what it exposes |
 |---|---|---|---|---:|---|
@@ -501,16 +546,17 @@ program memory or live data. `tests/test_dsp_window_stream.py` pins the result.
 | `73` | `865e` | `8665` | `[fff8]` = `0a40` | 103 | Live DSP data RAM `0a40..0aa6` |
 | `78` | `8671` | `8678` | `[fff8]` = `f993` | 5 | Live DSP data `f993..f997` |
 
-Tags `73` and `78` do both jobs from one handler: `ldp #1ff ; splk @78,#imm`
-points `fff8` (page `1ff` puts `@78` at `fff8`), then `ldp #007 ; retd ; splk
-@1e,#stub` arms the `[fff8]` streamer with the arm landing in the `retd` delay
-slot - the same idiom as tag `06` at `8489`.
+Tags `73` and `78` do the two jobs from one handler. First,
+`ldp #1ff ; splk @78,#imm` sets `fff8` (page `1ff` puts `@78` at `fff8`). Then
+`ldp #007 ; retd ; splk @1e,#stub` arms the `[fff8]` streamer. The arm is in the
+delay slot of `retd`. Tag `06` at `8489` uses the same idiom.
 
-Verified by installing the `23f0` accessor, arming one tag through its
-jump-table handler, and pumping the resume path `847a` one word at a time,
-exactly as a host does with `ATGLK2O001C,04`. Tag `46` is the anchor: it emits
-`0708 0708 0960 0960 0000...`, identical to the physical `dsp-window-pump-02`
-capture, so the same harness's counts for the others are trustworthy.
+We verified this in three steps. We installed the `23f0` accessor. We armed one
+tag through its jump-table handler. Then we pumped the resume path `847a` one
+word at a time, exactly as a host does with `ATGLK2O001C,04`. Tag `46` is the
+reference. It gives `0708 0708 0960 0960 0000...`, which is identical to the
+physical `dsp-window-pump-02` capture. Thus the counts of the same harness for
+the other tags are reliable.
 
 | tag | data words | `ffb8` walk | `[ffb9]` immediate |
 |---|---:|---|---:|
@@ -519,52 +565,60 @@ capture, so the same harness's counts for the others are trustworthy.
 | `73` | 103 | `0a40` → `0aa7` | `0x67` |
 | `78` | 5 | `f993` → `f998` | `0x05` |
 
-Every count equalled its arm-stub immediate, `ffb8` advanced by exactly that
-many cells, and `[039e]` cleared to `0000` at the end - the streamer disarms
-cleanly rather than chaining into the `ff18` continuation.
+Each count was equal to the immediate of its arm stub. `ffb8` advanced by
+exactly that number of cells. At the end, `[039e]` cleared to `0000`. Thus the
+streamer disarms correctly and does not chain into the `ff18` continuation.
 
-**Two details a host driver needs.** The stream's first pumped word is the
-**count itself**, not payload: the arm stub's opening `bd 84b7` emits with `ar1`
-still at `ffb9`, so word 0 reads `0010`/`000c`/`0067`/`0005` - pump `count + 1`
-times and discard word 0. And the emit path's "pump me again" flag and the
-resume path's poll both resolve to data `0057` (the accessor's `lamm *` masks
-the ASIC address to page 0), so **`0057` bit 2 is the handshake cell**.
+**A host driver must know two details:**
 
-The words came back zero in that run only because the source blocks are live
-call-state RAM an idle core has not filled; the addressing is what is confirmed.
-One divergence from a board, recorded so it is not mistaken for a streamer
-property: the minimal `47`/`73`/`78` handlers return with `ARP = 0` and the
-resume accessor reads its status word through the ARP-selected register, so the
-synthetic driver sets `LARP 1` before each pump - the context the real mailbox
-interrupt establishes on entry. It does not touch the counts.
+- The first pumped word of the stream is the **count**, not payload. The opening
+  `bd 84b7` of the arm stub emits while `ar1` is still at `ffb9`. Thus word 0
+  reads `0010`/`000c`/`0067`/`0005`. Pump `count + 1` times and discard word 0.
+- The "pump me again" flag of the emit path and the poll of the resume path both
+  resolve to data `0057`. (The `lamm *` of the accessor masks the ASIC address
+  to page 0.) Thus **`0057` bit 2 is the handshake cell**.
+
+In that run, the words were zero only because the source blocks are live
+call-state RAM, and an idle core has not filled it. The run confirms the
+addressing. We record one difference from a board, so that you do not think
+that it is a property of the streamer. The minimal `47`/`73`/`78` handlers
+return with `ARP = 0`. The resume accessor reads its status word through the
+register that ARP selects. Thus the synthetic driver sets `LARP 1` before each
+pump. The real mailbox interrupt sets this context when it starts. This does
+not change the counts.
 
 Hardware confirms the channel end to end. `artifacts/dsp-window-pump-02/` and
-`-03/` are identical except word twelve, `F6B2` against `F708` - a live
-measurement in the computed part of the block, with the program words stable.
-**Arm with a mailbox tag, pump with `1c` bit 2, read the words at `60`/`62`.**
-What is missing is only the index.
+`-03/` are identical, except word twelve: `F6B2` against `F708`. This is a live
+measurement in the calculated part of the block, and the program words are
+stable. **Arm with a mailbox tag, pump with `1c` bit 2, and read the words at
+`60`/`62`.** Only the index is missing.
 
 ## Remaining hardware integration
 
-The supervisor code, DSP sender and serial parser exist and execute together
-offline. **A way to place the monitor in the physical supervisor's RAM and
-transfer control to `0000:2000` has not been established**, and the monitor
-assumes a working UART and peripheral mapping on entry - it is not a
-reset-vector replacement.
+The supervisor code, the DSP sender and the serial parser exist, and they
+execute together offline. **We have not found a method to put the monitor in
+the RAM of the physical supervisor and transfer control to `0000:2000`.** Also,
+the monitor expects a serviceable UART and peripheral mapping when it starts.
+It is not a replacement for the reset vector.
 
 An updated supervisor would also need a verified compatible SDL container and a
-known restoration path. The stock upload's `T` option has **not** been shown to
-execute a RAM payload and must not be represented as a RAM-only diagnostic
-loader. Neither the modified reference ROM nor the raw kernel is a prepared
-hardware update.
+known restoration path. We have **not** shown that the `T` option of the stock
+upload executes a RAM payload. Do not describe it as a RAM-only diagnostic
+loader. The modified reference ROM is not a prepared hardware update, and the
+raw kernel is also not one.
 
-The supervisor-side counterpart - how code gets *into* the DSP - is in
-[the firmware analysis](../courier_firmware_analysis.md#how-the-dsp-is-loaded-and-run):
-the loader routines at file `0xe370`-`0xe711`, the nine-entry overlay descriptor
-table, the four-image overlay map and the two transfer engines (`out 0x18`
-strobes for cold boot, `out 0x1e` for runtime swaps). Segment `0x8000` maps
-linearly to physical `0x80000`. The resident kernel is overlay 5: flash
-`0x29140`-`0x36e8e` → DSP `0x8000`-`0xeea6` in 7.4.16, `0x29080`-`0x368fc` →
-`0x8000`-`0xec3d` in 7.3.14. Every handler address in this document falls inside
-that range and decodes correctly through
-`flash = 0x29140 + 2*(dsp - 0x8000)`, which cross-validates both analyses.
+The supervisor-side counterpart (how code goes *into* the DSP) is in
+[the firmware analysis](../courier_firmware_analysis.md#how-the-dsp-is-loaded-and-run).
+It describes these items:
+
+- the loader routines at file `0xe370`-`0xe711`
+- the nine-entry overlay descriptor table
+- the four-image overlay map
+- the two transfer engines (`out 0x18` strobes for cold boot, `out 0x1e` for
+  runtime swaps)
+
+Segment `0x8000` maps linearly to physical `0x80000`. The resident kernel is
+overlay 5: flash `0x29140`-`0x36e8e` → DSP `0x8000`-`0xeea6` in 7.4.16, and
+`0x29080`-`0x368fc` → `0x8000`-`0xec3d` in 7.3.14. Each handler address in this
+document is in that range and decodes correctly through
+`flash = 0x29140 + 2*(dsp - 0x8000)`. This is a cross-check of the two analyses.
