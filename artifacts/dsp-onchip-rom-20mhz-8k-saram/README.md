@@ -1,9 +1,9 @@
 # The full 8K read again, from a gadget executing in on-chip SARAM
 
-Same board and same day as
-[dsp-onchip-rom-20mhz-8k](../dsp-onchip-rom-20mhz-8k/README.md) - 20.16 MHz,
-ID_SDL v4.03d, serial `0009540034268322`. Eight 1K windows, `--via-saram` on
-every one.
+This is the same board and the same day as
+[dsp-onchip-rom-20mhz-8k](../dsp-onchip-rom-20mhz-8k/README.md): 20.16 MHz,
+ID_SDL v4.03d, serial `0009540034268322`. We read eight 1K windows, with `--via-saram` on
+each one.
 
 ## Result
 
@@ -12,33 +12,33 @@ SARAM-hosted     sha256 d57bc46e1bcd6d4dc8872b97bba2d98ba8fb6b8661440c566b534f0b
 off-chip-hosted  sha256 d57bc46e1bcd6d4dc8872b97bba2d98ba8fb6b8661440c566b534f0b3f82fac9
 ```
 
-**All 8192 words identical.** TI's program-memory protection is not programmed
-on this part, and every ROM reading taken here through a kernel at external
+**All 8192 words are identical.** The program-memory protection of TI is not programmed
+on this part. Thus, each ROM reading that we took through a kernel at external
 `0x8000` is the real ROM.
 
 ## Why this needed doing, and why SARAM rather than DARAM
 
-Protection blocks instructions fetched from **off-chip memory**, **DARAM B0**,
-external DMA and the emulator from reading on-chip program memory. Every earlier
-read ran from program `0x8000`, off-chip - the first item on that list. Two
-windows had been spot-checked from SARAM; this is the whole ROM.
+The protection prevents these sources from reading on-chip program memory: instructions
+fetched from **off-chip memory**, instructions from **DARAM B0**, external DMA, and the emulator.
+Each earlier read ran from program `0x8000`, which is off-chip. That is the first item on the list.
+Before, we did a spot check of two windows from SARAM. This read is the full ROM.
 
 DARAM is not an alternative:
 
-* **B0** is named on the exclusion list, so hosting the loop there would be
-  blocked exactly as `0x8000` would.
-* **B1** (`0x0300`-`0x04FF`) and **B2** (`0x0060`-`0x007F`) cannot be reached
-  from program space at all. Only B0 maps into program space, via `CNF`, at
+* **B0** is on the exclusion list. Thus, the protection would block a loop there
+  exactly as it would block a loop at `0x8000`.
+* **B1** (`0x0300`-`0x04FF`) and **B2** (`0x0060`-`0x007F`) are not accessible
+  from program space. Only B0 maps into program space, through `CNF`, at
   `0xFE00`-`0xFFFF`.
 
-So SARAM - program `0x2000`-`0x23FF` on this part - is the only on-chip site that
-is both executable and absent from the exclusion list. `ROM_DUMP_GADGET` is
-`0x2000` for that reason.
+Thus, SARAM (program `0x2000`-`0x23FF` on this part) is the only on-chip location that
+is executable and also not on the exclusion list. For that reason, `ROM_DUMP_GADGET` is
+`0x2000`.
 
 ## What it does not show
 
-A null result cannot distinguish "protection is off" from "protection is on but
-SARAM is exempt", which is the reading the TI wording invites. Either way the
-data is the ROM. What would separate them is a read hosted in DARAM B0: if
-protection were active and SARAM merely exempt, that read would fail where these
-succeed. Not run - nothing here depends on the distinction.
+A null result cannot show the difference between "protection is off" and "protection is on but
+SARAM is exempt". The TI wording suggests the second interpretation. In both cases, the
+data is the ROM. A read from DARAM B0 would show the difference: if
+protection were active and only SARAM were exempt, that read would fail and these reads
+would succeed. We did not do this read, because nothing here depends on the difference.

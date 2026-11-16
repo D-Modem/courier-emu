@@ -1,32 +1,32 @@
 # What the ASIC does
 
-A synthesis of what this repository has established about the `NEC USA
-1-016-905` gate array, and of what is still guessed. Each claim says which.
+This is a summary of what this repository has shown about the `NEC USA
+1-016-905` gate array, and of what is still a guess. Each claim says which it is.
 
 The short version: it is **the entire board outside the two processors**. The
-80186 talks to the world through it, the C52 talks to the 80186 through it, and
-the line-side parts answer to it. It is not a peripheral among several - on the
-CPU's I/O bus it is the only device there is.
+80186 communicates with all other parts through it, the C52 communicates with the 80186 through it, and
+the line-side parts are controlled by it. It is not one peripheral of several. On the
+I/O bus of the CPU, it is the only device.
 
 ## Why "the only device" is a measurement, not a figure of speech
 
-The CPU's own peripheral control block is relocated into *memory* at
-`0xff00`-`0xffff`, and flash and SRAM are memory too. So anything that answers
-an `IN` is the gate array. Sweeping the space
+The peripheral control block of the CPU is relocated into *memory* at
+`0xff00`-`0xffff`, and flash and SRAM are also memory. Thus, any device that answers
+an `IN` is the gate array. A sweep of the space
 ([asic-port-map.md](asic-port-map.md)) gives its shape:
 
-* only **even** addresses are decoded - all 64 odd ports below `0x80` read
-  `0x00`, because the ASIC presents 16-bit registers and `IN AL` reads a byte;
-* the decode **stops at `0x7f`** - above it all 64 even ports read back their
-  own address and all 64 odd ports read `0x00`, which is an undriven bus.
+* Only **even** addresses are decoded. All 64 odd ports below `0x80` read
+  `0x00`, because the ASIC presents 16-bit registers and `IN AL` reads a byte.
+* The decode **stops at `0x7f`**. Above it, all 64 even ports read back their
+  own address, and all 64 odd ports read `0x00`. This is a bus that nothing controls.
 
 That is 64 registers, and the firmware uses about half of them.
 
 ## The register map, by what the firmware does with each group
 
-Static site counts from `artifacts/io-port-map/board-21210/`, values from the
-CPU-side capture in `artifacts/cpu-port-map-01/`. Read/write asymmetry is the
-useful signal: a group the firmware only writes is a control surface, one it
+The static site counts come from `artifacts/io-port-map/board-21210/`, and the values come from the
+CPU-side capture in `artifacts/cpu-port-map-01/`. The read/write asymmetry is the
+useful signal. A group that the firmware only writes is a control surface. A group that it
 only reads is a status surface.
 
 | ports | sites | idle value | what it is |
@@ -40,80 +40,78 @@ only reads is a status surface.
 | `60` `62` | **27r / 0w** | `4b` `00` | **DSP-to-host stream** - pure input |
 | `64`-`7e` | 3r / 0w | `78 09 8f a7 e8 aa b6 97 51 51 06 4f b3` | read almost never; looks like identity or strapping |
 
-Two of those rows carry their own argument. `60`/`62` has **zero** write sites
-in the whole image, so it is a one-way channel out of the DSP. And ten of the
-thirteen values in `64`-`7e` are byte-identical to a sweep taken when this unit
-ran stock 7.3.14 instead of ID_SDL 4.03 - the same values across two firmware
-versions and two sessions, which is what fixed configuration looks like rather
-than state.
+Two of those rows give their own argument. `60`/`62` has **zero** write sites
+in the full image. Thus, it is a one-way channel out of the DSP. Also, ten of the
+thirteen values in `64`-`7e` are byte-identical to a sweep that we took when this unit
+ran stock 7.3.14 and not ID_SDL 4.03. The values are the same across two firmware
+versions and two sessions. This is what fixed configuration looks like. State does not
+look like this.
 
 ## The four jobs
 
 ### 1. It is the board's I/O
 
-Ports `0x10`, `0x12` and `0x14` are latches carrying the hook relay, the NVRAM
+Ports `0x10`, `0x12` and `0x14` are latches that carry the hook relay, the NVRAM
 chip strobe, the carrier-detect pair, ring detect and the option straps. The
-supervisor drives every one of them through a single read-modify-write latch
-driver (`panel.py` records it at physical `0x5e2b0`/`0x5e2e5`), which is why
-these ports are both read and written. Nothing here is subtle; it is the front
+supervisor controls all of them through a single read-modify-write latch
+driver (`panel.py` records it at physical `0x5e2b0`/`0x5e2e5`). For this reason,
+the firmware reads and writes these ports. Nothing here is complex. It is the front
 panel and the line relay.
 
 ### 2. It bootstraps the DSP
 
-The DSP's program memory above `0x8000` is **RAM**: the supervisor's own
-download stream matches the image's resident segment byte for byte, all 30,172
-words - `bootstrap_match: true` at `bootstrap_bytes: 60344` in every
-answered-call run. It says nothing about `0000..1fff`, which this firmware
-never addresses and the board answers from the C51's mask ROM
+The program memory of the DSP above `0x8000` is **RAM**. The download stream of the
+supervisor agrees byte for byte with the resident segment of the image, all 30,172
+words: `bootstrap_match: true` at `bootstrap_bytes: 60344` in each
+answered-call run. It says nothing about `0000..1fff`. This firmware
+never addresses this range, and the board answers it from the mask ROM of the C51
 ([hardware-timebase-and-audio-path.md](hardware-timebase-and-audio-path.md#3-corrected-the-xmf-payload-loads-at-8000-not-0000)).
 
-The transfer goes through `0x40`-`0x4e`, strobed thousands of times while the
-C52 is held in reset. So the ASIC is what holds the DSP in reset and writes its
-program RAM - the architectural alternative
-[dsp-rom-probe.md](dsp-rom-probe.md) raised and could not choose, now settled by
-the download stream.
+The transfer goes through `0x40`-`0x4e`, with thousands of strobes while the
+C52 is held in reset. Thus, the ASIC holds the DSP in reset and writes its
+program RAM. [dsp-rom-probe.md](dsp-rom-probe.md) gave this architectural alternative
+but could not select it. The download stream now gives the answer.
 
 ### 3. It is the mailbox between the two processors
 
 An outbound message is a 16-bit tag on `0x58`/`0x5a` and a value on
-`0x5c`/`0x5e`, committed by answering the board's standing request - writing
-bit 0 back to `0x1c`. On the far side the DSP's dispatcher reads the tag from
-its own data cell `0xff5e` and the word from `0xff5f`, rejects tags above
-`0x7f`, and branches through a 121-entry jump table.
+`0x5c`/`0x5e`. The CPU commits it when it answers the standing request of the board,
+that is, when it writes bit 0 back to `0x1c`. On the far side, the dispatcher of the DSP reads the tag from
+its own data cell `0xff5e` and the word from `0xff5f`. It rejects tags above
+`0x7f`, and it branches through a jump table of 121 entries.
 
-So the ASIC bridges *CPU I/O ports* to *DSP data-memory cells*. Two address
-spaces that have nothing to do with each other are joined inside it, and that
-is the single most important thing it does for the emulator, because it is the
-only path by which the supervisor and the datapump can say anything to one
-another.
+Thus, the ASIC connects *CPU I/O ports* to *DSP data-memory cells*. It joins two
+address spaces that are not related to each other. For the emulator, this
+is the most important function of the ASIC, because it is the
+only path through which the supervisor and the datapump can communicate.
 
-The reverse direction is `0x60`/`0x62`, the read-only window, driven by the
-DSP's sender one word per interrupt and resumed by the CPU acknowledging bit 2
+The reverse direction is `0x60`/`0x62`, the read-only window. The sender of the DSP
+writes it, one word for each interrupt. It continues when the CPU acknowledges bit 2
 of `0x1c`.
 
 ### 4. It fronts the analogue side - and this is the part that is missing
 
-Three things the firmware demonstrably does *not* do, which therefore belong to
+The firmware clearly does *not* do these items. Thus, they are functions of
 the ASIC:
 
-* **The codec bring-up.** The datasheet initialisation sequence is performed by
-  neither processor: the 80186 writes `0x40`-`0x4e` thousands of times and
-  never reads them, and the C52's own external reads are the host window and
-  the line ADC, so neither can see the readiness byte the sequence waits on.
+* **The codec bring-up.** Neither processor does the initialisation sequence
+  of the datasheet. The 80186 writes `0x40`-`0x4e` thousands of times and
+  never reads them. The external reads of the C52 are the host window and
+  the line ADC. Thus, neither processor can see the readiness byte for which the sequence waits.
 * **The line detector.** The supervisor counts its own five qualifying hits at
-  `[0x649]`, but the reading it counts arrives from outside; the harness has to
-  answer the `0x7c` poll by hand.
-**Not the tone generator, though this document first said so.** The README's
-"the tone generator is the ASIC's" does not survive checking. Dialling a digit
+  `[0x649]`, but the reading that it counts comes from outside. The harness must
+  answer the `0x7c` poll manually.
+**Not the tone generator, though this document first said so.** The statement of the README
+"the tone generator is the ASIC's" is not correct. When the firmware dials a digit, it
 sends `0x16:0000`, three constant lanes `0x19:020d`, `0x1a:3000`, `0x1b:0c08`,
-the keypad index on `0x13`, then `0x16:0000` when the tone ends - and those
-three lanes are host-write tags whose handlers store into **DSP data memory**,
-at `0x03ad`, `0x0392` and `0x03f1`. The tone parameters go to the C52, so the
-synthesiser is the datapump's. What `--exchange` hears silence from is the
-harness's C52 not reaching that code, not a generator living somewhere
-unmodelled.
+the keypad index on `0x13`, then `0x16:0000` when the tone stops. Those
+three lanes are host-write tags, and their handlers store into **DSP data memory**,
+at `0x03ad`, `0x0392` and `0x03f1`. The tone parameters go to the C52. Thus, the
+synthesiser is part of the datapump. `--exchange` hears silence because the
+C52 of the harness does not get to that code. A generator in an unmodelled location
+is not the cause.
 
-The tones themselves, from the firmware's own dial path:
+These are the tones, from the dial path of the firmware:
 
 | tone | where it is decided |
 |---|---|
@@ -122,75 +120,75 @@ The tones themselves, from the firmware's own dial path:
 | interdigit gap | the same countdown less `0x30`, at `0x8235b` |
 | pulse dialling | `0x822a3`, a break/make loop - no tone at all |
 
-and the call-progress tones it has to *recognise* rather than emit, which
-`exchange.py` models: dial tone 350+440, ringback 440+480, busy and reorder
+There are also the call-progress tones that the firmware must *recognise*, but not send.
+`exchange.py` models them: dial tone 350+440, ringback 440+480, busy and reorder
 480+620, answer tone 2100.
 
-There is a fourth, smaller one: the DAA's identity reaches the supervisor as
-mailbox tag `0x7b`, once. The firmware is not blind to the line-interface part,
-it is *told* about it - by the ASIC.
+There is a fourth, smaller job. The identity of the DAA gets to the supervisor as
+mailbox tag `0x7b`, one time. The firmware has information about the line-interface part,
+because the ASIC *tells* it.
 
 ## What it is not
 
-**Not the timebase.** The 5.000 ms tick is the 80186's own Timer 0 - max count
-25,200 at CLKOUT/4 with a 40.320 MHz oscillator - confirmed four independent
-ways, including by a counter routine run on the modem that logged exactly 200.0
-increments a second.
+**Not the timebase.** The 5.000 ms tick is the Timer 0 of the 80186 itself: max count
+25,200 at CLKOUT/4 with a 40.320 MHz oscillator. Four independent methods confirmed this.
+One of them was a counter routine on the modem that logged exactly 200.0
+increments each second.
 
-**Not in the CPU's audio path.** Sweeping every port during analogue loopback,
-only the four handshake registers move; no CPU port carries samples. Where
-audio goes on the *DSP* side is still open - the DSP polls `DRR`, `TRCV` and
-its own ASIC ports together, and never transmits on either serial port after
+**Not in the CPU's audio path.** We swept each port during analogue loopback.
+Only the four handshake registers change. No CPU port carries samples. The path of the
+audio on the *DSP* side is still not known. The DSP polls `DRR`, `TRCV` and
+its own ASIC ports together, and it never transmits on either serial port after
 reset.
 
 ## What is still unknown
 
-* **Its behaviour is unpublished.** Everything above is inferred from the two
-  processors' traffic. There is no datasheet, and `1-016-905` is a USR part
-  number, so there is unlikely ever to be one.
+* **Its behaviour is unpublished.** We inferred all of the above from the traffic of the two
+  processors. There is no datasheet, and `1-016-905` is a USR part
+  number. Thus, it is improbable that a datasheet will ever be available.
 * **The pin connections are not traced.** "It is the only device on the I/O
-  bus" is an argument from the memory map and from there being no other
-  candidate, not from a probe on a pin.
-* **The monitor lies about the download window.** `ATGLK2I` and the CPU's own
-  `IN` agree on 51 of 64 ports and disagree on all twelve of `0x40`-`0x56`,
-  with the pairing inverted (`artifacts/cpu-port-map-01/`). Anything about the
-  window that rests on the monitor sweep needs re-taking.
+  bus" is an argument from the memory map, and from the absence of other
+  candidates. It does not come from a probe on a pin.
+* **The monitor lies about the download window.** `ATGLK2I` and the `IN` of the CPU
+  agree on 51 of 64 ports. They do not agree on all twelve of `0x40`-`0x56`,
+  and the pairing is inverted (`artifacts/cpu-port-map-01/`). Any result about the
+  window that depends on the monitor sweep must be measured again.
 * **`0a`, `0c`, `0e` and the `64`-`7e` block are unattributed.** The second
-  looks like identity, but nothing has been shown to read it for that purpose -
-  there are only three read sites in the whole image.
-* **The dynamics are barely sampled.** A tick-rate sampler now exists and sees
-  events the serial monitor cannot, but 200 Hz is still slow against a codec
-  frame, and the only capture so far is one line seizure.
+  looks like identity, but nothing shows that code reads it for that purpose.
+  There are only three read sites in the full image.
+* **The dynamics are barely sampled.** A tick-rate sampler now exists, and it sees
+  events that the serial monitor cannot see. But 200 Hz is still slow compared with a codec
+  frame, and the only capture until now is one line seizure.
 
 ## The DSP sees the ASIC as its 16 I/O ports (2026-09-07)
 
-SPRU056D settles what the resident is actually reading when it polls `0xff57`.
-Data `0050h`-`005Fh` is not reserved and is not a peripheral block: it is the
-'C5x's **16 memory-mapped I/O ports, PA0 through PA15** (section 3.5.11 and
-Table 8-8's note; `0x50` = PA0, `0x5F` = PA15). They are reachable both through
-ordinary data addressing and through `IN`/`OUT`, and `LAMM`/`SAMM` force the
-address's 9 MSBs to zero, which is why `lamm *` with AR1 = `0xff57` lands on
+SPRU056D tells what the resident actually reads when it polls `0xff57`.
+Data `0050h`-`005Fh` is not reserved, and it is not a peripheral block. It is the
+**16 memory-mapped I/O ports, PA0 through PA15** of the 'C5x (section 3.5.11 and
+the note of Table 8-8; `0x50` = PA0, `0x5F` = PA15). They are accessible through
+ordinary data addressing and through `IN`/`OUT`. `LAMM`/`SAMM` force the
+9 MSBs of the address to zero. For this reason, `lamm *` with AR1 = `0xff57` goes to
 `0x57`.
 
-So every DSP-side address this repository has been calling "the ASIC window" -
-`0x50`, `0x51`, `0x52`, `0x54`, `0x57`, `0x5e`, `0x5f` - is one of sixteen I/O
+Thus, each DSP-side address that this repository called "the ASIC window"
+(`0x50`, `0x51`, `0x52`, `0x54`, `0x57`, `0x5e`, `0x5f`) is one of sixteen I/O
 ports, and **the ASIC is the device on the other side of them**. That is the
-cleanest statement of the interface yet - with one correction below: the ASIC
+clearest statement of the interface until now, with one correction below: the ASIC
 presents sixteen 16-bit registers to the DSP at `PA0`-`PA15`.
 
 **"At most sixteen" is too narrow.** The DSP also writes ports `0x60` (the
-stream sender at `0x84b7`) and `0x68`-`0x6c` (at reset and in the ISR region),
-which are outside `0x50`-`0x5f` and so are ordinary I/O addresses that do not
-alias into data space. They are `IS`-qualified cycles like any other, and `IS`
-is now measured as connected to the ASIC
-([dsp-cpu-interconnect.md](dsp-cpu-interconnect.md)), so the gate array decodes
-those too, and its DSP-side register file **is** larger than `PA0`-`PA15`.
-The board's address decode is `A0`-`A3` plus `A5`, with `A4` absent, which
-separates the `0x5x` bank from the `0x6x` bank and uniquely identifies every
-port the firmware uses. So `0x60` is a register of its own and not an alias of
-`PA0`. See [dsp-cpu-interconnect.md](dsp-cpu-interconnect.md).
+stream sender at `0x84b7`) and `0x68`-`0x6c` (at reset and in the ISR region).
+These are outside `0x50`-`0x5f`. Thus, they are ordinary I/O addresses that do not
+alias into data space. They are `IS`-qualified cycles, as all other I/O cycles are, and we
+now measured that `IS` is connected to the ASIC
+([dsp-cpu-interconnect.md](dsp-cpu-interconnect.md)). Thus, the gate array also decodes
+those ports, and its DSP-side register file **is** larger than `PA0`-`PA15`.
+The address decode of the board is `A0`-`A3` plus `A5`, without `A4`. This
+separates the `0x5x` bank from the `0x6x` bank, and it identifies each
+port that the firmware uses without ambiguity. Thus, `0x60` is a separate register and not an alias of
+`PA0`. Refer to [dsp-cpu-interconnect.md](dsp-cpu-interconnect.md).
 
-Known use so far:
+The known uses until now:
 
 | port | address | use |
 |---|---|---|
@@ -200,11 +198,11 @@ Known use so far:
 | PA14 | `0x5e` | inbound message tag |
 | PA15 | `0x5f` | inbound message data |
 
-The bit meanings are the ASIC's own and appear in no TI document. They are
-reachable from this side, though: the DSP's ports are fed from the 80186's
-parallel window at ports `0x40`-`0x5e`, so what sets them is supervisor code in
-an image this repository already has.
+The bit meanings come from the ASIC, and no TI document gives them. But we
+can get to them from this side. The parallel window of the 80186 at ports `0x40`-`0x5e`
+supplies the ports of the DSP. Thus, the code that sets them is supervisor code in
+an image that this repository already has.
 
-This also retires a suspicion recorded earlier - that the core mapping data
-`0x50`-`0x5f` to I/O space was a conflation of two separate spaces. On the
-'C5x they are the same locations by design.
+This also removes a suspicion that we recorded earlier: that the core mapping of data
+`0x50`-`0x5f` to I/O space mixed two separate spaces. On the
+'C5x, they are the same locations by design.

@@ -1,20 +1,20 @@
 # The Quad x2 Modem NAC images
 
-> Bring-up update (2026-09-10): see [Quad blockers](quad-bringup-blockers.md).
-> Local RS-232 AT operation is documented; an NMC handshake is not a proven
-> prerequisite. Fresh probes expose spurious receive interrupts and missing
-> channel-selected memory. Historical execution conclusions below are superseded
-> where they conflict with that report.
+> Bring-up update (2026-09-10): refer to [Quad blockers](quad-bringup-blockers.md).
+> That report records local RS-232 AT operation. It does not show that an NMC
+> handshake is a necessary condition. New probes show false receive interrupts
+> and missing channel-selected memory. If the historical execution conclusions
+> below do not agree with that report, the report is correct.
 
-`QF060003.NAC` (6.0.3) and `QR060103.NAC` (6.1.3), both dated 1998-09-22, ship
-in `docs/x2/Qf060003.zip` and `docs/x2/Qr060103.zip`. This document records
-what is directly measured from them, separately from the platform
-classification in [`docs/x2/README.md`](x2/README.md).
+`QF060003.NAC` (6.0.3) and `QR060103.NAC` (6.1.3) have the date 1998-09-22.
+They are in `docs/x2/Qf060003.zip` and `docs/x2/Qr060103.zip`. This document
+records the direct measurements from these images. The platform classification
+is in a different document, [`docs/x2/README.md`](x2/README.md).
 
 ## Shared lineage with the analog Courier
 
-Flattened with `courier-emu extract` and compared by 32-byte block hashing,
-then greedy run extension:
+We flattened the images with `courier-emu extract`. Then we compared them with
+hashes of 32-byte blocks and a greedy extension of the identical runs:
 
 | Pair | Shared 32 B blocks | Longest identical run |
 | --- | --- | --- |
@@ -25,24 +25,25 @@ then greedy run extension:
 | QF 6.0.3 ~ `main211` C52 payload | 14,026 | 1,039 B |
 
 The Quad NAC shares more with the standalone analog Courier SDL 3.02 ROM than
-`main211` — an admitted later Courier release — does. That is shared source
-lineage, not merely shared architecture.
+`main211` does. But `main211` is a known later Courier release. Thus the Quad
+NAC and the Courier have a shared source lineage, not only a shared architecture.
 
-The limit of this test: on *both* the QF↔ROM and the main211↔ROM side the long
-runs are dominated by data tables (help screens, S-register text, result codes,
-the `/ARQ/V32`…`/ARQ/V90` rate tables). `QF+0x572c0`, the 3,618-byte run, is a
-pointer table. Byte-identical *executable* code is not established here.
+This test has a limit. On *both* the QF↔ROM side and the main211↔ROM side, data
+tables make up most of the long runs. These tables are help screens, S-register
+text, result codes and the `/ARQ/V32`…`/ARQ/V90` rate tables. `QF+0x572c0`, the
+3,618-byte run, is a pointer table. This test does not show byte-identical
+*executable* code.
 
-`Do DS0` also appears in `IDSDL302.ROM`, but as a fragment of the `&`-command
-help token dictionary. It is further lineage evidence, not analog-Courier DS0
-support.
+`Do DS0` also occurs in `IDSDL302.ROM`. But there it is a fragment of the help
+token dictionary for the `&` commands. It is more lineage evidence. It is not
+evidence of DS0 support in the analog Courier.
 
 ## Analog and digital in one image
 
-The images are a combined build whose line side is selected at runtime.
+The images are a combined build. The firmware selects the line side at runtime.
 
-The AT help table at `QF+0x233db` carries a three-way mode command that exists
-in no standalone analog Courier image:
+The AT help table at `QF+0x233db` contains a three-way mode command. No
+standalone analog Courier image has this command:
 
 ```
 %D0  Standard Analog (POTS)
@@ -50,56 +51,59 @@ in no standalone analog Courier image:
 %D2  ISDN PRI Mode
 ```
 
-Occurrences of those mode strings: `IDSDL302.ROM` 0, `main211` supervisor 0,
-QF 6.0.3 five, QR 6.1.3 five.
+These are the counts of the mode strings: `IDSDL302.ROM` 0, `main211`
+supervisor 0, QF 6.0.3 five, QR 6.1.3 five.
 
-The Courier product-name table at `QF+0x020331` extends the usual
-`Dual Standard` / `HST` / `V.32bis` / `14400` … `Fax` list with
+The Courier product-name table at `QF+0x020331` has the usual
+`Dual Standard` / `HST` / `V.32bis` / `14400` … `Fax` list. The table also has
 `Analog/Digital Quad`, `Analogue/Digital Quad`, `Digital Quad`,
-`Analog Quad`, and `Analogue Quad`.
+`Analog Quad` and `Analogue Quad`.
 
-Both plants are implemented, not merely named:
+The images implement the two plants. They do not only name them:
 
 - Analog: `OFF HOOK` / `ON HOOK`, `PHONE OFF HOOK`, `OFF HOOK RESTRICTED`,
-  `Loop loss disconnect`, blacklist, pulse and DTMF dialling with the full
-  `DTMF "0"`…`DTMF "D"` digit table, `Analogue Loopback (ALB)`.
+  `Loop loss disconnect`, blacklist, pulse dialling and DTMF dialling with the
+  full `DTMF "0"`…`DTMF "D"` digit table, and `Analogue Loopback (ALB)`.
 - Digital: the `S47` bitmap (`Disable Call Signaling`, `Dial using DTMF, not
   MF`, `Disable KP & ST MF Xmit`, `Config based on ANI`, `Force Gateway NAC
   Routing`), `S62 Number of ANI digits`, `S63 Number of DNIS digits`,
   `S71 T1 Idle Disconnect Pattern`, `S73 Default Dialout PRI Slot`,
-  `ISDN Universal Connect`, `LLC IE for ISDN HDLC`.
+  `ISDN Universal Connect` and `LLC IE for ISDN HDLC`.
 
-The digital support is DS0-level, not T1-framer-level: there are no `ESF`,
-`B8ZS`, `AMI`, `D4`, alarm, or slip strings in either image. That matches
-`DP030105`'s `Change DS0 state on Quad Modem NAC` — the framer lives on the
-PRI/gateway NAC, and the Quad card runs a Courier modem engine per delivered
-DS0, or drives a real DAA when the card is the analog variant.
+The digital support is at the DS0 level, not at the T1 framer level. The two
+images have no `ESF`, `B8ZS`, `AMI`, `D4`, alarm or slip strings. This agrees
+with `Change DS0 state on Quad Modem NAC` in `DP030105`. The framer is on the
+PRI/gateway NAC. The Quad card runs one Courier modem engine for each DS0 that
+it gets. On the analog variant of the card, the card operates a real DAA.
 
 ## Execution
 
-Current results: [interrupt-driven chassis reception](nmc-sdl-protocol.md) and
-[QF CPU byte-terminal AT/OK execution](quad-at-terminal.md) are now measured.
-The historical flat-image probe below predates the selected modem memory and
-terminal adapter; its conclusion that a chassis handshake is required is not
-established.
+Current results: we now have measurements of
+[interrupt-driven chassis reception](nmc-sdl-protocol.md) and of
+[QF CPU byte-terminal AT/OK execution](quad-at-terminal.md). The historical
+probe of the flat image below is older than the selected modem memory and the
+terminal adapter. Its conclusion, that a chassis handshake is necessary, is not
+proved.
 
 
-Neither NAC contains a reset vector. Their start record is a null `0000:0000`
-and their top painted span is two bytes at `0xfbfee`, not `0xffff0`; like the
-I-modem NAC these are operational code without the card's boot block. The
-first painted word at the `0x80000` load base is `e9 30 01`, a near jump to
-`0x80133`, followed by the PCB initialisation table (`0xffa0`/`0xffa2` =
-`LCSST`/`LCSSP` and `0xffa4`/`0xffa6` = `UCSST`/`UCSSP` on the 80C186EB — see
-the peripheral-map note below). The card's boot block enters the
-operational image there, so that is the entry to model.
+The two NACs do not contain a reset vector. Their start record is a null
+`0000:0000`. Their highest painted span is two bytes at `0xfbfee`, not
+`0xffff0`. Thus, as with the I-modem NAC, these images are operational code
+without the boot block of the card. The first painted word at the `0x80000`
+load base is `e9 30 01`. This is a near jump to `0x80133`. The PCB
+initialisation table follows it (`0xffa0`/`0xffa2` = `LCSST`/`LCSSP` and
+`0xffa4`/`0xffa6` = `UCSST`/`UCSSP` on the 80C186EB, refer to the note about
+the peripheral map below). The boot block of the card enters the operational
+image at that point. Thus the model must use that entry.
 
-Entered at `0x80000` under `CourierMachine`, both images execute 8,000,000
-instructions with no fault: they program the PCB chip selects and timers, write
-the interrupt vector table, and issue their DSP queue initialisation
-(35 writes, `QF` at `pc=8016a`, `QR` at `pc=80176`). Neither reaches its AT
-layer — `serial_text` is empty and `ticks` and `timer_interrupts` are both zero.
+We entered the two images at `0x80000` under `CourierMachine`. Each image
+executes 8,000,000 instructions without a fault. The images program the PCB
+chip selects and timers and write the interrupt vector table. Then they send
+their DSP queue initialisation (35 writes, `QF` at `pc=8016a`, `QR` at
+`pc=80176`). The two images do not get to their AT layer. `serial_text` is
+empty, and `ticks` and `timer_interrupts` are both zero.
 
-Both park in the same routine (`QF+0x819e6`, `QR+0x81908`):
+The two images stop in the same routine (`QF+0x819e6`, `QR+0x81908`):
 
 ```
 push dx
@@ -111,25 +115,27 @@ call word [0x45c]
 retf
 ```
 
-followed by a state machine that compares `al` against `0x32` (`'2'`) and `0x02`
-and rewrites the dispatch vector at `[0x45c]`. This is the card waiting on its
-host interface — the SDL detection the NETServer release notes describe for
-operational code. `QF` additionally polls `in 0x0200` 96,170 times against
-`out 0x0042` 96,151 times; `QR` spins on memory with almost no I/O (283 events).
+A state machine follows this routine. It compares `al` with `0x32` (`'2'`) and
+`0x02`, and it writes a new dispatch vector at `[0x45c]`. Here the card waits
+for its host interface. This is the SDL detection that the NETServer release
+notes describe for operational code. `QF` also polls `in 0x0200` 96,170 times
+and does `out 0x0042` 96,151 times. `QR` loops on memory with almost no I/O
+(283 events).
 
-So the images stop where real hardware would stop: waiting for the Total
-Control chassis to speak to them. Going further means modelling the NAC host
-interface at `0x0220`–`0x022a` and `0x0200`, not stubbing the poll.
+Thus the images stop at the same point as real hardware: they wait for the
+Total Control chassis to talk to them. To continue, we must model the NAC host
+interface at `0x0220`–`0x022a` and `0x0200`. A stub for the poll is not
+sufficient.
 
 ## Would the Courier boot block match?
 
-No. The two share the boot block's conventions exactly, and disagree on every
-value that describes the board.
+No. The two use exactly the same conventions as the boot block. But they are
+different in each value that describes the board.
 
 ### The table format is an exact match
 
-The Courier 3.02 boot block enters at `fc00:1a21` (`0xfda21`) and drives a
-`(port, value)` word-pair table at `cs:0x1976` (`0xfd976`) with:
+The Courier 3.02 boot block enters at `fc00:1a21` (`0xfda21`). It processes a
+table of `(port, value)` word pairs at `cs:0x1976` (`0xfd976`) with this code:
 
 ```
 lodsw ax, cs:[si]   ; port
@@ -139,27 +145,27 @@ out   dx, ax
 loop
 ```
 
-It has `0x24` (36) entries. The Quad application header at `0x80003` — reached
-by the `e9 30 01` near jump at the `0x80000` load base — is a table in the
-*same* encoding with the *same* 36 entries, and writes the same
-`0xffa4 = 0x8000` that the Courier reset stub at `0xffff0` writes itself —
-though the two chips do not agree on what `0xffa4` is, see below.
-The Quad operational image carries the Courier boot block's own initialisation
-convention.
+The table has `0x24` (36) entries. The `e9 30 01` near jump at the `0x80000`
+load base goes to the Quad application header at `0x80003`. This header is a
+table with the *same* encoding and the *same* 36 entries. It writes the same
+`0xffa4 = 0x8000` as the Courier reset stub at `0xffff0`. But the two chips do
+not agree about the function of `0xffa4`, refer to the text below. The Quad
+operational image uses the same initialisation convention as the Courier boot
+block.
 
 ### The values describe a different board
 
-Nineteen ports appear in both tables. Only six hold identical values
+Nineteen ports occur in the two tables. Only six of them have identical values
 (`0xff80`, `0xff84`, `0xff88`, `0xff94`, `0xffa0`, `0xffa4`).
 
-Both parts are **80C186EB**, and the comparison below uses that map
-(Table 4-1 of the manual in this tree). Decoding the 302's boot table with it
-cross-checks against this repository's own hardware-derived model:
-`courier_emu/uart.py` documents the board's serial unit as `B0CMP` "written
-`0x8015`" and `S0CON` "written `0x21`", in a "relocated peripheral control
-block" — and the table writes exactly `0xff60 = 0x8015`, `0xff64 = 0x0021`,
-and `0xffa8 RELREG = 0x10ff`. Three independent agreements, so the decoding is
-right.
+The two parts are **80C186EB**. The comparison below uses the map of that part
+(Table 4-1 of the manual in this tree). We decoded the boot table of the 302
+with this map. The result agrees with the hardware-derived model of this
+repository. `courier_emu/uart.py` documents the serial unit of the board as
+`B0CMP` "written `0x8015`" and `S0CON` "written `0x21`", in a "relocated
+peripheral control block". The table writes exactly `0xff60 = 0x8015`,
+`0xff64 = 0x0021` and `0xffa8 RELREG = 0x10ff`. These are three independent
+agreements, thus the decoding is correct.
 
 | EB register | 302 boot block | Quad init table |
 | --- | --- | --- |
@@ -174,106 +180,114 @@ right.
 | `P1DIR`/`P1CON`/`P1LTCH`, `P2DIR`/`P2CON`/`P2LTCH` | written | not in the table |
 | `IMASK`, `PRIMSK`, `INSERV`, `REQST`, `INSTS`, `SCUCON`, `I3CON`, `PWRCON` | written | `I1CON`-`I4CON`, `IOCON` instead |
 
-Same silicon, different board. The differences that matter are `LCSSP`
-(`0x200a` against `0x400a` — a different lower chip-select extent, so a
-different RAM size), the Quad using all eight general chip selects where the
-302 uses six, the Quad programming all three timers where the 302's boot table
-programs only `T0`, the 302 relocating its peripheral block where the Quad does
-not, and the two setting up *different* on-chip serial channels — the 302
-channel 0, the Quad channel 1.
+The silicon is the same, but the board is different. These are the important
+differences:
 
-So the Courier boot block would hand the Quad application a card with the wrong
-RAM extent, two chip selects unconfigured, its peripheral block relocated out
-from under it, and the wrong serial channel running.
+- `LCSSP` is `0x200a` on the 302 and `0x400a` on the Quad. This is a different
+  extent of the lower chip select, thus a different RAM size.
+- The Quad uses all eight general chip selects. The 302 uses six.
+- The Quad programs all three timers. The boot table of the 302 programs only
+  `T0`.
+- The 302 relocates its peripheral block. The Quad does not.
+- The two configure *different* on-chip serial channels: the 302 uses channel 0
+  and the Quad uses channel 1.
+
+Thus the Courier boot block would give the Quad application a card with these
+faults: the wrong RAM extent, two chip selects not configured, the peripheral
+block relocated away from its expected address, and the wrong serial channel
+in operation.
 
 ### Grafting it on
 
-Copying the Courier boot block (`0xfc000..0xfffff` of `IDSDL302.ROM`) onto the
-Quad flash and entering at the reset vector `0xffff0`, the boot block executes
-normally on Quad flash: 36 word writes and 9 byte writes from its two tables,
-then `rep movsw` of `0x1975` bytes of itself to `0000:0000` (the hot address is
-`0xfda61`, 3,260 iterations), then `int 0x13` — its dispatch, where the harness
-stops with `status: software-interrupt`.
+We copied the Courier boot block (`0xfc000..0xfffff` of `IDSDL302.ROM`) onto
+the Quad flash and entered at the reset vector `0xffff0`. The boot block
+executes normally on the Quad flash. It does 36 word writes and 9 byte writes
+from its two tables. Then it does a `rep movsw` of `0x1975` bytes of itself to
+`0000:0000` (the hot address is `0xfda61`, 3,260 iterations). Then it executes
+`int 0x13`, its dispatch. The harness stops there with
+`status: software-interrupt`.
 
-That path is not open to the Quad either: `recovery.py:178` accepts `int 0x13`
-only at `BANK_PHYSICAL + 0x1c05`, the SV25 bank address.
+The Quad cannot use that path either. `recovery.py:178` accepts `int 0x13` only
+at `BANK_PHYSICAL + 0x1c05`, the SV25 bank address.
 
-So the graft shows the Courier boot block *executes* on Quad flash. It does not
-reach a handoff, and the table comparison above says it should not be given
-one.
+Thus the graft shows that the Courier boot block *executes* on the Quad flash.
+It does not get to a handoff. Also, the table comparison above shows that it
+must not get one.
 
 ### The word at `0xfbfee` is the image CRC
 
-`recovery.py` shows the Courier loader computing an application CRC and
-comparing it against a stored word before entry (its `application-crc` event at
-`0x10a3`). The Quad images leave `0xfbff0..0xfffff` — 16 KiB, boot-block sized —
-entirely unpainted, and paint exactly two bytes at `0xfbfee`, immediately below
-it: `QF 6.0.3 = 0xf40a`, `QR 6.1.3 = 0xc29d`.
+`recovery.py` shows that the Courier loader calculates an application CRC. The
+loader compares this CRC with a stored word before entry (its
+`application-crc` event at `0x10a3`). The Quad images do not paint
+`0xfbff0..0xfffff`. This area is 16 KiB, the size of a boot block. The images
+paint exactly two bytes at `0xfbfee`, immediately below that area:
+`QF 6.0.3 = 0xf40a`, `QR 6.1.3 = 0xc29d`.
 
-Both values are reproduced exactly by **CRC-16/X.25** — reflected polynomial
-`0x8408`, init `0xffff`, final XOR `0xffff` — over `0x80000..0xfbfee`, with
-unpainted flash counted as erased `0xff`:
+**CRC-16/X.25** gives the two values exactly. Its parameters are the reflected
+polynomial `0x8408`, init `0xffff` and final XOR `0xffff`. The range is
+`0x80000..0xfbfee`, and unpainted flash counts as erased `0xff`:
 
 ```
 QF 6.0.3 -> 0xf40a   (stored 0xf40a)
 QR 6.1.3 -> 0xc29d   (stored 0xc29d)
 ```
 
-Two independent images matching on the first algorithm tried after the table
-was identified is proof rather than coincidence. The 256-entry `0x8408` table
-itself is present in both Quad images (`QF+0x1cae`, `QR+0x1bd0`) and in the
-chassis NMC image `NM040103.NAC` (`+0x20d0`), byte-identical and
-little-endian — the same CRC the NMC's `msg_head.crc1`/`crc2` framing uses.
-See [nmc-sdl-protocol.md](nmc-sdl-protocol.md).
+Two independent images match the first algorithm that we tried after we
+identified the table. This is proof, not coincidence. The two Quad images
+contain the 256-entry `0x8408` table (`QF+0x1cae`, `QR+0x1bd0`). The chassis
+NMC image `NM040103.NAC` also contains it (`+0x20d0`). The three copies are
+byte-identical and little-endian. The `msg_head.crc1`/`crc2` framing of the NMC
+uses the same CRC. Refer to [nmc-sdl-protocol.md](nmc-sdl-protocol.md).
 
-So the card's own boot block verifies the operational image with the same CRC
-the chassis uses on the wire, and the covered range confirms that
-`0xfbff0..0xfffff` is reserved for the boot block and excluded from the check.
+Thus the boot block of the card verifies the operational image with the same
+CRC that the chassis uses on the wire. The covered range also confirms that
+`0xfbff0..0xfffff` is reserved for the boot block and is not in the check.
 
-Note also that on the Courier, `0xf8000..0xfbfff` is the parameter sector area
-(`courier rom-info` lists sectors from `0xf8000`), not application space. The
-Quad does not paint there either, so the two agree on the shape of the reserved
-top of flash while disagreeing on what fills it.
+Also, on the Courier, `0xf8000..0xfbfff` is the area of the parameter sectors
+(`courier rom-info` lists sectors from `0xf8000`). It is not application space.
+The Quad does not paint this area either. Thus the two agree about the shape of
+the reserved top of flash. But they do not agree about its contents.
 
 
 ## A note on the peripheral map
 
-`0xff56` is written by the Quad's DSP-interface routine at `0x93864`, which
-sets its bit 1, then later clears bit 1 and pulses bit 3. Table 4-1 of the
-80C186EB manual in this tree names `0xff56` **`P1LTCH`**, the Port 1 output
-latch — so those are GPIO strobes around the DSP access.
+The DSP-interface routine of the Quad at `0x93864` writes `0xff56`. It sets
+bit 1. Later it clears bit 1 and pulses bit 3. Table 4-1 of the 80C186EB manual
+in this tree gives the name **`P1LTCH`** to `0xff56`. This is the Port 1 output
+latch. Thus these writes are GPIO strobes around the DSP access.
 
-Finding that is what forced the map above. Two claims made here earlier are
-withdrawn:
+This finding caused us to use the map above. We withdraw two claims that this
+document made before:
 
-- **"The Quad leaves the Courier's timer setup alone."** It does not. `T0CON`,
-  `T1CON` and `T2CON` are all in its table. That error came from reading
-  `0xff50`-`0xff66` as the timer block, which is the classic 80186 map, not
-  this part's.
+- **"The Quad leaves the Courier's timer setup alone."** This is not correct.
+  Its table contains `T0CON`, `T1CON` and `T2CON`. The error occurred because
+  we read `0xff50`-`0xff66` as the timer block. That is the map of the classic
+  80186, not the map of this part.
 - **"The two program different silicon, so the tables are not comparable."**
-  Also wrong, and briefly committed here. It rested on reading `0xffa8 = 0x10ff`
-  as an `MPCS` value implying a classic part; on the EB `0xffa8` is `RELREG`,
-  and `uart.py` independently describes this board relocating its peripheral
-  control block. Both parts are 80C186EB and the tables compare directly, as
-  above.
+  This is also not correct. We committed it here for a short time. It came from
+  a read of `0xffa8 = 0x10ff` as an `MPCS` value, which implies a classic part.
+  On the EB, `0xffa8` is `RELREG`. Also, `uart.py` independently describes how
+  this board relocates its peripheral control block. The two parts are
+  80C186EB, thus the tables compare directly, as shown above.
 
-The Quad also programs an on-chip serial channel, and uses **channel 0**
-heavily at runtime — `S0CON` at 38 sites, `S0STS` 30, `S0RBUF` 20, `S0TBUF` 39
-— which is the same channel `uart.py` models as the analog board's DTE path.
-Channel 1 is barely used (`S1RBUF` never read). The external `0x220` block
-identified in [nmc-sdl-protocol.md](nmc-sdl-protocol.md) is a separate device
-and is the one the SDL state machine polls, so that identification stands.
+The Quad also programs an on-chip serial channel. At runtime it uses
+**channel 0** much: `S0CON` at 38 sites, `S0STS` 30, `S0RBUF` 20, `S0TBUF` 39.
+`uart.py` models this same channel as the DTE path of the analog board. The
+Quad uses channel 1 very little (it never reads `S1RBUF`). The external `0x220`
+block that [nmc-sdl-protocol.md](nmc-sdl-protocol.md) identifies is a separate
+device. The SDL state machine polls this block. Thus that identification is
+still correct.
 
 ## What the NAC changes for x2 and V.90: it can be the digital modem
 
-Measured on `QF060003.NAC` and `QR060103.NAC`, against
-`T-REC-V.90-199809` and the analog Courier baseline in
+We measured these findings on `QF060003.NAC` and `QR060103.NAC`. We compared
+them with `T-REC-V.90-199809` and with the analog Courier baseline in
 [`x2-v90-protocol-selection.md`](x2-v90-protocol-selection.md).
 
 ### The INFO machinery is shared, not reimplemented
 
-Both NACs carry the same C5x INFO serializer as the analog Courier, located
-by signature rather than by address:
+The two NACs contain the same C5x INFO serializer as the analog Courier. We
+found it by signature, not by address:
 
 | signature | Courier 4.03 | `IDSDL302` | QF 6.0.3 | QR 6.1.3 |
 |---|---|---|---|---|
@@ -282,17 +296,19 @@ by signature rather than by address:
 | DPSK symbol `+/-21fc` | `99ed` | present | `a03c` | `9e3c` |
 | CRC poly `8408` | `99e6` | present | `a035` | `9e5f` |
 
-The fill constant `04ef` is loaded with `lacc`/`sacl` instead of `splk`, which
-is why a naive `splk @50,#04ef` byte search misses it - not because the fill
-differs.  The script tables are structurally identical to the Courier's: the
-same `12 / body / 16 / 4` framing, the same idle-42 and reference-symbol
-steps, and the same three `ff1a` body lengths 77, 38 and 7.  Only the symbol
-output cell is relocated (`01fa` on the Courier, `0218` on QF, `0426` on QR).
+The code loads the fill constant `04ef` with `lacc`/`sacl`, not with `splk`.
+Thus a simple byte search for `splk @50,#04ef` does not find it. The fill is
+not different. The script tables have the same structure as the tables of the
+Courier. They have the same `12 / body / 16 / 4` framing, the same idle-42
+steps and reference-symbol steps, and the same three `ff1a` body lengths 77, 38
+and 7. Only the symbol output cell has a different location (`01fa` on the
+Courier, `0218` on QF, `0426` on QR).
 
 ### The one protocol difference: a 17-or-30 bit INFO0
 
-On the Courier the INFO0 script step is a fixed 17-bit body.  On both NACs the
-step is nominally 17, but its handler rewrites the count before emitting:
+On the Courier, the INFO0 script step has a fixed 17-bit body. On the two NACs,
+the nominal length of the step is 17. But its handler writes a new count before
+it sends the body:
 
 ```text
 a01f  bit   0, @1f
@@ -311,13 +327,13 @@ a027  lar   ar0, #ff18
 | INFO0a - analogue modem | Table 8/V.90 | `12:28` = 17 | 49 |
 | INFO0d - **digital modem** | Table 7/V.90 | `12:41` = 30 | 62 |
 
-So the NAC selects its V.90 role at run time on one flag, and the analog
-Courier has no such branch.  QR 6.1.3 carries the identical construct at
+Thus the NAC selects its V.90 role at run time with one flag. The analog
+Courier does not have this branch. QR 6.1.3 contains the identical construct at
 `9e4f`.
 
 ### The builder proves it is really INFO0d
 
-The same `@1f` bit 0 forks the field construction at `9535`:
+The same `@1f` bit 0 divides the field construction at `9535`:
 
 ```text
 9535  lar   ar1, #039f
@@ -329,9 +345,9 @@ The same `@1f` bit 0 forks the field construction at `9535`:
 9540  ...                     ; digital path continues
 ```
 
-Applying the offset rule from the Courier work (`ITU bit = 12 + (N-1-offset)`,
-so `41 - offset` when `N = 30`), the three digital-path writes land on Table 7
-field boundaries:
+We applied the offset rule from the Courier work (`ITU bit = 12 + (N-1-offset)`,
+thus `41 - offset` when `N = 30`). The three writes on the digital path then
+align with field boundaries of Table 7:
 
 | site | offset | ITU bits | value written | Table 7/V.90 |
 |---|---|---|---|---|
@@ -339,8 +355,8 @@ field boundaries:
 | `9550` | 12 | 29:38 | `6 + ([ffdf] << 5)` | `29:32` nominal Phase 2 power; `33:37` maximum power |
 | `955f` | 3 | 38:40 | see below | `38`, `39`, `40` |
 
-The last one is the cleanest confirmation, because it is three single-bit
-fields in a row:
+The last write gives the clearest confirmation, because it is three single-bit
+fields in a sequence:
 
 ```text
 9554  lar   ar1, #ffd9
@@ -356,30 +372,31 @@ fields in a row:
 9561  splk  @7f, #0003
 ```
 
-Value bit `j` lands on ITU bit `38 + j`, and Table 7 reads:
+Value bit `j` goes to ITU bit `38 + j`. Table 7 gives these fields:
 
 * **38** - "the digital modem's power shall be measured at the output of the
-  codec", from the complement of `[ffd9]` bit 11;
-* **39** - "PCM coding in use by digital modem: 0 = mu-law, 1 = A-law", from
-  `[ffd9]` bit 0;
-* **40** - "ability to operate V.90 with an upstream symbol rate of 3429",
-  hard-wired to 1.
+  codec". The value comes from the complement of `[ffd9]` bit 11.
+* **39** - "PCM coding in use by digital modem: 0 = mu-law, 1 = A-law". The
+  value comes from `[ffd9]` bit 0.
+* **40** - "ability to operate V.90 with an upstream symbol rate of 3429". The
+  value is always 1.
 
-Three named V.90 digital-modem fields, in order, from one write.  This also
-re-derives the Courier's offset rule independently on the server side.
+One write gives three named V.90 digital-modem fields in the correct sequence.
+This also derives the offset rule of the Courier again, independently, on the
+server side.
 
-The `29:38` write is consistent in the same way but needs one inference: the
-nominal field `29:32` receives the literal 6, and `[ffdf]` lands from ITU bit
-34 up.  Since `29:32` is in -1 dBm0 steps and `33:37` in -0.5 dBm0 steps, a
-value at bit 34 rather than 33 is the same power doubled - the unit
-conversion between the two fields.  That reading is an interpretation; the
-raw fact is the expression `6 + ([ffdf] << 5)` at offset 12.
+The `29:38` write agrees in the same way, but it needs one inference. The
+nominal field `29:32` gets the literal 6, and `[ffdf]` starts at ITU bit 34.
+The unit of `29:32` is -1 dBm0 steps and the unit of `33:37` is -0.5 dBm0
+steps. Thus a value at bit 34 and not at bit 33 is the same power multiplied by
+two. This is the unit conversion between the two fields. That reading is an
+interpretation. The raw fact is the expression `6 + ([ffdf] << 5)` at offset 12.
 
 ### What is *not* different
 
-The x2 half is not a separate server protocol in these images.  The NAC has no
-`ff18`-side x2 construction the Courier lacks, and the x2 diagnostic
-vocabulary is **client-only**:
+In these images, the x2 half is not a separate server protocol. The NAC has no
+x2 construction on the `ff18` side that the Courier does not have. Also, the x2
+diagnostic vocabulary is **client-only**:
 
 | string | QF 6.0.3 | Courier 4.03 | `IDSDL302` |
 |---|---|---|---|
@@ -391,16 +408,16 @@ vocabulary is **client-only**:
 | `x2 Status` | 2 | 1 | 1 |
 | `x2 Signature` | 2 | 0 | 0 |
 
-That distribution is what a server should look like: the failure enum -
-"Remote modem is not a Server", "Multiple CODECs in channel" - is what a
-*client* prints about a peer, so the NAC does not carry it.  What the NAC adds
-is `x2 Signature` alongside `x2 Status` in its link-diagnostics label block,
-which the Courier does not have.
+This distribution is correct for a server. A *client* prints the failure enum
+("Remote modem is not a Server", "Multiple CODECs in channel") about a peer.
+Thus the NAC does not contain it. The NAC adds `x2 Signature` next to
+`x2 Status` in its label block for link diagnostics. The Courier does not have
+`x2 Signature`.
 
 ### What this does not establish
 
-These are static findings from the flattened images.  Nothing here has been
-executed, and the flag that selects the digital role - `@1f` bit 0 in the DSP -
-has not been traced back to the controller command or configuration that sets
-it.  That producer is the next step, and it is the same kind of question as
-the open `37:39` writer on the Courier side.
+These are static findings from the flattened images. We did not execute any of
+this code. Also, we did not trace the flag that selects the digital role (`@1f`
+bit 0 in the DSP) back to the controller command or configuration that sets it.
+That producer is the next step. It is the same type of question as the open
+`37:39` writer on the Courier side.

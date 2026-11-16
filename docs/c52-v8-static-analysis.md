@@ -14,7 +14,7 @@
 
 ## Older C51 control
 
-The SDL_49 C51 V.8 overlay contains the same three unsigned multi-precision divide loops:
+The SDL_49 C51 V.8 overlay contains the same three divide loops. These loops are unsigned and multi-precision:
 
 | loop | data base |
 |---:|---:|
@@ -22,9 +22,9 @@ The SDL_49 C51 V.8 overlay contains the same three unsigned multi-precision divi
 | `c927` | `d848` |
 | `c960` | `d848` |
 
-Normalized first loop/body equality: **False**.
+Equality of the normalized first loop and body: **False**.
 
-This cross-generation identity makes the loops software arithmetic, not C52-only ASIC commands.
+The two generations have the same loops. Thus, the loops are software arithmetic. They are not ASIC commands that only the C52 has.
 
 ## C52 state dispatcher
 
@@ -43,7 +43,7 @@ c425: 1048       lacc    @48
 c426: be20       bacc
 ```
 
-Direct handler installations recovered statically:
+Static analysis recovered these direct installations of handlers:
 
 - `c509` installs handler `c50b` in data register `48`.
 - `c527` installs handler `c529` in data register `48`.
@@ -362,9 +362,9 @@ ACC  = unsigned(data[78])
 if C == 0: AR1 -= INDX; AR2 += INDX
 ```
 
-The measured entry (`AR1=a51b`, `AR2=d2a8`, `ACC=7fef`) therefore implies `data[79]=d273`, `data[26]=0`, and `INDX=2d8d`. The zero at `a51b` has no reaching C52 write. It is an input to a generic multiple-precision routine, not a literal state token.
+The measured entry has these values: `AR1=a51b`, `AR2=d2a8`, `ACC=7fef`. Thus, the values must be `data[79]=d273`, `data[26]=0`, and `INDX=2d8d`. No C52 write reaches the zero at `a51b`. This zero is an input to a generic multiple-precision routine. It is not a literal state token.
 
-The same routine relocates by exactly `-8000` in every 2.3.x build (`d2a8 -> 52a8`) and by `+05a0` in the C51 image (`d2a8 -> d848`). This proves the addresses belong to revision-specific software workspace layouts.
+In each 2.3.x build, the same routine moves by exactly `-8000` (`d2a8 -> 52a8`). In the C51 image, it moves by `+05a0` (`d2a8 -> d848`). This proves that the addresses are part of software workspace layouts. Each revision has a different layout.
 
 ## Artifacts
 
