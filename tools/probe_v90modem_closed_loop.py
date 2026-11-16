@@ -4,6 +4,10 @@
 Analog uses the existing exchange-codec calibration. I-modem carries byte-
 exact PCMU. No recording supplies either peer's response. Pace the engine's
 media clock because its training timeouts use wall time.
+
+The analog Courier's image, settings EEPROM and command line can be changed:
+COURIER_ROM (default the 403 capture), COURIER_NVRAM (an EEPROM image file,
+written back by the run; default the idsdl403 fixture) and COURIER_AT.
 """
 import argparse
 import hashlib
@@ -43,7 +47,7 @@ class EnginePeer:
         env = os.environ.copy(); env['ME_MODE'] = 'x2'
         self.environment = {k:v for k,v in env.items() if k.startswith('ME_')}
         self.engine_sha256 = hashlib.sha256(self.engine.read_bytes()).hexdigest()
-        self.process = subprocess.Popen([str(self.engine), '/private/tmp/'+self.output.name+'-pty'],
+        self.process = subprocess.Popen([str(self.engine), str(Path(tempfile.gettempdir())/(self.output.name+'-pty'))],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=self.log, env=env)
         self.origin = time.monotonic()
 
@@ -96,10 +100,10 @@ def analog(args):
     with tempfile.TemporaryDirectory(prefix='x2-loop-') as temp:
         socket=str(Path(temp)/'line.sock')
         command=[sys.executable,'-m','courier_emu','run',
-            str(ROOT/'artifacts/courier-board-21210-capture-403/courier-board.rom'),
+            os.environ.get('COURIER_ROM',str(ROOT/'artifacts/courier-board-21210-capture-403/courier-board.rom')),
             '--instructions',str(args.instructions),'--line-link',socket,'--line-listen',
-            '--with-dsp','--nvram-fixture','idsdl403','--board-id','7','--dip-preset','default',
-            '--tick-ms','5','--at','ATX1S27=1S54=0S58=48&A3&B1Q0&U26&N39DT5551234',
+            '--with-dsp',*(['--nvram',os.environ['COURIER_NVRAM']] if os.environ.get('COURIER_NVRAM') else ['--nvram-fixture','idsdl403']),'--board-id','7','--dip-preset','default',
+            '--tick-ms','5','--at',os.environ.get('COURIER_AT','ATX1S27=1S54=0S58=48&A3&B1Q0&U26&N39DT5551234'),
             '--serial-input-after','5000000','--summary','--line-record',str(out/'analog'),
             '--dsp-trace-range','b1a1:b1c2','--dsp-write-watch','039f']
         command += os.environ.get('COURIER_EXTRA_ARGS','').split()  # local test hack
