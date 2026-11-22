@@ -15,3 +15,10 @@ from tools.c5x_disasm import decode
 ])
 def test_block_moves_display_source_then_destination(words,text):
     assert decode(words,0).text==text
+
+
+def test_macd_consumes_its_program_address_operand():
+    instruction = decode([0xa392, 0x45b7, 0xbe04], 0)
+    assert instruction.size == 2
+    assert instruction.text == 'macd    *-, 45b7'
+    assert decode([0xa392, 0x45b7, 0xbe04], instruction.size).text == 'apac'

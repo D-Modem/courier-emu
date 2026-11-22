@@ -37,6 +37,7 @@ from .line import (
 )
 from .daa import RING_OFF_MS, RING_ON_MS
 from .pit import INSTRUCTIONS_PER_SECOND
+from .peripheral_clock import PeripheralClock
 from .sip import linear_to_ulaw, ulaw_to_linear
 
 LINE_SAMPLE_RATE = 8_000
@@ -68,6 +69,10 @@ class BearerLineLink:
 
     It takes the bearer whole through `clock`, idle or not, because the line
     it sits on has to keep exchanging frames whether a call is up or not.
+
+    ``instruction_clocked`` opts a virtual pair into one executed-machine
+    timebase. ``realtime_clock`` then requests CPU wall pacing, not separate
+    peripheral/PCM wall targets. The default retains the independent clock.
     """
 
     realtime_clock = False
@@ -75,7 +80,11 @@ class BearerLineLink:
     # before the switch connects the call.
     awaits_answer = True
 
-    def __init__(self, line: LineLink, *, codec: str = "ac01") -> None:
+    # A complete receive frame is queued before the native PCM consumer runs.
+    feeds_ahead = True
+
+    def __init__(self, line: LineLink, *, codec: str = "ac01",
+                 realtime_clock: bool = False, instruction_clocked: bool = False) -> None:
         # The line carries the Courier's codec samples untouched, so the
         # Courier must run its end digital too (COURIER_LINE_DIGITAL=1): this
         # end sets both directions' levels.
@@ -85,6 +94,9 @@ class BearerLineLink:
         if codec not in ("ac01", "si3034"):
             raise ValueError(f"unsupported analog codec: {codec}")
         self.line = line
+        self.realtime_clock = realtime_clock
+        self.instruction_clocked = instruction_clocked
+        self._clock = PeripheralClock(INSTRUCTIONS_PER_SECOND)
         self.codec = codec
         to_ulaw = (SI3034_TX_FULL_SCALE_DBM - ULAW_FULL_SCALE_DBM0
                    if codec == "si3034" else TO_ULAW_DB)
@@ -106,6 +118,7 @@ class BearerLineLink:
         self.octets_to_line = 0
         self.octets_from_line = 0
         self.silence_frames = 0
+        self.active_idle_samples = 0
         self.events: list[str] = []
 
     # -- the call, as BriNetwork drives it ---------------------------------
@@ -170,6 +183,12 @@ class BearerLineLink:
 
     def clock(self, dsc: Any, channel: int | None, instructions: int) -> None:
         """Carry whatever the highway clocked since the last pass onto the line."""
+        # In wallclock mode an idle CPU poll is not elapsed audio time. Only
+        # use the external clock for the fallback while the call is active;
+        # boot and ringing retain the ordinary instruction clock.
+        if self.realtime_clock and not self.instruction_clocked:
+            instructions = self._clock.read(
+                instructions, self.answered and not self.cleared)
         self.poll()
         if not self.line.connected:
             return
@@ -194,6 +213,8 @@ class BearerLineLink:
             self._instructions_seen += (
                 elapsed - elapsed % CPU_INSTRUCTIONS_PER_SAMPLE)
             if self._stalled_samples >= HIGHWAY_STALL_SAMPLES:
+                if self.answered and not self.cleared:
+                    self.active_idle_samples += self._stalled_samples
                 self._pending.extend(
                     bytes((PCMU_SILENCE,)) * self._stalled_samples)
                 self._stalled_samples = 0
@@ -268,6 +289,8 @@ class BearerLineLink:
         return {
             "line": self.line.status(),
             "analog_codec": self.codec,
+            "realtime_clock": self.realtime_clock,
+            "instruction_clocked": self.instruction_clocked,
             "analog_to_ulaw_db": 20 * math.log10(self.from_line),
             "ulaw_to_analog_db": 20 * math.log10(self.into_courier),
             "call_state": CALL_STATE_NAMES.get(self._call_state,
@@ -279,5 +302,6 @@ class BearerLineLink:
                        "from_line": self.octets_from_line,
                        "pending": len(self._pending)},
             "silence_frames": self.silence_frames,
+            "active_idle_samples": self.active_idle_samples,
             "events": list(self.events),
         }

@@ -1,0 +1,18 @@
+{
+  "codec": {
+    "off_hook_hardware_tx_sha256": "0543276929ccf502fd66e9ef6a238fd1e47b4ce772e40c0aebabbfedcf5c1d6f",
+    "off_hook_hardware_tx_samples": 308000,
+    "raw_rx_samples": 308000,
+    "raw_rx_all_negative_rail": true,
+    "loop_status_log": "status=40 / zero loop current",
+    "worker_exit": 0
+  },
+  "hardware": {
+    "off_hook_hardware_tx_sha256": "0543276929ccf502fd66e9ef6a238fd1e47b4ce772e40c0aebabbfedcf5c1d6f",
+    "off_hook_hardware_tx_samples": 308000,
+    "raw_rx_samples": 308000,
+    "raw_rx_all_negative_rail": true,
+    "loop_status_log": "status=40 / zero loop current",
+    "worker_exit": 0
+  }
+}

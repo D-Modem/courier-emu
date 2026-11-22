@@ -35,8 +35,14 @@
     "descrambler": 288,
     "width_setup": 2,
     "training_words": 512,
+    "lane_source": 384,
+    "lane_sink": 384,
+    "stream_source": 384,
+    "stream_sink": 384,
+    "receive_octet_reservoir": 768,
     "tx_callback": 256,
     "rx_callback": 256,
+    "rx_callback_open_sink": 256,
     "quad_pcm_helpers": 88
   },
   "c_lift_verified": true,
@@ -45,5 +51,5 @@
     "flat_sha256": "61a8f031c7cdf94daad748cded191f8287757254bc3a3657609a7426ca2dca2d",
     "scope": "Shared x2/V.90 parameter/table helpers"
   },
-  "total_cases": 6562
+  "total_cases": 9122
 }

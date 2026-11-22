@@ -47,8 +47,12 @@ from .timers import (
     SUGGESTED_TICK_MS, TICK_SOURCES,
     TIMER_POLL_INSTRUCTIONS, TimerBlock,
 )
-from .uart import DteTransmitLine, EbSerial, S0STS, TRANSMIT_READY
+from .uart import (
+    DteInputTiming, DteTransmitLine, EbSerial, S0STS, S0TBUF, TRANSMIT_READY,
+)
 from .rom_serial import locate_rom_serial
+from .rom import CourierRom
+from .dte_framing import DTE_FRAMINGS, locate_dte_framing
 from .x86_clock import NativeX86Clock
 from .machine_map import courier_machine_map
 from .timebase import Timebase
@@ -63,6 +67,12 @@ NVRAM_INPUT_BITS = BIT_DATA | BIT_READY
 MAX_SERIAL_BYTES = 64 * 1024
 MAX_SERIAL_TRACE_EVENTS = 256
 TIMER_IRQ_INSTRUCTION_PERIOD = 4_096
+_MAILBOX_IRET_PCS = frozenset((0x6ADF1, 0x6ADF8, 0x677F1, 0x677F8, 0x6EEFA))
+
+
+def _uart_bus_reversed_23(flags: int, uart_kind: int) -> bool:
+    """The guest skips both reversal loops when flags bit zero is clear."""
+    return bool(flags & 1) and uart_kind == 7
 # The C52's reset line, in the relocated peripheral control block. Driving it
 # low holds the coprocessor in reset; the ROM pulses it at 8e40c/8e418. Other
 # P1 latch bits are exercised heavily during self-test and must not reset it.
@@ -97,6 +107,8 @@ SERVICE_INSTRUCTIONS = 64
 # resolution; widening it after off-hook changes the DTMF stream. Payload runs
 # retain the 64-instruction Python service interval because their synthetic
 # UART bit edge is finer again.
+# Frame-source profiles choose their own IRQ recognition interval below;
+# selecting XF on one machine must not retime every board in the process.
 NATIVE_ROM_SERVICE_INSTRUCTIONS = TIMER_POLL_INSTRUCTIONS
 
 # The processor state carried across a turn-taking yield. Segment registers and
@@ -189,7 +201,9 @@ DTE_READY_INSTRUCTIONS = 30_000_000
 # instructions after the handshake, so the first character lands inside it.
 DTE_TYPING_INSTRUCTIONS = DTE_READY_INSTRUCTIONS + 5_000_000
 PC_WATCH_SAMPLES = 64
-MEM_WATCH_EVENTS = 96
+# Only the most recent writes are kept. A whole call's command ring needs more
+# than this, so COURIER_MEM_WATCH_EVENTS raises it for a diagnostic run.
+MEM_WATCH_EVENTS = int(os.environ.get("COURIER_MEM_WATCH_EVENTS", "96"))
 
 # The watched-port log. Bigger than the mem watch: a data lane the
 # supervisor read-modify-writes produces two entries per byte moved.
@@ -386,6 +400,7 @@ class RunResult:
     hot_addresses: list[tuple[int, int]] = field(default_factory=list)
     pc_watch: list[dict[str, Any]] = field(default_factory=list)
     peek: dict[str, str] = field(default_factory=dict)
+    rom_link_errors: dict[str, Any] = field(default_factory=dict)
     mem_watch: list[dict[str, Any]] = field(default_factory=list)
     # Every access to the watched I/O ports, with the pc that made it.
     # `io_events` keeps only the first 128, which on any real run is boot
@@ -399,7 +414,10 @@ class RunResult:
     data_tx_bytes: int = 0
     online_mode: bool = False
     serial_truncated: bool = False
+    serial_bytes_total: int = 0
     serial_input_remaining: int = 0
+    serial_uart: dict[str, Any] | None = None
+    dte_input_timing: dict[str, Any] | None = None
     serial_interrupts: int = 0
     timer_interrupts: int = 0
     ticks: int = 0
@@ -487,6 +505,7 @@ class CourierMachine:
         quad_usart: QuadUsart | None = None,
         quad_board: QuadBoard | None = None,
         quad_c50: QuadC50Endpoint | None = None,
+        quad_line_kind: int | None = None,
         quad_terminal: bool = False,
         uart_ports: set[int] | None = None,
         max_io_events: int = 128,
@@ -497,7 +516,10 @@ class CourierMachine:
         dsp_tx_pcm: str | None = None,
         serial_input: bytes = b"",
         serial_input_on_ring: bool = False,
+        terminal_dtr: bool | None = None,
+        dte_framing: str = "stored",
         serial_input_after_connect: list[bytes] | None = None,
+        serial_input_after_connect_delay_ms: int = 0,
         serial_input_schedule: list[tuple[int, bytes]] | None = None,
         daa: CourierDaa | None = None,
         ring: RingSource | None = None,
@@ -507,13 +529,17 @@ class CourierMachine:
         sip: SipSession | None = None,
         line: LineLink | None = None,
         nvram: CourierNvram | None = None,
-        board_id: int | None = DEFAULT_BOARD_ID,
+        board_id: int | None | str = "auto",
         dip_closed: frozenset[str] | None = None,
         code_observer: Any = None,
         parameter_sector: bytes | None = None,
         parameter_flash: ParameterFlash | None = None,
         tick_ms: int | None = SUGGESTED_TICK_MS,
         frame_hz: int | None = None,
+        frame_codec_samples: int = 0,
+        frame_source: str | None = None,
+        interrupt_poll_instructions: int | None = None,
+        frame_irq_poll_instructions: int = SERVICE_INSTRUCTIONS,
         tick_source: str | None = None,
         console: SerialConsole | None = None,
         force_online: bool = False,
@@ -525,6 +551,8 @@ class CourierMachine:
         dsp_write_watch: int | None = None,
         dsp_acquisition_assist: bool = False,
         mem_watch: tuple[int, int] | None = None,
+        trace_rom_link_errors: bool = False,
+        trace_rom_lapm: bool = False,
         io_watch: tuple[int, ...] = (),
         cpu_engine: str = "interpreter",
     ) -> None:
@@ -532,6 +560,13 @@ class CourierMachine:
             raise ValueError(f"unknown x86 engine {cpu_engine!r}")
         self.cpu_engine = cpu_engine
         self.image = image
+        if dte_framing not in DTE_FRAMINGS:
+            raise ValueError("Invalid DTE framing")
+        self.dte_framing = dte_framing
+        self._dte_framing_address = locate_dte_framing(image.data)
+        self._dte_attention_seen = False
+        if dte_framing != "stored" and self._dte_framing_address is None:
+            raise ValueError("Cannot identify this firmware's active DTE framing; use stored framing")
         self.hardware_map = courier_machine_map(image)
         self.quad_terminal = QuadTerminal() if quad_terminal else None
         if self.quad_terminal is not None:
@@ -548,11 +583,40 @@ class CourierMachine:
         self.parameter_flash = parameter_flash
         self._service_resume = False
         self.tick_ms = tick_ms
-        # The INT0 period, in instructions. The default is the board's measured
-        # rate; `--frame-hz` is for comparing against it, not for tuning.
+        # ROM-backed Courier DSP firmware supplies the frame-service edges on
+        # XF. A fixed ~2400 Hz source under-services x2's 3200 Hz cadence and
+        # exhausts the six receive lanes (x2 Draft 0.33 clause 22 handoff).
+        # Keep periodic/fixed overrides for reproducing the old board model.
+        if frame_hz is not None and frame_hz <= 0:
+            raise ValueError('frame_hz must be positive')
+        if not isinstance(frame_codec_samples, int) or frame_codec_samples < 0:
+            raise ValueError('frame_codec_samples must be a nonnegative integer')
         self._frame_hz = frame_hz
-        self.frame_instructions = (INSTRUCTIONS_PER_SECOND // frame_hz
+        self._frame_codec_samples = frame_codec_samples
+        self._frame_codec_active = False
+        if frame_source not in (None, 'periodic', 'dsp-xf'):
+            raise ValueError('frame_source must be periodic or dsp-xf')
+        default_xf = with_dsp and isinstance(image, CourierRom)
+        self._use_dsp_xf_int0 = (frame_source == 'dsp-xf' if frame_source is not None else
+                               os.environ.get('COURIER_ROM_XF_INT0',
+                                              '1' if default_xf else '0') == '1')
+        if (interrupt_poll_instructions is not None
+                and (not isinstance(interrupt_poll_instructions, int) or interrupt_poll_instructions <= 0)):
+            raise ValueError('interrupt_poll_instructions must be a positive integer')
+        self._interrupt_poll_instructions = (interrupt_poll_instructions
+            if interrupt_poll_instructions is not None else
+            SERVICE_INSTRUCTIONS if self._use_dsp_xf_int0 and frame_hz is None
+            else TIMER_POLL_INSTRUCTIONS)
+        if (not isinstance(frame_irq_poll_instructions, int) or frame_irq_poll_instructions <= 0):
+            raise ValueError('frame_irq_poll_instructions must be a positive integer')
+        self._frame_irq_poll_instructions = frame_irq_poll_instructions
+        self._frame_xf_core = None
+        self._frame_xf_generation = 0
+        self._frame_xf_seen = self._frame_xf_sample = 0
+        self._frame_xf_delivered = self._frame_xf_coalesced = 0
+        self.frame_instructions = (max(1.0, INSTRUCTIONS_PER_SECOND / frame_hz)
                                    if frame_hz else FRAME_INSTRUCTIONS)
+        self._frame_fallback = self.frame_instructions
         if tick_source is not None and tick_source not in TICK_SOURCES:
             choices = ", ".join(TICK_SOURCES)
             raise ValueError(f"invalid tick source {tick_source!r}; choose {choices}")
@@ -560,6 +624,12 @@ class CourierMachine:
         self.ticks = 0
         self._last_tick = 0
         self._tick_owed = False
+        from .firmware3453 import profile_for
+        self._profile3453 = profile_for(image)
+        if board_id == "auto":
+            # External 3453 model: codes 7 and 13 have the same capability
+            # byte (0x22). This chooses a modeled strap, not a measured PCB ID.
+            board_id = 7 if self._profile3453 else DEFAULT_BOARD_ID
         self.panel = CourierPanel(
             board_id=board_id,
             dip_closed=DEFAULT_DIP_CLOSED if dip_closed is None else dip_closed,
@@ -572,6 +642,11 @@ class CourierMachine:
             raise ValueError("quad_board and quad_usart must share the same device")
         self.quad_board = quad_board
         self.quad_c50 = quad_c50
+        if quad_line_kind is not None:
+            if (quad_line_kind not in (0, 1, 2)
+                    or getattr(image, "quad_role", None) != "modem"):
+                raise ValueError("Quad line kind requires a modem image and value 0, 1 or 2")
+        self.quad_line_kind = quad_line_kind
         self.quad_usart = quad_board.usart if quad_board is not None else quad_usart
         self._quad_profile = self.quad_usart is not None or getattr(image, "quad_profile", False)
         self.output_latches: dict[int, int] = {}
@@ -596,6 +671,9 @@ class CourierMachine:
         # is at 0290..02ce, which the dsp_queue_write hook only clips the tail
         # of, and nothing else records who fills it.
         self.mem_watch = mem_watch
+        self.trace_rom_link_errors = trace_rom_link_errors or trace_rom_lapm
+        self.trace_rom_lapm = trace_rom_lapm
+        self._rom_link_errors = None
         self.mem_watch_events: list[dict[str, Any]] = []
         #: I/O ports to log every access to, with the pc.
         self.io_watch = tuple(io_watch)
@@ -611,6 +689,9 @@ class CourierMachine:
         self.io_counts: Counter[tuple[str, int, int]] = Counter()
         self.mmio_counts: Counter[tuple[str, int, int]] = Counter()
         self.serial = bytearray()
+        self.serial_output = None  # Optional caller-owned binary stream; never capped.
+        self.serial_bytes_total = 0
+        self._serial_tail = bytearray()
         self.serial_truncated = False
         self.data_rx_bytes = 0
         self.data_tx_bytes = 0
@@ -631,10 +712,15 @@ class CourierMachine:
             sorted(serial_input_schedule or []))
         # Data a terminal sends once the call is up. Typed any earlier it
         # would abort the dial, so it waits for the CONNECT line to end.
-        # The first goes at once, as before; each later chunk follows a pause
+        # The first goes at once by default, or after an explicit external
+        # terminal delay; each later chunk follows a pause
         # longer than the S12 escape guard, so a chunk of "+++" escapes to
         # command mode and the next is a command. (Typing has been idle since
         # the dial, which is the guard ahead of a leading "+++".)
+        if serial_input_after_connect_delay_ms < 0:
+            raise ValueError('terminal send delay must be non-negative')
+        self._serial_input_after_connect_delay = (
+            serial_input_after_connect_delay_ms * INSTRUCTIONS_PER_MS)
         self._serial_input_after_connect: list[bytes] = [
             chunk for chunk in serial_input_after_connect or [] if chunk]
         self._alternate_line = bytearray()
@@ -673,6 +759,37 @@ class CourierMachine:
         # A ROM enters at the reset vector and dispatches its own software
         # interrupts; an update payload is entered directly at the application.
         supervisor_offset = getattr(image, "supervisor_offset", None)
+        if hasattr(image, 'firmware_mode') and self._profile3453 is None:
+            raise ValueError('no verified 3453 execution profile for this supervisor')
+        self._actual_hot_addresses = ({self._profile3453.address(pc) for pc in _HOT_ADDRESSES}
+                                      if self._profile3453 else _HOT_ADDRESSES)
+        self._pc_canonical = ({actual: canonical for canonical, actual in self._profile3453.pc.items()}
+                              if self._profile3453 else {})
+        self.flash_bus = None
+        if self._profile3453:
+            from .flash_bus3453 import FlashBus3453
+            if hasattr(image, 'firmware_mode'):
+                flash_data = image.data
+            else:
+                contents = bytearray(b'\xff' * 0x100000)
+                contents[0x40000:0xF8000] = image.data
+                flash_data = bytes(contents)
+            registers = {}
+            if getattr(image, 'power_on', False):
+                registers[0xFFA4] = 0x8000
+            elif getattr(image, 'firmware_mode', None) == 'bootmodem':
+                registers.update({0xFFA2: 0x100A, 0xFFA4: 0x1000})
+            manufacturer, device = ((0x20, 0x22EC) if self._profile3453.name.startswith('bc-')
+                                    else (0xC2, 0x22D6))
+            self.flash_bus = FlashBus3453(flash_data, manufacturer, device, registers)
+        self._firmware_mode_switches: list[dict[str, Any]] = []
+        self._power_on_loader_active = getattr(image, 'power_on', False)
+        self._power_on_state = ({'reset_vector_executed': False,
+                                 'normal_crc_valid': None, 'boot_select_normal': None,
+                                 'selected_mode': None, 'loader_exit_instruction': None}
+                                if self._power_on_loader_active else None)
+        self._3453_line_pending = False
+        self._3453_parser_started = False
         self.emulate_interrupts = (
             getattr(image, "emulates_interrupts", False)
             or supervisor_offset == 0x1B600
@@ -699,9 +816,15 @@ class CourierMachine:
             on_timebase_change=self._adopt_timebase,
         )
         self.timebase = self.timers.timebase
-        if self._quad_profile or supervisor_offset == 0x17BB0:
-            # The EB leaves IMASK bit 1 reserved: INT3 is bit 7, not the
-            # legacy DMA-equipped controller's bit 6. The 2.3.x tick uses it.
+        if self._frame_hz is not None:
+            self.frame_instructions = max(1.0, self.timebase.cpu_clock_hz /
+                self.timebase.cycles_per_instruction / self._frame_hz)
+            self._frame_fallback = self.frame_instructions
+        if self._quad_profile or isinstance(image, XmfImage) or self._profile3453:
+            # All XMF supervisors target the 80C186EB, not just 2.3.x.
+            # IMASK bit 6 masks INT2; INT3 is bit 7. Using the legacy DMA
+            # layout misread main211's enabled board tick as masked, so its
+            # stream callbacks and diagnostic timeouts never advanced.
             self.timers.controller = EbInterruptController()
         self._int0_in_service = False
         self._interrupt_stack: list[int] = []
@@ -709,7 +832,7 @@ class CourierMachine:
         self._external_interrupt_pending: int | None = None
         # A ROM reaches its DTE through the integrated serial unit in the
         # control block rather than the payload's hand-modelled ports.
-        self.uart = EbSerial() if supervisor_offset is None else None
+        self.uart = EbSerial(timed_transmit=True) if supervisor_offset is None else None
         # The ROM's serial engine runs off INT1 while the tick runs off INT3,
         # so the two cannot share one pending slot.
         self._int1_pending: int | None = None
@@ -726,6 +849,7 @@ class CourierMachine:
         self._rom_rx_bit = 0
         #: The terminal's wire. Sampled by address, never by PC.
         self.dte_line = DteTransmitLine(DTE_BIT_INSTRUCTIONS)
+        self._dte_input_timing = DteInputTiming()
         self._rom_dte_opened = False
         self._online_attention_armed = False
         self._previous_address: int | None = None
@@ -737,7 +861,7 @@ class CourierMachine:
         self._next_service = SERVICE_INSTRUCTIONS
         self._last_service = 0
         self._console_owed = 0
-        self._timer_poll_owed = TIMER_POLL_INSTRUCTIONS
+        self._timer_poll_owed = self._interrupt_poll_instructions
         # The per-address execution histogram behind `hot_addresses`. It is
         # a diagnostic, and counting it costs a dict update on every emulated
         # instruction, so it is off unless asked for.
@@ -770,6 +894,7 @@ class CourierMachine:
                 dsp_trace_range=dsp_trace_range,
                 dsp_peek=dsp_peek,
                 dsp_write_watch=dsp_write_watch,
+                trace_rom_link_errors=trace_rom_link_errors,
                 rx_acquisition_assist=dsp_acquisition_assist,
                 # Option switch 5. On a leased pair this is what makes one
                 # end the answerer, so the line model reads it from the same
@@ -794,6 +919,11 @@ class CourierMachine:
             if download is not None
             else None
         )
+        if self._profile3453 and self.emulate_interrupts:
+            self._rom_transfer_span = (
+                self._profile3453.address(0x66638) - 0x100,
+                self._profile3453.address(0x667B0) + 0x180,
+            )
         # Every address constant below belongs to the update payload's map.
         # A full board ROM loads at its own base and runs a different
         # supervisor, so those constants land on unrelated code: left enabled
@@ -809,17 +939,19 @@ class CourierMachine:
         # Located in this image, not assumed: an image whose table is
         # elsewhere used to report its callbacks as zero.
         self._serial_callbacks = (
-            serial_callback_table(getattr(image, "data", b"")) or 0x02A8
+            self._profile3453.ram.get(0x2A8, 0x2A8) if self._profile3453
+            else serial_callback_table(getattr(image, "data", b"")) or 0x02A8
         )
         self._rom_serial = (
             locate_rom_serial(image.data, self._serial_callbacks)
             if self.uart is not None else None
         )
+        self.terminal_dtr = terminal_dtr
         self._terminal_connected = (bool(serial_input or serial_input_after_connect
                                          or serial_input_schedule)
                                     or console is not None)
         self._alternate_supervisor = supervisor_offset == 0x1B600
-        self._supervisor_23 = supervisor_offset == 0x17BB0
+        self._supervisor_23 = supervisor_offset == 0x17BB0 or self._profile3453 is not None
         # main2205 keeps the same supervisor ABI but relocates several
         # dispatcher routines.  These are the corresponding entry points
         # recovered from its own call-table and transfer code.
@@ -836,6 +968,11 @@ class CourierMachine:
                 0x61CE2: "main-loop",
                 0x61D0C: "main-loop",
             })
+        if self._profile3453:
+            self._milestone_addresses = {
+                self._profile3453.address(pc): 'main-loop'
+                for pc in (0x61CE2, 0x61D0C)
+            }
 
     def _dte_asserted(self) -> bool:
         """Whether the harness's terminal has raised its handshake yet.
@@ -864,8 +1001,72 @@ class CourierMachine:
         vector = bytes(uc.mem_read(INT0_VECTOR * 4, 4))
         return any(vector)
 
+    def _accept_dte_attention(self, uc: Any) -> None:
+        """Complete format discovery at the byte-oriented attention adapter.
+
+        The adapter already hands the AT body to firmware instead of modeling
+        raw-pin autobaud. Publish the terminal's format at that same boundary,
+        after boot/profile loading, without changing factory defaults or using
+        another board's EEPROM. Stored framing never writes the setting.
+        """
+        if self._dte_framing_address is None:
+            return
+        if self.dte_framing != "stored":
+            uc.mem_write(self._dte_framing_address, bytes((DTE_FRAMINGS.index(self.dte_framing),)))
+        self._dte_attention_seen = True
+
+    def _dte_data_mask(self, fallback: int) -> int:
+        if self._dte_attention_seen and self._dte_framing_address is not None:
+            framing = bytes(self.uc.mem_read(self._dte_framing_address, 1))[0]
+            return 0x7F if framing & 7 else 0xFF
+        return fallback
+
+    def _serial_transmit_quiet_until(self, instructions: int) -> int | None:
+        """Only an online ROM UART can elide work between TX event deadlines."""
+        if (self.console is not None or self._rom_serial is None
+                or not self._rom_dte_opened or not self.online_mode or self.uart is None):
+            return None
+        return self.uart.transmit_quiet_until(instructions)
+
+    def _serial_receive_quiet_until(self, instructions: int) -> int | None:
+        """Next event requiring service while an online byte is on the wire.
+
+        Keep unmasked start edges, UART requests, byte completion and command/
+        autobaud cooperative. A masked INT1 edge stays latched, not discarded.
+        Data-bit edges require no service: the FF5A read hook synchronizes to
+        the access instruction and computes DteTransmitLine.level directly.
+        Do not use this deadline with a cached receive-pin implementation.
+        """
+        uart = self.uart
+        line = self.dte_line
+        if (self.console is not None or self._rom_serial is None
+                or not self._rom_dte_opened or not self.online_mode
+                or not self.serial_rx or uart is None or not uart.holding
+                or uart.pending or not line.busy
+                or (line._edge and self.timers.controller.enabled("int1"))):
+            return None
+        bit = line.bit_index(instructions)
+        if not 0 <= bit < line.FRAME_BITS:
+            return None
+        deadline = line.started + line.FRAME_BITS * line.bit_instructions
+        if uart.transmit_busy:
+            transmit_until = self._serial_transmit_quiet_until(instructions)
+            if transmit_until is None:
+                return None
+            deadline = min(deadline, transmit_until)
+        return deadline
+
     def _capture_serial(self, value: int) -> None:
         value &= 0xFF
+        self.serial_bytes_total = getattr(self, 'serial_bytes_total', 0) + 1
+        sink = getattr(self, 'serial_output', None)
+        if sink is not None:
+            sink.write(bytes((value,)))
+        # Protocol state must keep advancing after the diagnostic report fills.
+        if not hasattr(self, '_serial_tail'):
+            self._serial_tail = bytearray(self.serial[-12:])
+        self._serial_tail.append(value)
+        del self._serial_tail[:-12]
         if len(self.serial) < MAX_SERIAL_BYTES:
             self.serial.append(value)
         else:
@@ -885,15 +1086,18 @@ class CourierMachine:
         # line. ATI6 prints "No Connection", which a case-blind search took for
         # one, and the console then passed the parity bit through on
         # everything after it.
-        recent = bytes(byte & 0x7F for byte in self.serial[-8:])
+        recent = bytes(byte & 0x7F for byte in self._serial_tail[-8:])
         if (not self.online_mode and recent[1:] == b"CONNECT"
                 and recent[:1] in (b"\r", b"\n")):
             self.online_mode = True
             self.serial_trace.append("entered-data-mode")
+            observer = getattr(self, '_rom_link_errors', None)
+            if observer is not None:
+                observer.arm_bank_trace()
         # And NO CARRIER is the way back: the firmware has dropped the call and
         # its command parser owns the port again. The whole line, CR included,
         # so payload that merely mentions it does not end the session early.
-        tail = bytes(byte & 0x7F for byte in self.serial[-12:])
+        tail = bytes(byte & 0x7F for byte in self._serial_tail[-12:])
         if self.online_mode and tail == b"\nNO CARRIER\r":
             self.online_mode = False
             self.serial_trace.append("left-data-mode")
@@ -902,12 +1106,123 @@ class CourierMachine:
             guard = AFTER_CONNECT_GUARD_MS * INSTRUCTIONS_PER_MS
             self._serial_input_schedule = deque(sorted([
                 *self._serial_input_schedule,
-                *((self.instructions + guard * index, chunk)
+                *((self.instructions + self._serial_input_after_connect_delay + guard * index, chunk)
                   for index, chunk in enumerate(self._serial_input_after_connect))]))
             self._serial_input_after_connect.clear()
             self.serial_trace.append("connect: scheduled held data")
         if self.console is not None:
-            self.console.write(value if self.online_mode else value & 0x7F)
+            self.console.write(value & self._dte_data_mask(0xFF if self.online_mode else 0x7F))
+
+    def _dte_transmit_permitted(self) -> bool:
+        """Let an in-flight character finish; CTS gates the next start bit.
+
+        The measured ROM board's CS output is latch 0x14 bit 1, active low
+        (see panel.py). The integrated UART's CTS input is the opposite
+        direction: it is driven by our RTS, not the modem's permission for
+        the host to send. Looking only at receive_available protects the
+        UART holding register, not the firmware's data buffer during retrain.
+        """
+        if (not self.online_mode or self._rom_serial is None
+                or self.dte_line.busy):
+            return True
+        return not (self.output_latches.get(0x14, 0) & 0x02)
+
+    def _retime_frame_cadence(self, instructions: int, period: float) -> None:
+        """Change frequency without restarting the phase or rounding each tick.
+
+        This is a periodic frame clock, not a replay queue of DSP XF pulses.
+        Outstanding requests retain the existing one-pending/coalescing policy.
+        """
+        if period != self.frame_instructions:
+            phase = (instructions - self._last_frame) / self.frame_instructions
+            self._last_frame = instructions - phase * period
+            self.frame_instructions = period
+
+    def _adaptive_frame_cadence(self) -> bool:
+        bridge = self.dsp_bridge
+        return bool(getattr(self, '_frame_codec_samples', 0) and self._frame_hz is None
+                    and not self._use_dsp_xf_int0 and self._rom_tick and bridge
+                    and getattr(bridge, 'boot_rom_enabled', False))
+
+    def _refresh_frame_cadence(self, instructions: int) -> None:
+        if not self._adaptive_frame_cadence():
+            return
+        bridge = self.dsp_bridge
+        core = bridge.core
+        period = self._frame_fallback
+        self._frame_codec_active = False
+        if core is not None:
+            codec = core.codec_state()
+            if (codec['rate_programmed'] and codec['free_run']
+                    and codec['line_frame_irq'] >= 0 and codec['frame_period'] > 0
+                    and bridge.dsp_cycles_per_x86 > 0):
+                period = max(1.0, self._frame_codec_samples * codec['frame_period']
+                             / bridge.dsp_cycles_per_x86)
+                self._frame_codec_active = True
+        self._retime_frame_cadence(instructions, period)
+
+    def _xf_frame_source(self) -> bool:
+        bridge = self.dsp_bridge
+        return bool(self._use_dsp_xf_int0 and self._frame_hz is None and self._rom_tick
+                    and bridge and getattr(bridge, 'boot_rom_enabled', False))
+
+    def _frame_irq_due(self, instructions: int) -> bool:
+        bridge = self.dsp_bridge
+        core = bridge.core if bridge else None
+        if self._xf_frame_source() and core is not None and hasattr(core, 'xf_falling_edges'):
+            if hasattr(core, 'xf_frame_state'):
+                count, generation = core.xf_frame_state()
+            else:
+                count = core.xf_falling_edges()
+                generation = core.reset_generation() if hasattr(core, 'reset_generation') else 0
+            if (self._frame_xf_core is not core or count < self._frame_xf_seen
+                    or generation != getattr(self, '_frame_xf_generation', 0)):
+                self._frame_xf_core, self._frame_xf_seen = core, 0
+            self._frame_xf_generation = generation
+            self._frame_xf_sample = count
+            return count > self._frame_xf_seen
+        self._frame_xf_core = None
+        self._refresh_frame_cadence(instructions)
+        return instructions - self._last_frame >= self.frame_instructions
+
+    def _consume_frame_irq(self, instructions: int) -> None:
+        if self._frame_xf_core is not None:
+            # The controller retains one request, not a queue of old edges.
+            self._frame_xf_coalesced += max(0, self._frame_xf_sample - self._frame_xf_seen - 1)
+            self._frame_xf_seen = self._frame_xf_sample
+            self._frame_xf_delivered += 1
+            self._last_frame = instructions
+        else:
+            self._last_frame += self.frame_instructions
+            if instructions - self._last_frame >= self.frame_instructions:
+                self._last_frame = instructions - self.frame_instructions
+
+    def _track_external_interrupt(self, vector: int) -> None:
+        """All sources of a controller IRQ share its EOI/in-service state."""
+        if self._rom_link_errors is not None:
+            self._rom_link_errors.record_irq(6, vector)
+        self._interrupt_stack.append(vector)
+        if vector == INT0_VECTOR:
+            self._int0_in_service = True
+
+    def _complete_external_interrupt(self, value: int) -> None:
+        if not self._interrupt_stack:
+            return
+        if value & 0x8000:
+            completed = self._interrupt_stack.pop()
+        else:
+            completed = value & 0x1f
+            if completed in self._interrupt_stack:
+                self._interrupt_stack.remove(completed)
+        if self._rom_link_errors is not None:
+            self._rom_link_errors.record_irq(7, completed, value)
+        if completed == INT0_VECTOR:
+            self._int0_in_service = False
+
+    @property
+    def _dtr_asserted(self) -> bool:
+        """Externally driven DTR pin; None follows ordinary terminal presence."""
+        return self._terminal_attached if self.terminal_dtr is None else self.terminal_dtr
 
     @property
     def _terminal_attached(self) -> bool:
@@ -921,6 +1236,15 @@ class CourierMachine:
         """
         self._terminal_connected |= bool(self.serial_rx) or self.console is not None
         return self._terminal_connected
+
+    def _clocked_3453_runtime(self) -> bool:
+        """Preserve service time during calls and on-hook runtime recovery."""
+        board = getattr(self.dsp_bridge, "board3453", None)
+        daa = getattr(self.dsp_bridge, "daa", None)
+        return bool(self._profile3453 and self.tick_source == "dsp"
+                    and board is not None and board.finished
+                    and daa is not None
+                    and (daa.off_hook or self._serial_started))
 
     def _needs_code_hook(self) -> bool:
         """Whether anything in this run reads per-instruction state.
@@ -958,10 +1282,14 @@ class CourierMachine:
     def _key_wait_tests(self) -> frozenset[int]:
         """Physical addresses of the firmware's keystroke-flag tests."""
         addresses = []
-        index = self.image.data.find(KEY_WAIT_TEST)
+        pattern = KEY_WAIT_TEST
+        if self._profile3453:
+            flags = self._profile3453.ram.get(0x1D26, 0x1D26)
+            pattern = b'\xf6\x06' + flags.to_bytes(2, 'little') + b'\x20'
+        index = self.image.data.find(pattern)
         while index >= 0:
             addresses.append(self.image.load_base + index)
-            index = self.image.data.find(KEY_WAIT_TEST, index + 1)
+            index = self.image.data.find(pattern, index + 1)
         return frozenset(addresses)
 
     def _trace_serial(self, event: str) -> None:
@@ -1013,12 +1341,17 @@ class CourierMachine:
         20.16 MHz board was being run on main211's 25.8048 MHz figure.
         """
         self.timebase = timebase
-        if self._frame_hz:
-            self.frame_instructions = timebase.instructions_per_second // self._frame_hz
-        else:
-            self.frame_instructions = timebase.instructions_per_second // FRAME_HZ
+        self._frame_fallback = (max(1.0, timebase.cpu_clock_hz /
+            timebase.cycles_per_instruction / self._frame_hz) if self._frame_hz is not None
+            else timebase.instructions_per_second // FRAME_HZ)
         if self.dsp_bridge is not None:
             self.dsp_bridge.set_timebase(timebase)
+        if self._adaptive_frame_cadence():
+            self._refresh_frame_cadence(self.instructions)
+        elif self._frame_hz is not None:
+            self._retime_frame_cadence(self.instructions, self._frame_fallback)
+        else:
+            self.frame_instructions = self._frame_fallback
 
     def run(self, instruction_limit: int = 250_000) -> RunResult:
         if self.cpu_engine == "interpreter":
@@ -1102,7 +1435,9 @@ class CourierMachine:
         # a firmware variable, for example) have no other handle on the engine.
         self.uc = uc
         uc.mem_map(0, self.hardware_map.address_space_size)
-        uc.mem_write(self.image.load_base, self.image.data)
+        memory = (self.image.memory_image() if hasattr(self.image, 'memory_image')
+                  else self.image.data)
+        uc.mem_write(self.image.load_base, memory)
         for address, payload in getattr(self.image, "initial_memory", ()):
             uc.mem_write(address, payload)
         if self.quad_board is not None:
@@ -1124,6 +1459,29 @@ class CourierMachine:
         uc.reg_write(UC_X86_REG_SS, 0)
         uc.reg_write(UC_X86_REG_SP, 0xFFFE)
 
+        def ram(address: int) -> int:
+            return (self._profile3453.ram.get(address, address)
+                    if self._profile3453 else address)
+
+        def update_flash_mapping(address, size, value):
+            if self.flash_bus is not None and self.flash_bus.write_register(address, size, value):
+                for start, payload in self.flash_bus.array_views():
+                    uc.mem_write(start, payload)
+
+        def on_flash_read(_uc, _access, address, size, _value, _data):
+            payload = self.flash_bus.read(address, size)
+            if payload is not None and bytes(_uc.mem_read(address, size)) != payload:
+                _uc.mem_write(address, payload)
+
+        def on_flash_write(_uc, _access, address, size, value, _data):
+            self.flash_bus.write(address, size, value)
+
+        if self.flash_bus is not None:
+            for start, payload in self.flash_bus.array_views():
+                uc.mem_write(start, payload)
+            uc.hook_add(UC_HOOK_MEM_READ, on_flash_read, None, 0x10000, 0xFFFFF)
+            uc.hook_add(UC_HOOK_MEM_WRITE, on_flash_write, None, 0x10000, 0xFFFFF)
+
         def current_pc() -> int:
             return ((uc.reg_read(UC_X86_REG_CS) << 4) + uc.reg_read(UC_X86_REG_IP)) & 0xFFFFF
 
@@ -1135,11 +1493,13 @@ class CourierMachine:
         def serial_wire_value(value: int) -> int:
             # Some Courier board revisions wire the UART data bus backwards.
             # The firmware records that variant in bit zero at 0000:067e and
-            # reverses every byte in its ISR. Model the wire, while exposing
-            # ordinary terminal byte order to callers.
+            # reverses every byte in its ISR. The 2.x ISR instead gates both
+            # reversal loops on 06A2 bit zero and skips the second for kind 7.
+            # Model the wire, exposing ordinary terminal byte order to callers.
             if self._supervisor_23:
-                reversed_bus = (bool(bytes(uc.mem_read(0x6A2, 1))[0] & 1)
-                                != (bytes(uc.mem_read(0x965, 1))[0] != 7))
+                reversed_bus = _uart_bus_reversed_23(
+                    bytes(uc.mem_read(ram(0x6A2), 1))[0],
+                    bytes(uc.mem_read(ram(0x965), 1))[0])
             else:
                 reversed_bus = bool(bytes(uc.mem_read(0x67E, 1))[0] & 1)
             return reverse_byte(value) if reversed_bus else value
@@ -1174,6 +1534,10 @@ class CourierMachine:
             uc.reg_write(UC_X86_REG_FLAGS, flags & ~0x0300)
             uc.reg_write(UC_X86_REG_CS, segment)
             uc.reg_write(UC_X86_REG_IP, offset)
+            # This ISR EOIs INT2 just like a controller-delivered request.
+            # Otherwise its EOI pops an interrupted INT0 and admits a second
+            # data ISR while the original CPU bit framer is still running.
+            self._track_external_interrupt(0x0E)
             self._serial_irq_mode = "rx" if self.serial_rx else "tx"
             self._serial_in_handler = True
             self._serial_irq_requested = False
@@ -1185,6 +1549,8 @@ class CourierMachine:
             return True
 
         def inject_timer_interrupt() -> bool:
+            if self._int0_in_service:
+                return False
             vector = bytes(uc.mem_read(0x0C * 4, 4))
             offset = int.from_bytes(vector[:2], "little")
             segment = int.from_bytes(vector[2:], "little")
@@ -1207,6 +1573,7 @@ class CourierMachine:
             uc.reg_write(UC_X86_REG_FLAGS, flags & ~0x0300)
             uc.reg_write(UC_X86_REG_CS, segment)
             uc.reg_write(UC_X86_REG_IP, offset)
+            self._track_external_interrupt(INT0_VECTOR)
             self._timer_irq_requested = False
             self._timer_in_handler = True
             self.timer_interrupts += 1
@@ -1228,6 +1595,12 @@ class CourierMachine:
             them until the state is ready again is what a terminal does, and
             it is the same path the first line of a session already takes.
             """
+            if self.online_mode:
+                # A dial/leased-line command remains pending until hangup,
+                # but the selected online RX callback owns DTE data now.
+                return False
+            if self._profile3453:
+                return self._3453_line_pending
             return int.from_bytes(_uc.mem_read(0x2AC, 2), "little") == 0xA910
 
         def serial_frontend_missing(_uc: Any) -> bool:
@@ -1240,7 +1613,14 @@ class CourierMachine:
             """
             if not self._terminal_attached:
                 return False
-            return int.from_bytes(_uc.mem_read(0x2A8, 2), "little") in (0x0000, 0x1FCE)
+            callback = int.from_bytes(_uc.mem_read(ram(0x2A8), 2), "little")
+            # Capturing the CONNECT UART write precedes its wire completion
+            # and the guest's subsequent data-callback selection. Do not let
+            # the held DTE payload hit its still-selected abort-on-key callback.
+            # Wait for the original driver; never replace its chosen callback.
+            return callback in (0x0000, 0x1FCE) or bool(
+                self.online_mode and self._profile3453
+                and callback == self._profile3453.abort_rx_callback)
 
         def echo_command_byte(_uc: Any, value: int) -> None:
             """Echo a typed character, as the modem does in command mode.
@@ -1257,13 +1637,14 @@ class CourierMachine:
             it would put the commands into the captured transcript of runs
             that never had a terminal.
             """
-            if self.console is None:
+            if self.console is None or self.online_mode:
                 return
             if not bytes(_uc.mem_read(ECHO_SETTING, 1))[0]:
                 return
             self._capture_serial(value)
 
         key_wait_tests = self._key_wait_tests()
+        attention_line_pending = [False]
 
         def waiting_for_keystroke(_uc: Any) -> bool:
             """Whether a running command has stopped for a key from the DTE.
@@ -1282,7 +1663,8 @@ class CourierMachine:
                 return False
             if not addresses & key_wait_tests:
                 return False
-            return not bytes(_uc.mem_read(0x1CEE, 1))[0] & 0x20
+            flag_address = ram(0x1D26) if self._profile3453 else 0x1CEE
+            return not bytes(_uc.mem_read(flag_address, 1))[0] & 0x20
 
         def discard_line_without_attention(_uc: Any) -> None:
             """Drop a completed line the attention detector never armed on.
@@ -1333,11 +1715,13 @@ class CourierMachine:
             collect, and leave a keystroke to reach the command that asked
             for it.
             """
-            flags = bytes(_uc.mem_read(0x1CEE, 1))[0]
+            flag_address = ram(0x1D26) if self._profile3453 else 0x1CEE
+            flags = bytes(_uc.mem_read(flag_address, 1))[0]
             if flags & 0x40:
                 return
-            _uc.mem_write(0x1CEE, bytes((flags | 0x40,)))
-            length_address = 0x1D1C if self._alternate_supervisor else 0x1CF4
+            _uc.mem_write(flag_address, bytes((flags | 0x40,)))
+            length_address = (ram(0x1D2C) if self._profile3453
+                              else 0x1D1C if self._alternate_supervisor else 0x1CF4)
             _uc.mem_write(length_address, b"\x00")
             self._trace_serial("collect 1cee|=40")
 
@@ -1349,9 +1733,34 @@ class CourierMachine:
             executed instructions that land outside them. The ranges are a
             superset of the addresses, so the membership test still decides.
             """
+            # Hook ranges include gaps (and whole-flash runs include all
+            # profiles). Reject physical PCs before canonical translation:
+            # a moved canonical PC can otherwise match unrelated live code.
+            # BC 5868C is the timer ISR's CLD, not C's delay LOOP; changing CX
+            # there corrupts the register saved by the following PUSHA.
+            if address not in self._actual_hot_addresses:
+                return
+            address = self._pc_canonical.get(address, address)
             hot = address in _HOT_ADDRESSES
             if not hot:
                 return
+            if address == 0x65F03:
+                attention_line_pending[0] = False
+            if (address == 0x65560 and attention_line_pending[0]
+                    and self._terminal_attached and not self.online_mode and not self._alternate_supervisor
+                    and not self._supervisor_23 and not self._profile3453
+                    and int.from_bytes(_uc.mem_read(0x2AC, 2), 'little') == 0xA252
+                    and not bytes(_uc.mem_read(0x1CEE, 1))[0] & 0x40):
+                # A252 is the on-hook event dispatcher, not a line parser.
+                # The board DTE attention detector normally hands a completed
+                # AT line back to A910. After a command the guest can return
+                # to A252 while our UART stand-in has already collected the
+                # next line; without that hand-off it echoes but never parses.
+                length = bytes(_uc.mem_read(0x1CF4, 1))[0]
+                line = bytes(_uc.mem_read(0x1CF5, min(length, 0x3C)))
+                if attention_body(line) is not None:
+                    _uc.mem_write(0x2AC, (0xA910).to_bytes(2, 'little'))
+                    self._trace_serial('attention: completed line -> a910')
             if hot and (
                 address == 0x65560
                 and self.dsp_bridge is not None
@@ -1511,12 +1920,15 @@ class CourierMachine:
                 self._daa_originate_event_posted = True
                 self._trace_serial("daa callback 02ac=a35f")
             if hot and (self._supervisor_23 and address == 0x62360):
-                length = bytes(_uc.mem_read(0x1D2C, 1))[0]
-                payload = bytes(_uc.mem_read(0x1D2D, min(length, 0x3C)))
+                if self._3453_line_pending:
+                    self._3453_parser_started = True
+                length = bytes(_uc.mem_read(ram(0x1D2C), 1))[0]
+                payload = bytes(_uc.mem_read(ram(0x1D2D), min(length, 0x3C)))
                 body = attention_body(payload)
                 if body is not None:
-                    _uc.mem_write(0x1D2D, body + b"\x00\x00")
-                    _uc.mem_write(0x1D2C, bytes((len(body),)))
+                    self._accept_dte_attention(_uc)
+                    _uc.mem_write(ram(0x1D2D), body + b"\x00\x00")
+                    _uc.mem_write(ram(0x1D2C), bytes((len(body),)))
                     if self.dsp_bridge is not None:
                         self.dsp_bridge.arm_dial_tones(body)
             if hot and (
@@ -1542,6 +1954,7 @@ class CourierMachine:
                 command = bytes(_uc.mem_read(buffer_address, length))
                 body = attention_body(command)
                 if body is not None:
+                    self._accept_dte_attention(_uc)
                     _uc.mem_write(buffer_address, body + b"\x00\x00")
                     _uc.mem_write(length_address, bytes((len(body),)))
                     self._trace_serial(f"attention body={body!r}")
@@ -1552,16 +1965,18 @@ class CourierMachine:
             # routine's own entry, so a byte passes 0x5ce2b once per spin but
             # is only accepted at 0x5ce66, just before the parity transform and
             # the write to the transmit register. Capture there so each byte is
-            # recorded exactly once.
-            if hot and (self._serial_started and address in (0x5CE66, 0x5CE6A, 0x5944D)):
+            # recorded exactly once. The 2.x supervisors instead use the
+            # actual S0TBUF store below, including their online foreground kick.
+            if hot and (self._serial_started and not self._supervisor_23
+                        and address in (0x5CE66, 0x5CE6A, 0x5944D)):
                 raw = _uc.reg_read(UC_X86_REG_AX) & 0xFF
                 # The transform at 5b5e:1913 recomputes bit 7 as an even-parity
                 # bit whenever [0x26c6] is zero, then applies the [0x0936]
                 # framing. In those framings bit 7 carries no data, so report
                 # the seven bits a receiving DTE would keep.
-                parity_cell = 0x2712 if self._supervisor_23 else 0x26C6
+                parity_cell = ram(0x2712) if self._supervisor_23 else 0x26C6
                 parity_framing = bytes(_uc.mem_read(parity_cell, 1))[0] == 0
-                terminal_value = raw & 0x7F if parity_framing else raw
+                terminal_value = raw & self._dte_data_mask(0x7F if parity_framing else 0xFF)
                 self._capture_serial(terminal_value)
                 self._trace_serial(f"fifo {terminal_value:02x} pc={current_pc():05x}")
             if hot and (
@@ -1597,14 +2012,27 @@ class CourierMachine:
             # Firmware delay helpers either burn CX or wait for the timer ISR
             # to advance the tick at 0000:0152. Advance both without inventing
             # asynchronous interrupts in the CPU-only harness.
-            if hot and (self.fast_delays and address in (0x5C0F3, 0x5C0D4, 0x5868C)):
+            if (hot and self.fast_delays
+                    and address in (0x5C0F3, 0x5C0D4, 0x5868C)
+                    and not self._clocked_3453_runtime()):
                 _uc.reg_write(UC_X86_REG_CX, 1)
                 self.accelerated_delays += 1
             if hot and (self.fast_delays and address in (0x5C0E3, 0x5C0C4, 0x5867C)):
-                ah = (_uc.reg_read(UC_X86_REG_AX) >> 8) & 0xFF
-                _uc.mem_write(0x152, bytes((ah,)))
-                self.accelerated_delays += 1
-            if hot and (self.fast_delays and self._supervisor_23 and address in (0x59CD9, 0x59D02, 0x59D28)):
+                if not self._clocked_3453_runtime():
+                    ah = (_uc.reg_read(UC_X86_REG_AX) >> 8) & 0xFF
+                    _uc.mem_write(0x152, bytes((ah,)))
+                    self.accelerated_delays += 1
+                # During 3453 runtime, this wait also gives the guest's
+                # outbound ring time to drain. Skipping it fills 02DC/02DE;
+                # 67D5F then silently drops configuration and originate
+                # commands (including 0017:5040). Let the board IRQ advance
+                # 0152 instead of manufacturing completion of this wait.
+            if (hot and self.fast_delays and self._supervisor_23
+                    and address in (0x59CD9, 0x59D02, 0x59D28)
+                    and not self._clocked_3453_runtime()):
+                # These poll outbound queue empty with a timer deadline, not
+                # merely a delay. Forcing 014E to CL takes the timeout exit
+                # before 02DC catches 02DE, dropping the next setup burst.
                 cx = _uc.reg_read(UC_X86_REG_CX)
                 _uc.mem_write(0x14E, bytes((cx & 0xFF,)))
                 self.accelerated_delays += 1
@@ -1683,7 +2111,8 @@ class CourierMachine:
         mmio_batched: list[bool] = [False]
         mmio_batch_ok = (
             self.cpu_engine == "interpreter" and self.quad_board is None
-            and self.quad_c50 is None and self.quad_usart is None)
+            and self.quad_c50 is None and self.quad_usart is None
+            and self.flash_bus is None)
 
         # Set while replaying a write whose end of interrupt the worker's
         # native poll has already applied to the in-service stack.
@@ -1714,6 +2143,8 @@ class CourierMachine:
 
         def service_after_tick(_uc: Any, elapsed: int, interrupts_on: bool) -> None:
             """Every interrupt source the board raises on a service, once the timers have run."""
+            if self.uart is not None:
+                self.uart.advance(self.instructions, self.timers.timebase.cycles_per_instruction)
             # The ROM arms INT1 and starts timer 1 as a stopwatch, then
             # reads that stopwatch in the handler to derive a bit period.
             # Only one thing on the board can be measured that way: the
@@ -1755,9 +2186,23 @@ class CourierMachine:
             ):
                 self._timer_interrupt_pending = self.timers.take_interrupt()
                 _uc.emu_stop()
+            if (self.online_mode and self.uart is not None and self.dte_line.busy
+                    and self.dte_line.complete(self.instructions)):
+                reason = ('receive-busy' if not self.uart.receive_available else
+                          'receiver-disabled' if not self.uart.receive_enabled else None)
+                if reason:
+                    self._dte_input_timing.blocked(
+                        reason, instructions=self.instructions,
+                        line_frame=(self.dsp_bridge.line.frames
+                                    if self.dsp_bridge and self.dsp_bridge.line else None),
+                        pending=self.uart.pending, wire_started=self._rx_started_at)
             if (
                 self.uart is not None
-                and not self.uart.pending
+                # RX and TX have independent request latches. Keep the
+                # existing DTE backpressure on RX capacity only, rather than
+                # letting terminal output block input behind a TX request.
+                and self.uart.receive_available
+                and self._dte_transmit_permitted()
                 and self.quad_terminal is None
                 # The ROM deliberately disables the integrated receiver
                 # while its timer/INT1 autobaud front end watches the raw
@@ -1765,7 +2210,10 @@ class CourierMachine:
                 # pin; payload runs continue to require the UART enable.
                 and (self.uart.receive_enabled or self._rom_tick)
                 and self.serial_rx
-                and interrupts_on
+                # The receive shifter runs while the CPU has IF cleared.
+                # Keep the command-mode attention adapter's existing guard;
+                # online data only latches an RX request until IF is set.
+                and (interrupts_on or self.online_mode)
                 and self.instructions >= DTE_TYPING_INSTRUCTIONS
                 and (
                     not self._rom_dte_opened
@@ -1877,12 +2325,22 @@ class CourierMachine:
                         self._online_attention_armed = False
                         typed = attention_body(bytes(self._rom_command_line))
                         self._rom_command_line.clear()
-                        if typed is not None and self.dsp_bridge is not None:
-                            self.dsp_bridge.note_dte_command(typed)
+                        if typed is not None:
+                            self._accept_dte_attention(_uc)
+                            if self.dsp_bridge is not None:
+                                self.dsp_bridge.note_dte_command(typed)
                     else:
                         self._rom_command_line.append(byte)
                     self.uart.deliver(byte)
-                    _uc.emu_stop()
+                    if self.online_mode:
+                        self._dte_input_timing.observe(
+                            instructions=self.instructions,
+                            line_frame=(self.dsp_bridge.line.frames
+                                        if self.dsp_bridge and self.dsp_bridge.line else None),
+                            byte=byte, queued=len(self.serial_rx),
+                            wire_started=self._rx_started_at)
+                    if interrupts_on:
+                        _uc.emu_stop()
             if self.quad_usart is not None:
                 # The DUART drives Quad INT0 (type 0x0c). Its ISR starts
                 # with STI, so IF alone cannot prevent recursive entry:
@@ -1911,7 +2369,7 @@ class CourierMachine:
                 and self._int0_pending is None
                 and not self._int0_in_service
                 and interrupts_on
-                and self.instructions - self._last_frame >= self.frame_instructions
+                and self._frame_irq_due(self.instructions)
                 and self._int0_vector_installed(_uc)
             ):
                 # Advance the phase by exactly one period, the way the
@@ -1930,9 +2388,7 @@ class CourierMachine:
                 # latches one pending edge, and `_int0_pending` is that one
                 # slot. Interrupts being off for a while loses edges on the
                 # board too; it does not bank them.
-                self._last_frame += self.frame_instructions
-                if self.instructions - self._last_frame >= self.frame_instructions:
-                    self._last_frame = self.instructions - self.frame_instructions
+                self._consume_frame_irq(self.instructions)
                 self._int0_pending = INT0_VECTOR
             if interrupts_on and (
                 self._int0_pending is not None
@@ -1963,11 +2419,9 @@ class CourierMachine:
                 and self.instructions - self._last_tick
                 >= self.tick_ms * INSTRUCTIONS_PER_MS
                 and _uc.reg_read(UC_X86_REG_FLAGS) & 0x0200
-                # This firmware keeps int3 masked throughout, so nothing is
-                # delivered here today. Honouring the mask is the point: an
-                # edge the firmware has switched off is one the board cannot
-                # take, and delivering it anyway is what turned the linked
-                # pair's ATA from NO CARRIER into OK.
+                # Honour the board source's mask using the selected
+                # controller layout. In the EB layout INT3 is IMASK bit 7;
+                # confusing it with legacy bit 6 suppresses main211's tick.
                 and self.timers.controller.enabled("int3")
             ):
                 # The board's periodic edge, which the supervisor's countdown
@@ -2049,7 +2503,7 @@ class CourierMachine:
                             # command has stopped on a keystroke it is
                             # waiting for - `AT$` and the other help pages
                             # end each screen that way.
-                            if not executing:
+                            if not executing and not self.online_mode:
                                 begin_command_line(_uc)
                             self._serial_irq_requested = True
                             _uc.emu_stop()
@@ -2057,7 +2511,7 @@ class CourierMachine:
                     tx_callback = self._serial_tx_callback
                     if tx_callback is None:
                         tx_callback = int.from_bytes(
-                            _uc.mem_read(0x2AA, 2), "little"
+                            _uc.mem_read(ram(0x2AA), 2), "little"
                         )
                         self._serial_tx_callback = tx_callback
                     if tx_callback not in (0, 0x1FCE):
@@ -2068,6 +2522,7 @@ class CourierMachine:
                 self._serial_started
                 and not self._serial_in_handler
                 and not self._timer_in_handler
+                and not self._int0_in_service
                 and not self._serial_irq_requested
                 and (self.dsp_bridge is None or self.dsp_bridge.active)
             ):
@@ -2107,10 +2562,21 @@ class CourierMachine:
             if self.emulate_interrupts:
                 self._timer_poll_owed -= elapsed
             if self.emulate_interrupts and self._timer_poll_owed <= 0:
-                self._timer_poll_owed += TIMER_POLL_INSTRUCTIONS
+                self._timer_poll_owed += self._interrupt_poll_instructions
                 self.timers.tick(self.instructions)
                 interrupts_on = bool(_uc.reg_read(UC_X86_REG_FLAGS) & 0x0200)
                 service_after_tick(_uc, elapsed, interrupts_on)
+            elif self.emulate_interrupts and self._xf_frame_source():
+                # XF is an asynchronous device edge, not an 80186 timer tick.
+                # Latch it at the board service boundary while preserving the
+                # normal timer/UART polling period and outer IRQ arbitration.
+                if (not self._int0_in_service and self._int0_pending is None
+                        and _uc.reg_read(UC_X86_REG_FLAGS) & 0x0200
+                        and self._frame_irq_due(self.instructions)
+                        and self._int0_vector_installed(_uc)):
+                    self._consume_frame_irq(self.instructions)
+                    self._int0_pending = INT0_VECTOR
+                    _uc.emu_stop()
             service_tail_suffix(_uc, elapsed)
 
         def service_chunk_body(_uc: Any, elapsed: int) -> None:
@@ -2206,7 +2672,10 @@ class CourierMachine:
                 or self.quad_c50 is not None or self.quad_terminal is not None
                 or self._serial_started or self._supervisor_23 or self._tick_owed
                 or not self.emulate_interrupts
-                or (uart is not None and uart.holding)
+                or (uart is not None and ((uart.transmit_busy
+                    and self._serial_transmit_quiet_until(self.instructions) is None)
+                    or (uart.holding and self._serial_receive_quiet_until(
+                        self.instructions) is None)))
                 or (not mmio_batched[0] and mmio_batch_ok
                     and len(self.mmio_events) >= self.max_io_events)
             )
@@ -2218,8 +2687,9 @@ class CourierMachine:
                 self._refresh_native_lanes()
             # service_tail, with its tests made first.
             self._timer_poll_owed -= elapsed
-            if self._timer_poll_owed <= 0:
-                self._timer_poll_owed += TIMER_POLL_INSTRUCTIONS
+            timer_poll = self._timer_poll_owed <= 0
+            if timer_poll:
+                self._timer_poll_owed += self._interrupt_poll_instructions
                 instructions = self.instructions
                 self.timers.tick(instructions)
                 interrupts_on = bool(_uc.reg_read(UC_X86_REG_FLAGS) & 0x0200)
@@ -2227,9 +2697,11 @@ class CourierMachine:
                     (self._rom_tick or self._quad_modem_tick) and self.tick_ms
                     and instructions - self._last_tick >= self.tick_ms * INSTRUCTIONS_PER_MS)
                 if (
-                    self.dte_line._edge or tick_due
+                    (self.dte_line._edge and self.timers.controller.enabled("int1"))
+                    or tick_due
                     or self.int1_after_ms is not None
-                    or self.serial_rx
+                    or (self.serial_rx and self._serial_receive_quiet_until(
+                        self.instructions) is None)
                     or (uart is not None and uart.pending)
                     or self._external_interrupt_pending is not None
                     or self._int1_pending is not None
@@ -2244,13 +2716,11 @@ class CourierMachine:
                 elif (
                     self._int0_pending is None and not self._int0_in_service
                     and interrupts_on
-                    and instructions - self._last_frame >= self.frame_instructions
+                    and self._frame_irq_due(instructions)
                     and self._int0_vector_installed(_uc)
                 ):
                     # The DSP's frame edge, and nothing else: take it now.
-                    self._last_frame += self.frame_instructions
-                    if instructions - self._last_frame >= self.frame_instructions:
-                        self._last_frame = instructions - self.frame_instructions
+                    self._consume_frame_irq(instructions)
                     self._int0_in_service = True
                     dispatch_interrupt(INT0_VECTOR, software=False)
                     _uc.redirect_is_free = True
@@ -2262,6 +2732,18 @@ class CourierMachine:
                 and self.instructions - self._last_tick >= self.tick_ms * INSTRUCTIONS_PER_MS
             ):
                 service_tail_suffix(_uc, elapsed)
+            if (not timer_poll and self._xf_frame_source()
+                    and self._int0_pending is None and not self._int0_in_service
+                    and _uc.reg_read(UC_X86_REG_FLAGS) & 0x0200
+                    and self._frame_irq_due(self.instructions)
+                    and self._int0_vector_installed(_uc)):
+                self._consume_frame_irq(self.instructions)
+                if timer_poll_static():
+                    dispatch_interrupt(INT0_VECTOR, software=False)
+                    _uc.redirect_is_free = True
+                else:
+                    self._int0_pending = INT0_VECTOR
+                    _uc.emu_stop()
             if fixed_refresh[0] is not None:
                 fixed_refresh[0]()
 
@@ -2270,8 +2752,10 @@ class CourierMachine:
             all coming out the way that leaves only the frame edge to take."""
             uart = self.uart
             return not (
-                self.dte_line._edge or self.int1_after_ms is not None
-                or self.serial_rx
+                (self.dte_line._edge and self.timers.controller.enabled("int1"))
+                or self.int1_after_ms is not None
+                or (self.serial_rx and self._serial_receive_quiet_until(
+                    self.instructions) is None)
                 or (uart is not None and uart.pending)
                 or self._external_interrupt_pending is not None
                 or self._int1_pending is not None
@@ -2284,11 +2768,15 @@ class CourierMachine:
             )
 
         def on_milestone_code(_uc: Any, address: int, _size: int, _data: Any) -> None:
-            """The four addresses that name a stage of the boot.
-
-            Bounded to those addresses rather than tested on every
-            instruction; `_milestone_addresses` still decides.
-            """
+            """Boot-stage edges and the board's completed-line handoff."""
+            if self._profile3453 and address == self._profile3453.address(0x61D0C):
+                if self._3453_parser_started:
+                    self._3453_line_pending = False
+                    self._3453_parser_started = False
+                elif self._3453_line_pending and not self.online_mode:
+                    # The board's attention receiver posts a completed line
+                    # to this callback; raw UART injection bypasses it.
+                    _uc.mem_write(ram(0x2AC), self._profile3453.command_callback.to_bytes(2, 'little'))
             milestone = self._milestone_addresses.get(address)
             if milestone is not None and milestone not in self.milestones:
                 self.milestones.append(milestone)
@@ -2335,8 +2823,10 @@ class CourierMachine:
                     )
                 )
                 for pointer, fallback in serial_callbacks:
-                    if bytes(_uc.mem_read(pointer, 2)) == b"\x00\x00":
-                        _uc.mem_write(pointer, fallback.to_bytes(2, "little"))
+                    if pointer == 0x2AE and self._profile3453:
+                        fallback = self._profile3453.empty_callback
+                    if bytes(_uc.mem_read(ram(pointer), 2)) == b"\x00\x00":
+                        _uc.mem_write(ram(pointer), fallback.to_bytes(2, "little"))
                         if pointer == 0x2AA:
                             self._serial_tx_callback = fallback
                         self.serial_trace.append(f"callback {pointer:03x}={fallback:04x}")
@@ -2354,11 +2844,12 @@ class CourierMachine:
                         # dispatches the line parser. The board setup normally
                         # supplies CR; the XMF lacks that EEPROM/peripheral
                         # initialization path.
-                        _uc.mem_write(0x0905, b"\x0d")
-                        command_state = bytes(_uc.mem_read(0x1D26, 1))[0]
-                        _uc.mem_write(0x1D26, bytes((command_state | 0x40,)))
-                    command_flags = bytes(_uc.mem_read(0x1CEE, 1))[0] | 0x40
-                    _uc.mem_write(0x1CEE, bytes((command_flags,)))
+                        _uc.mem_write(ram(0x0905), b"\x0d")
+                        command_state = bytes(_uc.mem_read(ram(0x1D26), 1))[0]
+                        _uc.mem_write(ram(0x1D26), bytes((command_state | 0x40,)))
+                    flag_address = ram(0x1D26) if self._profile3453 else 0x1CEE
+                    command_flags = bytes(_uc.mem_read(flag_address, 1))[0] | 0x40
+                    _uc.mem_write(flag_address, bytes((command_flags,)))
                     # The 2.3 image enters its parser through the resident
                     # command entry at A7B0; older supervisors use A8D9.
                     ready_callback = (
@@ -2366,7 +2857,9 @@ class CourierMachine:
                         else 0xA7B0 if self._supervisor_23
                         else 0xA8D9
                     )
-                    _uc.mem_write(0x2AC, ready_callback.to_bytes(2, "little"))
+                    if self._profile3453:
+                        ready_callback = self._profile3453.command_callback
+                    _uc.mem_write(ram(0x2AC), ready_callback.to_bytes(2, "little"))
                     self.serial_trace.append(f"callback 2ac={ready_callback:04x}")
                 self._serial_started = self._payload_hooks
                 self._serial_tx_pump = not self.serial_rx
@@ -2389,6 +2882,8 @@ class CourierMachine:
             # address through. They did live there between 8a6067e and this
             # commit, which left the DTE deaf: the serial ISR never finished,
             # so no command was ever parsed.
+            physical_address = address
+            address = self._pc_canonical.get(address, address)
             if self._serial_in_handler and (
                 address in (0x5D613, 0x5D650, 0x5D656)
                 or (self._supervisor_23 and address in (0x59BF2, 0x59C35))
@@ -2400,12 +2895,15 @@ class CourierMachine:
                     and self._previous_address in (0x59BEB, 0x59BF2, 0x59C2F, 0x59C35)
                 )
             ):
-                self.serial_trace.append(f"iret {self._previous_address:05x}")
+                previous = (self._profile3453.address(self._previous_address)
+                            if self._profile3453 else self._previous_address)
+                self.serial_trace.append(f"iret {previous:05x}")
                 callbacks = bytes(_uc.mem_read(self._serial_callbacks, 6))
                 rx_callback = int.from_bytes(callbacks[:2], "little")
                 tx_callback = int.from_bytes(callbacks[2:4], "little")
                 command_callback = int.from_bytes(callbacks[4:6], "little")
-                command_state = bytes(_uc.mem_read(0x1CEE, 7))
+                command_state = (bytes(_uc.mem_read(ram(0x1D26), 7)) if self._profile3453
+                                 else bytes(_uc.mem_read(0x1CEE, 7)))
                 self.serial_trace.append(
                     f"state rxcb={rx_callback:04x} txcb={tx_callback:04x} "
                     f"cmdcb={command_callback:04x} "
@@ -2416,7 +2914,9 @@ class CourierMachine:
                 self._serial_in_handler = False
                 self._serial_irq_mode = None
                 self._serial_cooldown = 128 if self.serial_rx else 512
-            if self._timer_in_handler and self._previous_address in (0x6ADF1, 0x6ADF8, 0x677F1):
+            if self._timer_in_handler and self._previous_address in _MAILBOX_IRET_PCS:
+                # 6EEFA is the 3453 post-carrier mailbox ISR's IRET, selected
+                # by the guest's tag-28 handler (BC physical 6ED9A).
                 # 677F1 is the 2.3.x mailbox ISR's IRET. Keeping this latch
                 # set after it returns suppresses the separate board tick.
                 self._timer_in_handler = False
@@ -2425,6 +2925,8 @@ class CourierMachine:
                     # One tick per DSP frame, taken after that handler's own
                     # iret so the two never nest.
                     self._tick_owed = True
+            self._previous_address = address
+            address = physical_address
             if self._code_observer is not None:
                 self._code_observer(address)
             if self.pc_watch and address in self.pc_watch:
@@ -2472,7 +2974,6 @@ class CourierMachine:
             if self.track_executed:
                 self.executed[address] += 1
             self.last_addresses.append(address)
-            self._previous_address = address
 
 
         def on_in(_uc: Any, port: int, size: int, _data: Any) -> int:
@@ -2516,8 +3017,10 @@ class CourierMachine:
                     if len(self.serial_trace) < MAX_SERIAL_TRACE_EVENTS:
                         self.serial_trace.append(f"data-rx {terminal_value:02x}")
                 value = serial_wire_value(terminal_value)
-                if self._alternate_supervisor or self._supervisor_23:
+                if not self.online_mode and (self._alternate_supervisor or self._supervisor_23):
                     if terminal_value in (10, 13):
+                        if self._profile3453:
+                            self._3453_line_pending = True
                         line = bytes(self._alternate_line)
                         if self._alternate_supervisor:
                             # The 2.2.05 supervisor retains the legacy
@@ -2538,23 +3041,33 @@ class CourierMachine:
                             _uc.mem_write(0x1D1A, b"\x01")
                             _uc.mem_write(0x2AC, (0xAAB2).to_bytes(2, "little"))
                         if self._supervisor_23:
-                            _uc.mem_write(0x1D2D, line + b"\x00\x00")
-                            _uc.mem_write(0x1D2C, bytes((min(len(line), 0x3C),)))
+                            _uc.mem_write(ram(0x1D2D), line[:0x3C] + b"\x00\x00")
+                            _uc.mem_write(ram(0x1D2C), bytes((min(len(line), 0x3C),)))
                             # The 2.3 RX callback gates its terminator path
                             # on bit 6 of the command-state byte. The normal
                             # board front-end sets this while handing a line
                             # to the supervisor; the XMF path has no such
                             # front-end, so preserve the firmware contract
                             # explicitly before the callback runs.
-                            state = bytes(_uc.mem_read(0x1D26, 1))[0]
-                            _uc.mem_write(0x1D26, bytes((state | 0x40,)))
+                            state = bytes(_uc.mem_read(ram(0x1D26), 1))[0]
+                            _uc.mem_write(ram(0x1D26), bytes((state | 0x40,)))
                         body = attention_body(line)
-                        if body is not None and self.dsp_bridge is not None:
-                            self.dsp_bridge.arm_dial_tones(body)
+                        if body is not None:
+                            self._accept_dte_attention(_uc)
+                            if self.dsp_bridge is not None:
+                                self.dsp_bridge.arm_dial_tones(body)
                             self._trace_serial(f"alternate attention body={body!r}")
                         self._alternate_line.clear()
                     else:
                         self._alternate_line.append(terminal_value)
+                if (self._terminal_attached and not self.online_mode
+                        and not self._alternate_supervisor and not self._supervisor_23
+                        and not self._profile3453 and terminal_value in (10, 13)):
+                    length = bytes(_uc.mem_read(0x1CF4, 1))[0]
+                    line = bytes(_uc.mem_read(0x1CF5, min(length, 0x3C)))
+                    # Remember an actual new DTE line, not a previous command
+                    # body that happens to start with the letters AT.
+                    attention_line_pending[0] = attention_body(line) is not None
                 terminator = bytes(_uc.mem_read(0x8E3, 1))[0]
                 self.serial_trace.append(
                     f"rx terminal={terminal_value:02x} wire={value:02x} "
@@ -2588,10 +3101,10 @@ class CourierMachine:
                     value &= ~self.panel.dip_input(port, rom=self._rom_serial is not None)
                 if port == 0x12 and size == 1:
                     # The ROM's latch table maps input selector 3 to port
-                    # 0x12. Bit 6 is the active-low DTE DTR input: an
-                    # attached terminal pulls it low, which opens the normal
+                    # 0x12. Bit 6 is the active-low DTE DTR input: asserted
+                    # DTR pulls it low, which opens the normal
                     # receive path instead of installing the discard callback.
-                    if self._terminal_attached:
+                    if self._dtr_asserted:
                         value &= ~0x40
                     else:
                         value |= 0x40
@@ -2603,12 +3116,12 @@ class CourierMachine:
                     else:
                         value &= ~STRAP_SENSE_BIT
                 if port == 0x14 and size == 1:
-                    # DTR is high while an ordinary terminal remains
-                    # attached. The serial-PnP state machine deliberately
-                    # looks for a high-to-low strobe followed by RX-ready in
-                    # a narrow counter window; do not manufacture that Win95
-                    # enumeration sequence for plain queued AT input.
-                    if self._terminal_attached:
+                    # The 2.x DTR monitor queries selector 0104 (port 14,
+                    # bit 0) at BC 5AC98: set means DTR deasserted. Its kind<6
+                    # path additionally checks the same active-low EB P1.6.
+                    # Older front ends retain their serial-PnP polarity.
+                    high = not self._dtr_asserted if self._supervisor_23 else self._dtr_asserted
+                    if high:
                         value |= 0x01
                     else:
                         value &= ~0x01
@@ -2705,13 +3218,15 @@ class CourierMachine:
                 # I/O space, before the relocation register moves it into
                 # memory, so the same model has to see both.
                 self.timers.write(port, size, value, self.instructions)
+                update_flash_mapping(port, size, value)
             if self.dsp_bridge is not None:
                 self.dsp_bridge.write(port, size, value, pc)
             if port in self.uart_ports:
                 self._capture_serial(value)
+            # OUT to the UART data register is TX regardless of which IRQ
+            # reason the harness requested; an RX IRQ can find RX empty.
             if (
                 self._serial_started
-                and self._serial_irq_mode == "tx"
                 and port == 0x0A
                 and size == 1
             ):
@@ -2719,7 +3234,10 @@ class CourierMachine:
                 if terminal_value == 0xFF:
                     self.serial_trace.append(f"tx-idle pc={current_pc():05x}")
                     self._serial_empty_probes += 1
-                    self._serial_tx_pump = self._serial_empty_probes < 3
+                    # Online receive data can arrive long after the last DTE
+                    # input. Keep servicing the genuine TX-empty ISR instead
+                    # of permanently stopping after three idle probes.
+                    self._serial_tx_pump = self.online_mode or self._serial_empty_probes < 3
                     self._serial_cooldown = 4096
                 else:
                     if self.online_mode:
@@ -2813,7 +3331,7 @@ class CourierMachine:
                 # it, so entering it here would leave a stale number for the
                 # next EOI write to pop.
                 if not fault:
-                    self._interrupt_stack.append(number)
+                    self._track_external_interrupt(number)
                 uc.reg_write(UC_X86_REG_FLAGS, flags & ~0x0200)
             uc.reg_write(UC_X86_REG_CS, segment)
             uc.reg_write(UC_X86_REG_IP, offset)
@@ -2821,6 +3339,8 @@ class CourierMachine:
 
         def on_mmio_read(_uc: Any, _access: int, address: int, size: int, _value: int, _data: Any) -> None:
             sync_device_time()
+            if self.uart is not None:
+                self.uart.advance(self.instructions, self.timers.timebase.cycles_per_instruction)
             self.mmio_counts[("read", address, size)] += 1
             # The hook runs before the read is satisfied, so a timer register
             # is answered by putting the modelled value where the read will
@@ -2835,6 +3355,8 @@ class CourierMachine:
             modelled = self.timers.read(
                 address, size, self.instructions, grant=grant
             )
+            if modelled is None and self.flash_bus is not None:
+                modelled = self.flash_bus.read_register(address, size)
             if modelled is None and self.uart is not None:
                 modelled = self.uart.read(address, size)
             if modelled is None and self._supervisor_23 and address == S0STS:
@@ -2860,6 +3382,12 @@ class CourierMachine:
                 _uc.mem_write(address, bytes((value,)))
                 if len(self.serial_trace) < 2048:
                     self.serial_trace.append("call-gate ff5a=20")
+            if address == 0xFF5A and self._supervisor_23:
+                # The original kind<6 DTR monitor (BC 5AC91/5ACC4) samples
+                # EB P1.6, not the ASIC GPIO ports used by the other UARTs.
+                sampled = bytes(_uc.mem_read(address, size))
+                pin = 0 if self._dtr_asserted else 0x40
+                _uc.mem_write(address, bytes(((sampled[0] & ~0x40) | pin,)) + sampled[1:])
             if address == 0xFF5A and self.nvram is not None:
                 # Present the chip's DO on the same pin 7 the driver samples.
                 sampled = bytes(_uc.mem_read(address, size))
@@ -2892,19 +3420,15 @@ class CourierMachine:
 
         def on_mmio_write(_uc: Any, _access: int, address: int, size: int, value: int, _data: Any) -> None:
             sync_device_time()
+            if self.uart is not None:
+                self.uart.advance(self.instructions, self.timers.timebase.cycles_per_instruction)
             self.mmio_counts[("write", address, size)] += 1
+            update_flash_mapping(address, size, value)
             if self.quad_board is not None:
                 self.quad_board.write_register(address, size, value)
             self.timers.write(address, size, value, self.instructions)
-            if address == 0xFF02 and self._interrupt_stack and not eoi_applied[0]:
-                if value & 0x8000:
-                    completed = self._interrupt_stack.pop()
-                else:
-                    completed = value & 0x1f
-                    if completed in self._interrupt_stack:
-                        self._interrupt_stack.remove(completed)
-                if completed == INT0_VECTOR:
-                    self._int0_in_service = False
+            if address == 0xFF02 and not eoi_applied[0]:
+                self._complete_external_interrupt(value)
             if address == self.hardware_map.dsp_reset_port and self.dsp_bridge is not None:
                 # The board holds the C52 in reset through this bit, and a part
                 # in reset drives nothing: its transfer interface reads back as
@@ -2933,6 +3457,18 @@ class CourierMachine:
                 sent = self.uart.write(address, size, value)
                 if sent is not None:
                     self._capture_serial(sent)
+            elif self._supervisor_23 and address == S0TBUF:
+                # The original foreground kick primes the EB transmitter
+                # here (BC 5C943); subsequent byte-front-end IRQs use OUT 0A.
+                # Capture the register, not a printf PC: that also observes
+                # the online ring's first byte. In 7-bit framing bit 7 is the
+                # firmware-generated parity bit, not terminal data.
+                parity_framing = bytes(_uc.mem_read(ram(0x2712), 1))[0] == 0
+                sent = value & self._dte_data_mask(0x7f if parity_framing else 0xff)
+                if self.online_mode:
+                    self.data_tx_bytes += 1
+                self.serial_trace.append(f"tx-mmio {sent:02x} pc={current_pc():05x}")
+                self._capture_serial(sent)
             if self.nvram is not None:
                 # The ROM's EEPROM driver shares one data line on port 2 pin 7:
                 # it drives the latch at ff5e while the direction bit in ff58 is
@@ -3067,11 +3603,86 @@ class CourierMachine:
                 self._next_service = self.instructions + SERVICE_INSTRUCTIONS
                 service_chunk(_uc, elapsed)
 
-        for _low, _high in _HOT_HOOK_RANGES:
+        def on_firmware_bank(_uc: Any, address: int, _size: int, _data: Any) -> None:
+            nonlocal key_wait_tests
+            mode = 'bootmodem' if address == 0x3FFF0 else 'normal'
+            cold_entry = self._power_on_loader_active
+            if mode == self.image.firmware_mode and not cold_entry:
+                return
+            from .firmware3453 import profile_for
+            image = self.image.select_mode(mode)
+            profile = profile_for(image)
+            if profile is None:
+                raise ValueError('no guarded execution profile for switched supervisor')
+            # Memory mapping is driven by chip-select writes, not this PC.
+            # The entry hook only selects the guarded DTE execution ABI.
+            self.image = image
+            self._dte_framing_address = locate_dte_framing(image.data)
+            self._dte_attention_seen = False
+            if self.dte_framing != "stored" and self._dte_framing_address is None:
+                raise ValueError("Cannot identify switched supervisor's active DTE framing")
+            self.hardware_map = courier_machine_map(image)
+            self._profile3453 = profile
+            self._pc_canonical = {actual: canonical for canonical, actual in profile.pc.items()}
+            self._actual_hot_addresses = {profile.address(pc) for pc in _HOT_ADDRESSES}
+            self._milestone_addresses = {profile.address(pc): 'main-loop' for pc in (0x61CE2, 0x61D0C)}
+            self._serial_callbacks = profile.ram.get(0x2A8, 0x2A8)
+            self._rom_transfer_span = (profile.address(0x66638)-0x100, profile.address(0x667B0)+0x180)
+            self._serial_started = False
+            self._3453_line_pending = False
+            self._3453_parser_started = False
+            self._serial_in_handler = False
+            self._serial_irq_requested = False
+            self._serial_irq_mode = None
+            self._serial_tx_callback = None
+            self._serial_tx_pump = False
+            self._int0_pending = None
+            self._int0_in_service = False
+            self._previous_address = None
+            self.last_addresses.clear()
+            self._alternate_line.clear()
+            key_wait_tests = self._key_wait_tests()
+            if self.dsp_bridge is not None:
+                self.dsp_bridge.image = image
+                self.dsp_bridge.expected_bootstrap = image.dsp_program_segments()[0][1]
+            if cold_entry:
+                self._power_on_loader_active = False
+                self._power_on_state['selected_mode'] = mode
+                self._power_on_state['loader_exit_instruction'] = self.instructions
+            else:
+                self._firmware_mode_switches.append({'mode': mode, 'instruction': self.instructions})
+            self._trace_serial(f'firmware bank -> {mode}')
+
+        def on_power_on_loader(_uc: Any, address: int, _size: int, _data: Any) -> None:
+            # Observation only: the real loader computes the CRC over the
+            # entire application and decides which far jump to execute.
+            if not self._power_on_loader_active:
+                return
+            if address == 0xFFFF0:
+                self._power_on_state['reset_vector_executed'] = True
+            elif address == 0xFDE04:
+                self._power_on_state['normal_crc_valid'] = not bool(_uc.reg_read(UC_X86_REG_FLAGS) & 1)
+            elif address == 0xFDE08:
+                self._power_on_state['boot_select_normal'] = bool(_uc.reg_read(UC_X86_REG_AX) & 0x40)
+
+        if self._power_on_loader_active:
+            for address in (0xFFFF0, 0xFDE04, 0xFDE08):
+                uc.hook_add(UC_HOOK_CODE, on_power_on_loader, None, address, address)
+
+        whole_flash = hasattr(self.image, 'select_mode')
+        if whole_flash and self._profile3453:
+            from .firmware3453 import PROFILES
+            hot_addresses = {profile.address(pc) for profile in PROFILES.values() for pc in _HOT_ADDRESSES}
+            milestone_addresses = {profile.address(pc) for profile in PROFILES.values() for pc in (0x61CE2, 0x61D0C)}
+            uc.hook_add(UC_HOOK_CODE, on_firmware_bank, None, 0x3FFF0, 0x3FFF0)
+            uc.hook_add(UC_HOOK_CODE, on_firmware_bank, None, 0x402E0, 0x402E0)
+        else:
+            hot_addresses = {self._profile3453.address(pc) for pc in _HOT_ADDRESSES} if self._profile3453 else _HOT_ADDRESSES
+            milestone_addresses = self._milestone_addresses
+        for _low, _high in _hot_hook_ranges(hot_addresses, _HOT_RANGE_GAP):
             uc.hook_add(UC_HOOK_CODE, on_hot_code, None, _low, _high)
-        if self._milestone_addresses:
-            for _address in self._milestone_addresses:
-                uc.hook_add(UC_HOOK_CODE, on_milestone_code, None, _address, _address)
+        for _address in milestone_addresses:
+            uc.hook_add(UC_HOOK_CODE, on_milestone_code, None, _address, _address)
         if self._needs_code_hook():
             uc.hook_add(UC_HOOK_CODE, on_code)
         # Complete ROM runs have hardware-facing UART and interrupt models and
@@ -3123,11 +3734,12 @@ class CourierMachine:
             # execution behave like a tracing run; devices need service only
             # at this bounded interval.
             instruction_base = self.instructions - uc.retired
-            interpreter_period = (
+            interpreter_period = min(self._interrupt_poll_instructions,
+                self._frame_irq_poll_instructions if self._xf_frame_source() else
                 NATIVE_ROM_SERVICE_INSTRUCTIONS
-                if self._rom_tick and not self._needs_code_hook()
-                else SERVICE_INSTRUCTIONS
-            )
+                if self._rom_tick and not self._needs_code_hook() and not self._xf_frame_source()
+                else SERVICE_INSTRUCTIONS)
+
 
             def interpreter_service(_uc: Any, retired: int, _data: Any) -> None:
                 total = instruction_base + retired
@@ -3197,33 +3809,57 @@ class CourierMachine:
             timer's max count, the board tick, typed input, the end of the run.
             Whatever the engine hands back, the fields come back first.
             """
-            from .worker_poll import NO_LATCH, STACK_SLOTS, WorkerPoll
+            from .worker_poll import NO_LATCH, STACK_SLOTS, WorkerPoll, first_instruction_at_tick
 
             poll = self._worker_poll = WorkerPoll()
             state = poll.state
             line_buffer_address = ctypes.addressof(state.line_buffer)
             timers = self.timers
             seen = [0]
+            # These configuration fields cannot change within this run. Keep
+            # timer/codec cadence and core-dependent counters in arm() below.
+            frame_xf = self._xf_frame_source()
+            state.instruction_base = instruction_base
+            state.timer_poll_period = self._interrupt_poll_instructions
+            state.frame_auto = self._adaptive_frame_cadence()
+            state.frame_codec_samples = self._frame_codec_samples
+            state.frame_xf = frame_xf
+            state.int0_ok = bool(self._rom_tick)
+            state.codec_present = bridge.codec is not None
+            state.line_frame_instructions = LINE_FRAME_INSTRUCTIONS
 
             def first_instruction_at(tick: int) -> int:
-                ratio = timers.timebase.ticks_per_instruction
-                at = max(0, int(tick / ratio))
-                while at > 0 and timers._tick(at - 1) >= tick:
-                    at -= 1
-                while timers._tick(at) < tick:
-                    at += 1
-                return at
+                return first_instruction_at_tick(tick, timers.timebase.ticks_per_instruction)
 
             def arm() -> None:
                 worker_arm[0] = False
                 core = bridge.core
+                quiet_sip = bridge.sip_clock_waiting(interpreter_period)
                 if (core is None or len(self._interrupt_stack) > STACK_SLOTS
-                        or not fast_service_static() or not bridge.fast_clock_static()
+                        or not fast_service_static()
+                        or not (quiet_sip or bridge.fast_clock_static())
                         or not timer_poll_static()):
                     return
+                # Automatic XF native polling is limited to passes which do
+                # not run either DSP or exchange work. Existing DSP-stepping
+                # native XF polling still requires explicit opt-in.
+                if frame_xf and worker_poll_mode != '1' and not quiet_sip:
+                    return
+                state.quiet_sip = quiet_sip
+                state.quiet_laneio = self._lane_io.context if quiet_sip and self._lane_io else None
                 deadlines = [instruction_limit - 2 * interpreter_period]
+                if quiet_sip:
+                    deadlines.extend((
+                        self.instructions + bridge.batch - bridge._x86_ticks,
+                        self.instructions + bridge.batch - bridge._exchange_instructions))
                 if self._serial_input_schedule:
                     deadlines.append(self._serial_input_schedule[0][0])
+                serial_until = self._serial_receive_quiet_until(self.instructions)
+                if serial_until is not None:
+                    deadlines.append(serial_until)
+                transmit_until = self._serial_transmit_quiet_until(self.instructions)
+                if transmit_until is not None:
+                    deadlines.append(transmit_until)
                 if (self._rom_tick or self._quad_modem_tick) and self.tick_ms:
                     deadlines.append(
                         self._last_tick + math.ceil(self.tick_ms * INSTRUCTIONS_PER_MS))
@@ -3231,15 +3867,27 @@ class CourierMachine:
                     remaining = timer.ticks_to_max_count()
                     if remaining is not None:
                         deadlines.append(first_instruction_at(timer.origin + remaining))
+                elide_until = max(0, min(deadlines))
+                # The native poll itself yields at this boundary. If its very
+                # first poll cannot commit, do not prepare a useless snapshot.
+                if instruction_base + uc._clock_next >= elide_until:
+                    return
                 state.core = core.handle
-                state.instruction_base = instruction_base
-                state.elide_until = max(0, min(deadlines))
+                state.elide_until = elide_until
                 state.last_service = self._last_service
                 state.timer_poll_owed = self._timer_poll_owed
-                state.timer_poll_period = TIMER_POLL_INSTRUCTIONS
                 state.last_frame = self._last_frame
                 state.frame_instructions = self.frame_instructions
-                state.int0_ok = bool(self._rom_tick)
+                state.frame_fallback = self._frame_fallback
+                state.frame_codec_active = self._frame_codec_active
+                same_frame_core = self._frame_xf_core is core
+                state.frame_xf_seen = self._frame_xf_seen if same_frame_core else 0
+                state.frame_xf_sample = self._frame_xf_sample if same_frame_core else 0
+                state.frame_xf_generation = self._frame_xf_generation if same_frame_core else 0
+                state.frame_xf_delivered = self._frame_xf_delivered
+                state.frame_xf_coalesced = self._frame_xf_coalesced
+                state.diagnostic_trace = (self._lane_io.context
+                                          if self.trace_rom_link_errors and self._lane_io else None)
                 state.int0_in_service = bool(self._int0_in_service)
                 stack = self._interrupt_stack
                 state.stack_depth = len(stack)
@@ -3247,18 +3895,32 @@ class CourierMachine:
                     state.stack[index] = vector
                 state.bridge_instructions = bridge._instructions
                 state.probe_last = getattr(bridge, "_probe_clock_last", 0)
-                state.codec_present = bridge.codec is not None
                 state.codec_instructions = bridge._codec_instructions
-                state.line_frame_instructions = LINE_FRAME_INSTRUCTIONS
                 state.x86_ticks = bridge._x86_ticks
                 state.batch = bridge.batch
+                if quiet_sip:
+                    # This mode cannot touch line/DSP state. Avoid copying a
+                    # resampler/socket snapshot just to recognize IRQs before
+                    # the next Python batch deadline.
+                    state.physical_codec_rate = 0
+                    latch = self.panel.latches.get(0x14)
+                    state.panel_latch = NO_LATCH if latch is None else latch
+                    state.frame_ok = 0
+                    state.io_cursor = state.mmio_cursor = 0
+                    state.dirty = 0
+                    seen[0] = state.polls
+                    state.armed = 1
+                    return
                 state.debt = bridge._dsp_cycle_debt
                 state.cpi = bridge._dsp_cpi
                 state.cycles_per_x86 = bridge.dsp_cycles_per_x86
                 state.line_codec_last = bridge._line_codec_last
                 state.line_skipped = bridge._line_service_skipped
-                state.line_min_samples = LINE_SERVICE_MIN_SAMPLES
-                state.line_max_skip = LINE_SERVICE_MAX_SKIP
+                state.line_min_samples, state.line_max_skip = bridge.line_service_limits()
+                physical_rate = (getattr(bridge, '_physical_codec_rate', bridge.codec_sample_rate())
+                                 if bridge._exchange_tx_index else bridge.codec_sample_rate())
+                state.physical_codec_rate = (round(physical_rate * 1000)
+                    if getattr(bridge.line, 'codec_direct', False) else 0)
                 state.boot_rom = bool(bridge.boot_rom_enabled)
                 state.mailbox_writes = bridge._dsp_mailbox_writes
                 state.overlay_active = bool(bridge._call_overlay_active)
@@ -3271,7 +3933,11 @@ class CourierMachine:
                 # The line service: the resampler's native state once it has
                 # retuned, and where the exchange buffer and its counts stand.
                 timed = getattr(bridge._codec_to_line, "_timed", None)
-                state.timed = timed.handle if timed is not None else None
+                # Codec-direct hardware must never enter the native 8 kHz
+                # socket resampler. A null timed state makes the poll yield
+                # to Python exactly when its codec batch becomes due.
+                state.timed = (timed.handle if timed is not None
+                               and not getattr(bridge.line, "codec_direct", False) else None)
                 state.line_rate = float(LINE_RATE)
                 state.line_frame_samples = LINE_FRAME_SAMPLES
                 buffer = bridge._exchange_line_buffer
@@ -3420,9 +4086,22 @@ class CourierMachine:
                 self._next_service = total + interpreter_period
                 self._timer_poll_owed = state.timer_poll_owed
                 self._last_frame = state.last_frame
+                self.frame_instructions = state.frame_instructions
+                self._frame_codec_active = bool(state.frame_codec_active)
+                if state.frame_xf:
+                    self._frame_xf_core = bridge.core
+                    self._frame_xf_seen = state.frame_xf_seen
+                    self._frame_xf_sample = state.frame_xf_sample
+                    self._frame_xf_generation = state.frame_xf_generation
+                    self._frame_xf_delivered = state.frame_xf_delivered
+                    self._frame_xf_coalesced = state.frame_xf_coalesced
+                if state.quiet_sip:
+                    bridge._exchange_instructions += state.bridge_instructions - bridge._instructions
                 bridge._instructions = state.bridge_instructions
                 bridge._codec_instructions = state.codec_instructions
                 bridge._x86_ticks = state.x86_ticks
+                if state.quiet_sip:
+                    return
                 bridge._dsp_cycle_debt = state.debt
                 bridge._dsp_cpi = state.cpi
                 bridge._line_service_skipped = state.line_skipped
@@ -3455,6 +4134,8 @@ class CourierMachine:
 
             uc.native_before_run = before_run
             uc.native_after_run = after_run
+            uc.native_after_run_gate = (
+                (after_run, *poll.after_run_gate) if poll.after_run_gate is not None else None)
             uc.native_poll = (poll.function, poll.context)
             uc.native_poll_resume = resume
 
@@ -3465,11 +4146,18 @@ class CourierMachine:
             and getattr(bridge, "boot_rom_enabled", False)
             and getattr(bridge, "board3453", None) is None
             and hasattr(bridge, "_lanes_live")
+            # LaneHostIo uses the fixed ROM runtime lane layout. XMF's
+            # download window ends at 0x4e, even on DSPs with a boot ROM;
+            # those images must retain the regular bridge I/O callbacks.
+            and all(port in bridge._lanes for port in range(
+                LANE_FIRST_PORT, LANE_FIRST_PORT + 4 * LANE_BANKS, 2))
             and uc.native_enabled
         ):
             from .dsp import LaneHostIo
 
             lane_io = self._lane_io = LaneHostIo()
+            if self.trace_rom_link_errors:
+                lane_io.set_recent()
             command_port = bridge.transfer.command_port
             lane_ports = range(LANE_FIRST_PORT, LANE_FIRST_PORT + 4 * LANE_BANKS)
             host_ports = bytearray(65536)
@@ -3671,26 +4359,43 @@ class CourierMachine:
             else:
                 uc.native_after_io = refresh_native_lanes
             refresh_native_lanes()
-            if (fast_service_on and uc.native_enabled
-                    and os.environ.get("COURIER_WORKER_POLL", "1") != "0"):
+            worker_poll_mode = os.environ.get('COURIER_WORKER_POLL')
+            if (fast_service_on and uc.native_enabled and worker_poll_mode != '0'
+                    and (not self._xf_frame_source() or worker_poll_mode == '1'
+                         or getattr(bridge, '_sip_line', None) is not None)):
+                # SIP may elide only quiet, pre-batch passes automatically.
+                # DSP-stepping native XF remains an explicit comparison.
                 install_worker_poll(bridge)
         mmio = self.hardware_map.mmio
         dsp_queue = self.hardware_map.dsp_queue
         serial_callback = self.hardware_map.serial_callback
+        if self.quad_line_kind is not None:
+            def on_quad_identity_read(uc, access, address, size, value, user_data):
+                # Chassis line-availability input used by f3691, f651d and
+                # f86fd. Low bits: 0 dual/unspecified, 1 analogue, 2 digital.
+                # Startup clears the RAM window; this external identity input
+                # must remain visible afterwards. Preserve all other bits.
+                if address <= 0xb4b5 < address + size:
+                    previous = uc.mem_read(0xb4b5, 1)[0]
+                    uc.mem_write(0xb4b5, bytes(((previous & ~3) | self.quad_line_kind,)))
+            uc.hook_add(UC_HOOK_MEM_READ, on_quad_identity_read, None, 0xb4b5, 0xb4b5)
         uc.hook_add(UC_HOOK_MEM_READ, on_mmio_read, None, mmio.first, mmio.last)
         uc.hook_add(UC_HOOK_MEM_WRITE, on_mmio_write, None, mmio.first, mmio.last)
         uc.hook_add(
             UC_HOOK_MEM_WRITE, on_dsp_queue_write, None,
             dsp_queue.first, dsp_queue.last,
         )
-        uc.hook_add(
-            UC_HOOK_MEM_WRITE, on_serial_tx_callback_write, None,
-            serial_callback.first, serial_callback.last,
-        )
+        callback_ranges = ((0x2A6, 0x2A7), (0x2AA, 0x2AB)) if whole_flash else (
+            (serial_callback.first, serial_callback.last),)
+        for first, last in callback_ranges:
+            uc.hook_add(UC_HOOK_MEM_WRITE, on_serial_tx_callback_write, None, first, last)
         if self.mem_watch is not None:
             uc.hook_add(
                 UC_HOOK_MEM_WRITE, on_mem_watch, None, self.mem_watch[0], self.mem_watch[1]
             )
+        if self.trace_rom_link_errors:
+            from .rom_link_errors import RomLinkErrorObserver
+            self._rom_link_errors = RomLinkErrorObserver(self, trace_lapm=self.trace_rom_lapm)
         status = "instruction-limit"
         error: str | None = None
         try:
@@ -3778,7 +4483,7 @@ class CourierMachine:
                     continue
                 if self.uart is not None and self.uart.pending:
                     begin = dispatch_interrupt(
-                        self.uart.pending.popleft(), software=False
+                        self.uart.take_interrupt(), software=False
                     )
                     continue
                 if self._int1_pending is not None:
@@ -3837,6 +4542,15 @@ class CourierMachine:
         }
         registers = {name: uc.reg_read(reg) for name, reg in register_ids.items()}
         self._flush_native_io()
+        # Physical PCM cannot wait for DSP snapshots/JSON after CPU execution
+        # has stopped. End that external stream explicitly before reporting;
+        # ordinary simulated lines have no such lifecycle operation.
+        finish_stream = getattr(self.dsp_bridge.line, 'finish_stream', None) if self.dsp_bridge else None
+        if finish_stream is not None:
+            try:
+                finish_stream()
+            except (OSError, RuntimeError) as exc:
+                error = error or str(exc)
         final_callbacks = bytes(uc.mem_read(self._serial_callbacks, 6))
         self.serial_trace.append(
             f"final callbacks[{self._serial_callbacks:03x}]="
@@ -3853,6 +4567,11 @@ class CourierMachine:
         if self.interrupt is not None:
             error = f"software interrupt {self.interrupt:#x}"
         bridge_result = asdict(self.dsp_bridge.status()) if self.dsp_bridge is not None else None
+        if bridge_result is not None and isinstance(bridge_result.get('line'), dict):
+            poll = getattr(self, "_worker_poll", None)
+            bridge_result["line"]["native_worker_polls"] = int(poll.state.polls) if poll else 0
+            bridge_result["line"]["native_worker_installed"] = poll is not None
+            bridge_result["line"]["native_lane_io"] = self._lane_io is not None
         if self.dsp_bridge is not None and self.dsp_tx_pcm:
             self.dsp_bridge.save_tx_pcm(self.dsp_tx_pcm)
         vector_data = bytes(uc.mem_read(0, 0x400))
@@ -3870,9 +4589,22 @@ class CourierMachine:
         if self.nvram is not None:
             nvram_result = self.nvram.status()
             self.nvram.save()
-        flash_result = None
+        flash_result = ({'format': '3453-flash', 'firmware_mode': self.image.firmware_mode,
+                         'mode_switches': self._firmware_mode_switches,
+                         'complete_flash': self.image.complete_flash}
+                        if hasattr(self.image, 'firmware_mode') else None)
+        if self.flash_bus is not None:
+            if flash_result is None:
+                flash_result = {}
+            flash_result['bus'] = self.flash_bus.status()
+        if flash_result is not None and self._power_on_state is not None:
+            flash_result['power_on'] = self._power_on_state
         if self.parameter_flash is not None:
-            flash_result = self.parameter_flash.status()
+            parameters = self.parameter_flash.status()
+            if flash_result is None:
+                flash_result = parameters
+            else:
+                flash_result['parameters'] = parameters
             self.parameter_flash.save()
         console_result = None
         serial_trace = self.serial_trace
@@ -3902,6 +4634,7 @@ class CourierMachine:
             hot_addresses=self.executed.most_common(20),
             pc_watch=self.pc_watch_events,
             peek=self._peek_values(),
+            rom_link_errors=self._rom_link_errors.status() if self._rom_link_errors else {},
             mem_watch=self.mem_watch_events,
             io_watch=self.io_watch_events,
             pc_watch_counts=dict(self.pc_watch_counts),
@@ -3912,7 +4645,10 @@ class CourierMachine:
             data_tx_bytes=self.data_tx_bytes,
             online_mode=self.online_mode,
             serial_truncated=self.serial_truncated,
+            serial_bytes_total=self.serial_bytes_total,
             serial_input_remaining=len(self.serial_rx),
+            serial_uart=self.uart.status() if self.uart else None,
+            dte_input_timing=self._dte_input_timing.status(),
             serial_interrupts=self.serial_interrupts,
             timer_interrupts=self.timer_interrupts,
             ticks=self.ticks,
@@ -3927,7 +4663,9 @@ class CourierMachine:
                                 0x1CF0, 0x1CF1, 0x0681, 0x0682, 0x0683,
                                 0x1C77, 0x0283, 0x0285, 0x026A, 0x0313,
                                 0x031A, 0x0607, 0x0695, 0x0EA7, 0x0B7C,
-                                0x0B7E, 0x0B88, 0x0A96, 0x033E, 0x3424,
+                                # Original 403 disconnect cause is the low byte
+                                # of 03d7; retain raw data for other ROMs.
+                                0x0B7E, 0x0B88, 0x0A96, 0x033E, 0x03D7, 0x3424,
                                 0x3CA4, 0x0298, 0x026E, 0x0B8E)
             },
             panel=self.panel.status(),
@@ -3939,6 +4677,23 @@ class CourierMachine:
                 **self.timebase.describe(),
                 "identified": self.timers.timebase_pinned,
                 "frame_instructions": self.frame_instructions,
+                "frame_codec_samples": self._frame_codec_samples,
+                "frame_cadence": ('dsp-xf' if self._frame_xf_core is not None else
+                                  'fixed' if self._frame_hz is not None else
+                                  'codec-derived' if self._frame_codec_active else 'legacy'),
+                "frame_effective_hz": (self.timebase.cpu_clock_hz /
+                    self.timebase.cycles_per_instruction / self.frame_instructions
+                    if not self._xf_frame_source() else None),
+                "interrupt_poll_instructions": self._interrupt_poll_instructions,
+                "frame_irq_poll_instructions": (min(self._frame_irq_poll_instructions,
+                    self._interrupt_poll_instructions) if self._xf_frame_source()
+                    else self._interrupt_poll_instructions),
+                **({'frame_irq_source': 'dsp-xf',
+                    'frame_xf_seen': self._frame_xf_seen,
+                    'frame_xf_delivered': self._frame_xf_delivered,
+                    'frame_xf_coalesced': self._frame_xf_coalesced,
+                    'interrupt_poll_instructions': self._interrupt_poll_instructions}
+                   if self._xf_frame_source() else {}),
             },
             interrupt_vectors=interrupt_vectors,
         )

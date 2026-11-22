@@ -1,0 +1,75 @@
+{
+  "passed": true,
+  "checks": {
+    "analog_at_least_53333": true,
+    "both_x2_lapm": true,
+    "analog_to_imodem": true,
+    "imodem_to_analog": true,
+    "native_wallclock": true,
+    "no_per_frame_python_callback": true,
+    "no_active_idle_fill": true,
+    "isdn_active_at_limit": true,
+    "analog_carrier_at_limit": true,
+    "no_imodem_no_carrier": true,
+    "no_cpu_dsp_errors": true,
+    "no_receive_underruns": true,
+    "no_imodem_uart_drops": true
+  },
+  "analog_rate_bps": 53333,
+  "imodem_rate_bps": 33333,
+  "analog_terminal": "\r\nCONNECT 53333/ARQ/x2/LAPM/V42BIS\r\nIMODEM-X2-53333-BOUNDED-REPEAT\r\nNO CARRIER\r\n",
+  "imodem_terminal": "\r\nOK\r\n\r\nCONNECT 33333/ARQ/x2/LAPM/V42BIS\r\nANALOG-X2-53333-BOUNDED-REPEAT",
+  "clock_at_limit": {
+    "active_idle_samples": 0,
+    "native_io_live": true,
+    "native_io_wallclock": true,
+    "pcm_frame_service": false,
+    "realtime_cycles": 2998401621,
+    "wall_seconds": 86.19628791604191
+  },
+  "bridge_at_limit": {
+    "active_idle_samples": 0,
+    "analog_codec": "ac01",
+    "analog_to_ulaw_db": -5.860000000000002,
+    "answered": true,
+    "call_state": "answered",
+    "cleared": false,
+    "dialled": "",
+    "events": [
+      "the line is ringing us at frame 943: offering the I-modem a 3.1 kHz call",
+      "the I-modem answered at frame 1252: off hook"
+    ],
+    "line": {
+      "audio_only": false,
+      "connected": true,
+      "digital": true,
+      "error": null,
+      "frame_ms": 20,
+      "frame_samples": 160,
+      "frames": 4970,
+      "listen": false,
+      "path": "/var/folders/_1/yfx80wlx5g38qqrwdkzxncz00000gn/T/courier-imodem-analog-4wgf0n8o/line.sock",
+      "peer_call_state": "answered",
+      "peer_instructions": 432104240,
+      "peer_off_hook": true,
+      "record_prefix": null,
+      "sample_rate": 8000,
+      "samples_received": 795200,
+      "samples_sent": 795200
+    },
+    "octets": {
+      "from_line": 594880,
+      "pending": 120,
+      "to_line": 594880
+    },
+    "realtime_clock": true,
+    "silence_frames": 1252,
+    "ulaw_to_analog_db": -5.539999999999999
+  },
+  "instruction_limits": {
+    "analog": 450000000,
+    "imodem": 900000000
+  },
+  "analog_no_carrier_in_final_capture": true,
+  "shutdown_note": "The analog worker continues after the I-modem closes the socket. Carrier acceptance uses the saved pre-close boundary."
+}

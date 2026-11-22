@@ -68,6 +68,10 @@ def _windows() -> list[tuple[float, ...]]:
     """
     global _WINDOWS
     if _WINDOWS is None:
+        table = _native_windows()
+        if table is not None:
+            _WINDOWS = table
+            return table
         table = []
         for phase in range(PHASES):
             fraction = phase / PHASES
@@ -151,6 +155,28 @@ def _native_retuned():
     return _NATIVE
 
 
+def _native_windows() -> list[tuple[float, ...]] | None:
+    """Accelerate cold table construction; older libraries retain Python's loop."""
+    if os.environ.get('COURIER_NATIVE_RESAMPLE', '1') == '0':
+        return None
+    # Fixed-rate Python-only users should not compile/load the DSP library
+    # merely to construct a table. Modem paths already own a loaded core.
+    from .dsp import loaded_library
+    library = loaded_library()
+    if library is None:
+        return None
+    try:
+        function = library.courier_resample_windows
+    except AttributeError:
+        return None
+    function.restype = ctypes.c_size_t
+    function.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_double]
+    values = array('d', [0.0]) * (PHASES * TAPS)
+    if function(values.buffer_info()[0], len(values), _NORM) != len(values):
+        raise RuntimeError('native resampler window construction failed')
+    return [tuple(values[first:first + TAPS]) for first in range(0, len(values), TAPS)]
+
+
 class _NativeTimed:
     """BandLimitedResampler's retuned state, kept in native memory.
 
@@ -216,6 +242,38 @@ def _native_timed_library():
         library.courier_timed_converted.argtypes = [c.c_void_p]
         _TIMED_LIBRARY = library
     return _TIMED_LIBRARY
+
+
+def prepare_resampling(input_rate: float, output_rate: float, *, retuned: bool = False) -> None:
+    """Prepare exact conversion tables without advancing any stream state.
+
+    Real-time callers should do this before opening their audio transport.
+    Retuned input clocks also need the flat native table and lazy ctypes/library
+    setup; output-clock-only changes continue using the regular FIR table.
+    """
+    if not (math.isfinite(input_rate) and math.isfinite(output_rate)
+            and input_rate > 0 and output_rate > 0):
+        raise ValueError("resampler rates must be finite and positive")
+    cutoff = CUTOFF * min(input_rate, output_rate) / 2 / input_rate
+    _kernel_for(cutoff)
+    if retuned:
+        _native_timed_library()
+        if _native_retuned():
+            _flat_kernel_for(cutoff)
+
+
+def resampling_prepared(input_rate: float, output_rate: float, *, retuned: bool = False) -> bool:
+    """Check readiness without allocating a table or loading native code."""
+    if not (math.isfinite(input_rate) and math.isfinite(output_rate)
+            and input_rate > 0 and output_rate > 0):
+        return False
+    key = round(CUTOFF * min(input_rate, output_rate) / 2 / input_rate, 9)
+    if key not in _KERNELS:
+        return False
+    if not retuned:
+        return True
+    return (_NATIVE is not None and
+            (not _NATIVE or (_TIMED_LIBRARY is not None and key in _FLAT_KERNELS)))
 
 
 class BandLimitedResampler:

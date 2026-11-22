@@ -620,10 +620,14 @@ class BriNetwork:
         `_service_media` catches up on at the next one.
         """
         peer = self.media_peer
+        live = bool(peer is not None and getattr(peer, "realtime_clock", False)
+                    and self.call_state == "active"
+                    and getattr(getattr(peer, "session", None), "state", None) == "connected")
         if ((self.call_state == "active" and self.media_channel not in (1, 2))
                 or self.v120 is not None or peer is None
-                or not hasattr(peer, "clock") or not dsc.activated
-                or self.activated_at is None or dsc.sent or not peer.line.connected):
+                or (not live and not hasattr(peer, "clock")) or not dsc.activated
+                or self.activated_at is None or dsc.sent
+                or (not live and not peer.line.connected)):
             return None
         if (self.call_state not in ("null", "release-request")
                 and hasattr(peer, "remote_ended") and peer.remote_ended()):

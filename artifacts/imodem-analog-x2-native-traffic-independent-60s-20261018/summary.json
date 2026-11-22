@@ -1,0 +1,169 @@
+{
+  "analog_board": "403",
+  "analog_image": "/Users/scottcryan/courier-emu/dumps/courier-board-21210-capture-403/courier-board.rom",
+  "protocol": "default",
+  "speed_index": 0,
+  "disable_v34": false,
+  "analog_settings": "X1S27=1S54=0S58=48&A3&B1Q0&U26&N39",
+  "wallclock": true,
+  "analog_result_mode": 1,
+  "imodem_settings": "S54=0S58=48&A3&B1Q0",
+  "foreground_overlay_assist": false,
+  "connected": true,
+  "data_delivery": {
+    "analog_to_imodem": null,
+    "imodem_to_analog": null
+  },
+  "imodem": {
+    "clock": {
+      "wall_seconds": 89.20811716699973,
+      "native_io_live": true,
+      "native_io_wallclock": true,
+      "pcm_frame_service": false,
+      "realtime_cycles": 3245223492,
+      "active_idle_samples": 0,
+      "native": {
+        "peak_lag_cycles": 1937348,
+        "bounded_advances": 48775,
+        "advances": 1278223,
+        "data_posts": 413160,
+        "data_acks": 235132,
+        "data_byte_reads": 470604,
+        "bank_0_busy_writes": 0,
+        "bank_1_busy_writes": 0,
+        "bank_2_busy_writes": 0,
+        "bank_3_busy_writes": 0,
+        "bank_4_busy_writes": 0,
+        "bank_5_busy_writes": 0,
+        "data_torn_words": 0
+      }
+    },
+    "serial": "\r\nOK\r\n\r\nCONNECT 33333/ARQ/x2/LAPM/V42BIS\r\n~CEMU:O:00000000:f8926d74415cf3a56c001bccddb5a3082abda93c148d61a8028b8a4588016855d00c51db894945dc52f68996aef96663a535e9bc2cf22c405508a327c4561955131f5912fce0f80830a0d553081b1fcf05867e702787ada8b1cb51d5d80b9b9903f000adbf13519dcdb94ee1870550f3ccbc7f0b61fac59f09600e2499a482eef879f84538387efbcf41f4002548456efeb2058a8946b0c33245fc008cd7144c45a1171eccf4e3c1c89c9ad1750db8e110ae9724672eb57211705227c0f6a466ecbed6e2d193f87e7291fa73300ce0e10a7bcde49198f545a263f58bc1d479e54509a3a1d9c086609125c34f15b808c96f4d156a18f31f354979f7e69200ad3e\r\n~CEMU:O:00000001:5459a02e85f6c6ce450684274f3e0ca530b0a4f73108c3a5669fba5e879d0033ca63fff0407943bf4954af0dfebf977390cfad055b7ad6acfb3041902b2c722687b3de3cffb84f398ce48154992e5b2951e5d25cc12aa0172f822e75b5f4055b99079c338510440a664e246dcb51d547d99e378f3260c7dbd625ff1e62d885374a75057cb4e8d29ab8108f8e23743fb315fff4c88e7c6bec47a64ff9be2946acf8ed4a20a3830a977e74709adc8bdbe7258f506677b451326210ad266a301d2710bd397158d04fb378f9b326508a22d7b396f1998dfcc0d93bb050d2223fffb3431b93afd6b2a7cc4fec746089f327541dbe29d2cf09f7715294c27f0da2cfbe\r\n~CEMU:O:00000002:d38c020c8d8a6d22999859d6338d8bb87af9199390b7cb8acfac26a0c2e5dc86976e2bfc7c9b7c55f1b710337223b45c4a42314697cb4e0e9661af1493b9664998e553c4f8c484f7f802378be506ba05a8919f347c9dee988939a2c068976124cf068d22620baf3b50737949e195547a7b75e44217d3dcca2784fb0ad8713770632c1f923aa66d6c9c94924d15d5d68fa2b4e56674503351a7e4299d0b8698224c901b22e388710b4e1919e00c4cc07e8911b762410b2658a7ae40e20634993ca92a7961cbe7a5a73ad4b71f9f9c037\r\nOK\r\n\r\nUSRobotics Courier I-Modem with ISDN/V.34 Link Diagnostics...\r\n\r\nChars sent                 6144      Chars Received                0\r\nChars lost                    0\r\nOctets sent                5007      Octets Received            1217\r\nBlocks sent                 152      Blocks Received             180\r\nBlocks resent                63\r\n\r\nRetrains Requested            0      Retrains Granted              0\r\nLine Reversals                0      Blers                       623\r\nLink Timeouts                10      Link Naks                     0\r\n\r\nData Compression       V42BIS 2048/32\r\nEqualization           Long\r\nFallback               Disabled\r\nProtocol               LAPM\r\nSpeed                  28800/54666\r\nCurrent Call           00:00:33\r\n\r\nOnline\r\nOK\r\n",
+    "connect_rate_bps": 33333,
+    "carrier_connected": true,
+    "isdn_call_state": "active",
+    "dsp": {
+      "pc": 51402,
+      "op": 24971,
+      "acc": -55,
+      "accb": 1826,
+      "preg": 3286088,
+      "dp": 7,
+      "arp": 3,
+      "flags": 50,
+      "idle": false,
+      "instructions": 3636655396,
+      "cycles": 4255653799,
+      "io_events": 8192,
+      "ar0": 60,
+      "ar1": 704,
+      "ar2": 2429,
+      "ar3": 2549,
+      "ar4": 19,
+      "ar5": 56985,
+      "ar6": 1123,
+      "ar7": 3024,
+      "arcr": 60,
+      "indx": 60
+    },
+    "recent_mailbox": [
+      "73.3376 reply 0020:000c",
+      "74.1374 reply 0020:000c",
+      "74.9376 reply 0020:000c",
+      "75.7375 reply 0020:000c",
+      "76.5375 reply 0020:000c",
+      "77.3375 reply 0020:000c",
+      "78.1376 reply 0020:000c",
+      "78.9375 reply 0020:000c",
+      "79.7376 reply 0020:000c",
+      "79.9945 cmd 005b:0001",
+      "79.9970 cmd 005b:0001",
+      "80.4746 cmd 005b:0001"
+    ],
+    "error": null
+  },
+  "analog": {
+    "serial": "\r\nCONNECT 52000/ARQ/x2/LAPM/V42BIS\r\n~CEMU:A:00000000:c184ebbce35b6b6e9b08e52994694897b175834f978763ab9b48f445405f45b5193d6860efe3400b8a304e16162bfb6a2fc149685be2e2bc8a0aae32338cc2dbfcaadf8a9713cef18b93111c5274279142d0a622e77d83a663e7b1af831fa7faa38923e7089d7652724fca9aab6c3e67687eaf4a690b4835c6555da0de0aae9b796f077ad6dfaf5776e6c7149bb6cd1bd9038c09a8343e34648cf0c2200a14cf23b872102aae917f3078cb499a13e2a7d06d80acd16d955cc7a34299ceda8b4cdb31d50f35da47fc55a2bb26ab49d9895b7105968f21606a9f6dd7595cea2fcdb20104d9f8d2873026ddb4a38b90ef5521404fcbbd7f9741e4938f5abbc9c152\r\n~CEMU:A:00000001:081a6737466ee4a9d6148050ea5ea9f2efdc4b15cf3a55bcc5791d2b7a2e0535bc7d8b60e0ba16679608f5b1748bae54d12b40a8f7ec92eab155668b39c7504ac49b3176c55c29eaadcf9511f17fe6d17f823a76e75aa53ced109d14ee2e164f3f9971a802fa45daff52614209b6ec69c035dc4cd6a85e991be344f1d81b10db4f0b2a86ad8a7fa05c359cf468110c2c028f7d726788aff1663b6e36d8913c2b7240fad522e196667056a0bc7b8dc6e9f9d4c4974cdf7313739c15439cdebd7ed6725fd8becc61b2b3bb4e311bea7fda37854811c750f372b36941cb8c9a226410d01897ab7d7e82c8d98c142d85e48377b4cd6084d21f94aa22eb0f54fe1d6d\r\n~CEMU:A:00000002:da8b1539a81dcfacc7a0054143e937099b36a0157d12f8feb119e256c6170dfcf42273061729bb74d8015658b88b92a46c329c8f118fc38644ff48e99a9f6200212a11a1fe6a2e693a0a2616c3a4d0d51949593117220591f6a228939ee2f0bc7f0294cc1aa2ac3946a79fb6aea1a3b733be28d7d157928cfe9886e204ac45f482d7c0b54f0e7143b22c00fe40cebb8b0a8a4aeaf4b963fccd52638428c90cfa64d900ebd5df2c4dd68af87a006e30110c5bc3e6e1bc971b2a67a77d8f7830056615d1e77543b992c3ca0c367b004b1c9ffcb922f6cb3f730c5955d0e973ec849ac349351a949eb8d9c252123865f8cad5f87413f9182e457db7d8cd49c7da67\r\n~CEMU:A:00000003:0995ddb4f839667fb5f107b91526c967ebb7ab8b4f37c90673105603d95cfe3c97ccaf1ea4577e8e665a208ecaedfa5e540689155b89d8aabaccf9e495a39bc4e2a63c735ea7417335763a727763d71d4a4be85a9a621c99fb02bddec5d6c9cba82857d5e03dacd829cf817e5a2abe50c42dd0d8ac33aa18079a0ee038bb416e1991d8ceefba61c6b76b7b95e4190fb98b63d8bbae7313e7f73cb8f81295c9f1d5f33cbebd65dbc325647479e0bb401753a41f9fcbb82db0090fdbd5227ce1354bb3cc63fb4e70a9d6b9b137bbaed1380a7d50143a9fcee5174d37296851eaa2ae5843aa6078182c2c965ff83e9234d037f2e876a898f322fe574b2aa4030f72\r\n~CEMU:A:00000004:be3e250ae6a49a8a4e26dabe9a51c73546205bfe8ab9c7666fd40887b04bc9c95ae0f96585f797146772caf5828e9061eba48cb5a5fad04430e7147f23b5af081be46ab690c65005d10148bf964d3a0d6aef24478502ac14f3f321ea90ede4a2e8dd42ec8e755d9817fb34853404542bcab5589b0ace1d84ba6fc73cc649d11523e3bf0cdaf7db94783e3f5417585fd27548c14f86899bdefd4ed7e806d4638dd077e4841756368ec597c4e58ec49c3f642fdadf48fee60aeeefad960ab74fad1ae29104a91df978cc80ef21a3039d13b4a0f4cde61df4eeef668be8c26f7d0379d8ba3acc7d154fb31f48c65067e78be62cd810ef1b6d9fa97bf314e02b60f4\r\n~CEMU:A:00000005:7bfd96e70911d318aa6851ab786455366afd1e26c6b4f5dfbdff5fdb0703aad52b21eeaf44c862bb3d2d88b2ad70f43d71c8807574d2716eba0b7daf1ea12e1581a995f34459703d76291b80f4a0dd1fffe50729abf365f5c312f42fd34671c49b630e2df607423095b32b0274b4f4707585c57e755efb4c56e271e68a13cfa82761aa5b2d9e1842c7144a25b0b5e7752787db577754cfea2233a28d30985bdc4d7a38cd6ebd56996326049281668b8189b0a251d9fd83db51af791db22e158247c803e947676313a163f6a30e856917973580c82b363038d6eb5d79833e0b14cdd8829996485b51e6a1fafae060d33d559ad35219db14ad0bb613a242ed24b9\r\n~CEMU:A:00000006:0ee1e571536cb580ef125c51472db7d7312844cd83ccc592ae94ec319d6a929ab4f65a25322359510433c8a5c220820a237a677bdaa4aaf1ac3a8d6c07fab20d42f9a1277f7670ebee253a048423dececc72926d1e3c17a587dcb04eff2d0df83f41c3cb21d7564e403e05baa5d540dea3cd398a7e47ed9c734de45364a2e0d6737a48642f6a22eaf1847cf521c5ab60dbde839b325ef1c1ef83edba5420c225d527d443bb7d575148d5f9a25e5c30bf68817bc8b92afe5eb87057f60c9adbe8830be56331c60158ed3b7091532b1e79f1b6d35fb164352173a381dcc07c589a5af0335730947cc50835bc3f29235797850413f6e3c9c2687db5caa14772edde\r\n~CEMU:A:00000007:7cea7fd8859d80a04d39ecd17128515be421a872828db8a6356a1e878a339a8884bd57f2ad02a58998671f21df949289a76a2b44d92baa669c79fa0d9c1bee6427c0b255821a13302c27279bf0d55c71a28653abc6cdb1d933a4b8a684140cb675758eecc838b5bfc3ce3424e70f0a48c21ee8b8a0e7eb687024f5cbde4428186f4dd6c2f7be7d9c61bb073fe6c3ea58e714f67cc614367787d1f843b481f63ead629b492a33a0a27a660345181bc360c0ba561fc2245a6b9b0f2bb5daaa2a3a1735b2f043dfccc65879764d2687d176c71d8087a79111e22afcc6a3c7abadde960e89cca05f292e8646f99e41d787e66383f81ae58ec15eaa107d13fe6b6db5\r\n~CEMU:A:00000008:dd70f52accc2302a7413b625a5720f47f908e722f66f97de830ec0b6d9089b9a11ff330c499138180118eb59f4d3ce852de21d94795f9719049c5e27dd5131edc1c72b9433c765013348934226834c95d7f1969b76e47d59768a0fa7cf94cbb5ce1f4f36518baf95fc6463bdd4db7824686a2512a58954311920ea2c5b459cc5ca0a938e99c5a8ba56527fb420b693058c851d6059df18b56244ba3aa9f9271c06996fd1c3b82dbf1493168704941aa0967097029496165bd4a1af210e0d03f3cab39a85d2572228c20566c42ebf618494ab7664e04b6b4cbedc5ec6e2511802d299bc051e4775817a2d7492ac507e315622ead747594deed20e09a083294a48\r\n~CEMU:A:00000009:5210da1be9f0c176b531c262468774a5eceff65e0451c1143fc7dbddb383637599528d4b3a03c4bc48b245a4b5b0e4208972f2ec7b146ac47305474cd21d9c57d5f7117bd35a0e36c40a45675050cfb1fb5814582b87b01ef03c761dc2daf08334f40fe1bae54a023b56940132986ccd421554a5ce8231dc64be19ac59c4ef06377db65d895d98957571291e163233cbb49373f4f1cb30aa3dd7384940d1f6801e047393cff58e80862c9d488098502aa88874e9acf1bdf61f3ecde96b9f61a915f49116e55f0708f7ec11f54fadf3189044f2fc27c1df8f3da1984cf68d165ee1fe3ad08cd4ffe82a0a408bbb43390893da55a6d06bf06e73ae45d292f40751\r\n~CEMU:A:0000000a:a076a407ffc9e0d1a19c54ee8010bbcd07913ce6e6bdf64712fa16ac441a01687357a82818956204225535b19b8c105f1055a6980a0e1021882d02b68ae9d51ed3a9c6bccf9b2f7ef329bc117d76922047b94db09982fc567d9e43dbd5922e7fdc2f4e433521a88fe1482a10d59575d3869c8aabe9a71b1c67d2aa70987e98879b0a9925ea124e4b060d7bc880f56dd4aebea352af656573d5945d650033b4166aff0e152d218ad93055701e8d9069e346fbc656e0d706d432e819dd57a8af6ba3463546b768536ca3ec640bb5695fd4c035eba7ccbe3a213ae9e88d46055fa17613f4d0d3264ae16162f0eb0972f0d726543d12b43d6499d1945e0a2354eafc\r\n~CEMU:A:0000000b:119798999d798379296247c2b8d335dd49d74aab0d627906b4fcb91ac37c51dd29bf7c68d6381ac4d8460bdec1c9ce7625f7a0f67a77128cabd366f9db34abc5bb86aa8d8600f01fd83f696edfdd68c45cd5e9376dd0be42b5acd393974e2259f74a66a18101f2a47c301bda38688cc6e30bdbc739ff458edc48506771a876665f021ae1c47c17136da1d28317db3563c13ac0c2b02cd93b9e74600fdd4ace06b27b87ee919196ec975b4a620693fa4a421e8ed18bad1c3244024dbf34df7c4e30d410028297df6fc2f60e854018d2928843efd777aedecfffc20994b13a291ca457409f3f4cf53514c6af008b7e51f7b5f93505065e2067257ad74399eef413\r\n~CEMU:A:0000000c:01f48166ff9769e09b2f89401b81c97fd6d70d4c6172fe62ac5135047698b67c72efd633034cec5b2129e39627a7c8cdd2f8c57757f0cf9aaecc8083dd4ffbbfa980e81644291f1ff3dcb1bd264d374f2c67dbf4bb33f612b8c2dbc6149dad915c633c299bfc8dc95b090fbc035b36d54ec78bd98c2a4b354079774fdb0f3b2b52a36cdcc705a6eef98c6f1573dcb842edf21e4459ea889bd37dae8df07e5fd2bf6e16c28a62ed6f3fd152327e499172ff00a1926edb375b22ff3e2927b0f0887df9dcc65777552efe1abaf1f49f4f82b18a15c7fac08b242e5e8eb8d5eabc7915a2794353d84a1fa52974ca551053e2db1096cd06f42fdf27c489c7ca4dd27c\r\n~CEMU:A:0000000d:8b0058b0d220ab129441febc2f36e634ff1b6606215bb13d081e66f235c8bb7c18e3290707b0072aa046fa5f3220f44702f309c80f6b7236bcccd4d3b2f764e6f89c0fd87afe8ff4a90cb6e62143ae1dc240632dbb897ed9d7425952e4bc83348d4c10d0c2f3fe7e3161304b14533a6ee8e90671f1c6813cd4e8c57c7afa1703b0810df8cc5d4d8389afebd8783272e262d5606b0e908be08ffde4d25794f036eeb77c18e199abcf43cc54729f1691cf7e62710b726a0e60937f759d69ecc696e34e3e1ea08122732c87f9d669344a095a3e9f481679131996863176d5fee581addb0e143aba13fee726b793f4ebdce814dedd9946358f941d91c7712215edf1\r\n~CEMU:A:0000000e:71a0ba0cc141a56933db70163c7d73626ee4d3954eee9dd791a79ba4a4f0938f83fbbcf6c61c3c8565f5073224674727da9a96",
+    "connect_rate_bps": 52000,
+    "carrier_connected": true,
+    "error": null
+  },
+  "bridge": {
+    "line": {
+      "path": "/var/folders/_1/yfx80wlx5g38qqrwdkzxncz00000gn/T/courier-imodem-analog-qv74zjmr/line.sock",
+      "listen": false,
+      "audio_only": false,
+      "digital": true,
+      "sample_rate": 8000,
+      "frame_samples": 160,
+      "frame_ms": 20,
+      "record_prefix": null,
+      "frames": 5276,
+      "connected": false,
+      "peer_off_hook": false,
+      "peer_call_state": "cleared",
+      "peer_instructions": 458714000,
+      "samples_sent": 844160,
+      "samples_received": 844160,
+      "error": null
+    },
+    "analog_codec": "ac01",
+    "realtime_clock": true,
+    "analog_to_ulaw_db": -5.860000000000002,
+    "ulaw_to_analog_db": -5.539999999999999,
+    "call_state": "answered",
+    "answered": true,
+    "dialled": "",
+    "cleared": false,
+    "octets": {
+      "to_line": 643840,
+      "from_line": 643840,
+      "pending": 133
+    },
+    "silence_frames": 1252,
+    "active_idle_samples": 0,
+    "events": [
+      "the line is ringing us at frame 943: offering the I-modem a 3.1 kHz call",
+      "the I-modem answered at frame 1252: off hook"
+    ]
+  },
+  "bridge_at_limit": {
+    "line": {
+      "path": "/var/folders/_1/yfx80wlx5g38qqrwdkzxncz00000gn/T/courier-imodem-analog-qv74zjmr/line.sock",
+      "listen": false,
+      "audio_only": false,
+      "digital": true,
+      "sample_rate": 8000,
+      "frame_samples": 160,
+      "frame_ms": 20,
+      "record_prefix": null,
+      "frames": 5276,
+      "connected": true,
+      "peer_off_hook": true,
+      "peer_call_state": "answered",
+      "peer_instructions": 458714000,
+      "samples_sent": 844160,
+      "samples_received": 844160,
+      "error": null
+    },
+    "analog_codec": "ac01",
+    "realtime_clock": true,
+    "analog_to_ulaw_db": -5.860000000000002,
+    "ulaw_to_analog_db": -5.539999999999999,
+    "call_state": "answered",
+    "answered": true,
+    "dialled": "",
+    "cleared": false,
+    "octets": {
+      "to_line": 643840,
+      "from_line": 643840,
+      "pending": 133
+    },
+    "silence_frames": 1252,
+    "active_idle_samples": 0,
+    "events": [
+      "the line is ringing us at frame 943: offering the I-modem a 3.1 kHz call",
+      "the I-modem answered at frame 1252: off hook"
+    ]
+  }
+}

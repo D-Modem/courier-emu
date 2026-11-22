@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import json
 import os
 from pathlib import Path
 import signal
+import sys
 
 from .codec import DAA_REVISION, CodecBringUp, SiliconDaa, nearest_sample_rate
 from .console import SerialConsole
 from .daa import CourierDaa, DAA_LINE_STATES, RingSource
 from .flash import ParameterFlash
 from .images import load_image
+from .dte_framing import DTE_FRAMINGS
 from .exchange import DIAL_TONES, EXCHANGE_OUTCOMES, LineExchange
 from .line import LineLink
 from .machine import CourierMachine
@@ -75,6 +78,8 @@ def _dial_tone_for(args) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("image")
+    parser.add_argument('--power-on', action='store_true')
+    parser.add_argument('--firmware-mode', choices=('normal', 'bootmodem'))
     parser.add_argument("--instructions", type=_number, required=True)
     parser.add_argument("--cpu-engine", choices=("interpreter", "unicorn"), default="interpreter")
     parser.add_argument("--port", action="append", default=[])
@@ -82,6 +87,8 @@ def main() -> int:
     parser.add_argument("--uart-port", action="append", type=_number, default=[])
     parser.add_argument("--trace-pc", action="append", default=[])
     parser.add_argument("--peek", action="append", default=[])
+    parser.add_argument("--trace-rom-link-errors", action="store_true")
+    parser.add_argument('--trace-rom-lapm', action='store_true')
     parser.add_argument("--dsp-trace-range", default="")
     parser.add_argument("--io-watch", default="")
     parser.add_argument("--dsp-peek", action="append", default=[])
@@ -105,8 +112,11 @@ def main() -> int:
     parser.add_argument("--exchange-line-peer")
     parser.add_argument("--dsp-rx-pcm")
     parser.add_argument("--dsp-tx-pcm")
+    parser.add_argument('--serial-output', type=Path)
     parser.add_argument("--serial-input-hex", default="")
+    parser.add_argument("--dte-framing", choices=DTE_FRAMINGS, default="stored")
     parser.add_argument("--serial-after-connect-hex", action="append", default=[])
+    parser.add_argument("--serial-after-connect-delay-ms", type=int, default=0)
     parser.add_argument("--serial-schedule", action="append", default=[],
                         metavar="INSTRUCTIONS:HEX")
     parser.add_argument(
@@ -114,12 +124,16 @@ def main() -> int:
         help="hold the AT input until the line rings, as a host answering a call does")
     parser.add_argument("--nvram")
     parser.add_argument("--nvram-fixture", choices=("idsdl302", "idsdl403"))
-    parser.add_argument("--board-id", default="")
+    parser.add_argument("--board-id", default="auto")
     parser.add_argument("--dip", action="append", default=[])
     parser.add_argument("--parameter-sector")
     parser.add_argument("--parameter-flash")
     parser.add_argument("--tick-ms", type=_number, default=None)
     parser.add_argument("--frame-hz", type=_number, default=None)
+    parser.add_argument('--frame-codec-samples', type=_number, default=0)
+    parser.add_argument('--frame-source', choices=('periodic', 'dsp-xf'), default=None)
+    parser.add_argument('--interrupt-poll-instructions', type=_number, default=None)
+    parser.add_argument('--frame-irq-poll-instructions', type=_number, default=64)
     parser.add_argument("--exchange-dial-tone", default="us")
     parser.add_argument("--tick-source", default=None)
     parser.add_argument("--int1-after", type=_number)
@@ -129,6 +143,9 @@ def main() -> int:
     parser.add_argument("--exchange-answer-after", type=_number, default=2)
     parser.add_argument("--exchange-answer-tone", type=_number, default=3_000)
     parser.add_argument("--exchange-hotline", action="store_true")
+    parser.add_argument("--apple-modem")
+    parser.add_argument("--apple-rate", type=int, default=10286)
+    parser.add_argument("--apple-tx-gain", type=float, default=1.0)
     parser.add_argument("--line-link")
     parser.add_argument("--line-listen", action="store_true")
     parser.add_argument(
@@ -203,7 +220,17 @@ def main() -> int:
         )
 
     line = None
-    if args.line_link:
+    if args.apple_modem:
+        if (args.line_link or args.exchange or args.sip_server or args.exchange_line_peer
+                or args.force_online or args.line_audio_only or args.ring_cadence
+                or args.dsp_rx_pcm or args.dsp_acquisition_assist):
+            parser.error("--apple-modem cannot mix with another line, synthetic ring/audio, or acquisition assistance")
+        from .apple_line import AppleLine
+        line = AppleLine(args.apple_modem, args.apple_rate, tx_gain=args.apple_tx_gain)
+        line.open()
+        args.daa_line = "quiet"
+        args.with_dsp = True
+    elif args.line_link:
         line = LineLink(path=args.line_link, listen=args.line_listen,
                         audio_only=args.line_audio_only, record_prefix=args.line_record,
                         digital=os.environ.get("COURIER_LINE_DIGITAL") == "1")
@@ -256,7 +283,7 @@ def main() -> int:
     )
 
     machine = CourierMachine(
-        load_image(args.image),
+        load_image(args.image, firmware_mode=args.firmware_mode, power_on=args.power_on),
         port_values=ports,
         runtime_port_values=runtime_ports,
         uart_ports=set(args.uart_port),
@@ -266,6 +293,8 @@ def main() -> int:
         dsp_peek=_pc_watch(args.dsp_peek),
         dsp_write_watch=(int(args.dsp_write_watch, 16) if args.dsp_write_watch else None),
         mem_watch=_trace_range(args.mem_watch),
+        trace_rom_link_errors=args.trace_rom_link_errors,
+        trace_rom_lapm=args.trace_rom_lapm,
         io_watch=tuple(
             int(entry, 16) for entry in args.io_watch.split(',') if entry
         ),
@@ -278,6 +307,7 @@ def main() -> int:
         serial_input_on_ring=args.serial_input_on_ring,
         serial_input_after_connect=[bytes.fromhex(chunk)
                                     for chunk in args.serial_after_connect_hex],
+        serial_input_after_connect_delay_ms=args.serial_after_connect_delay_ms,
         serial_input_schedule=[
             (_number(when), bytes.fromhex(data))
             for when, _, data in (entry.partition(":") for entry in args.serial_schedule)],
@@ -286,7 +316,8 @@ def main() -> int:
         codec=codec,
         int1_after_ms=args.int1_after,
         nvram=nvram,
-        board_id=None if args.board_id == "none" else int(args.board_id, 0),
+        board_id=(None if args.board_id == "none" else
+                  "auto" if args.board_id == "auto" else int(args.board_id, 0)),
         dip_closed=frozenset(args.dip),
         parameter_sector=load_sector(args.parameter_sector) if args.parameter_sector else None,
         parameter_flash=ParameterFlash.load(args.parameter_flash)
@@ -294,6 +325,10 @@ def main() -> int:
         else None,
         tick_ms=args.tick_ms,
         frame_hz=args.frame_hz,
+        frame_codec_samples=args.frame_codec_samples,
+        frame_source=args.frame_source,
+        interrupt_poll_instructions=args.interrupt_poll_instructions,
+        frame_irq_poll_instructions=args.frame_irq_poll_instructions,
         tick_source=args.tick_source,
         sip=sip,
         line=line,
@@ -302,8 +337,11 @@ def main() -> int:
         dsp_acquisition_assist=args.dsp_acquisition_assist,
         dsp_batch=args.dsp_batch,
         console=console,
+        dte_framing=args.dte_framing,
         cpu_engine=args.cpu_engine,
     )
+    if args.apple_modem:
+        line.on_error = machine.request_stop
     if args.line_frames is not None and machine.dsp_bridge is not None:
         # Both ends stop at the same point in call time rather than at the
         # same instruction count, which they reach at different moments.
@@ -315,7 +353,19 @@ def main() -> int:
     # peer at the end of its call), so either way the run still reports itself.
     for number in (signal.SIGINT, signal.SIGTERM):
         signal.signal(number, lambda *_: machine.request_stop())
-    print(json.dumps(machine.run(args.instructions).to_dict(), sort_keys=True))
+    try:
+        with (args.serial_output.open('wb') if args.serial_output else nullcontext()) as serial_output:
+            machine.serial_output = serial_output
+            result = machine.run(args.instructions).to_dict()
+        if args.apple_modem and line.error:
+            result["error"] = line.error
+        print(json.dumps(result, sort_keys=True))
+    finally:
+        if line is not None:
+            line.close()
+    if args.apple_modem and line.error:
+        print(f"Apple line failed: {line.error}", file=sys.stderr)
+        return 1
     return 0
 
 

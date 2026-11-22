@@ -1,4 +1,5 @@
 import math
+from types import SimpleNamespace
 
 import pytest
 
@@ -20,3 +21,25 @@ def test_default_ac01_bearer_levels_retain_the_board_daa_loss():
     peer = BearerLineLink(LineLink('/tmp/unused-ac01-test.sock', digital=True))
     assert 20 * math.log10(peer.from_line) == pytest.approx(8.75 - 3.21 - 11.4)
     assert 20 * math.log10(peer.into_courier) == pytest.approx(3.21 - 8.75)
+
+
+def test_wallclock_idle_poll_cannot_manufacture_line_samples(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr('courier_emu.peripheral_clock.time.monotonic', lambda: now[0])
+    line = SimpleNamespace(digital=True, connected=True, closed=False)
+    peer = BearerLineLink(line, realtime_clock=True)
+    peer.answered = True
+    dsc = SimpleNamespace(bearer_tx={1: bytearray(), 2: bytearray()})
+    exchanges = []
+    peer._exchange = lambda dsc, channel, octets: exchanges.append(octets)
+    peer.clock(dsc, 1, 0)
+    # A fast supervisor may retire a second's instructions without a single
+    # sample period elapsing. The highway must stay put too.
+    peer.clock(dsc, 1, 5_000_000)
+    assert not exchanges
+    from courier_emu.bearer_line import LINE_FRAME_SAMPLES
+    now[0] += (LINE_FRAME_SAMPLES + 1) / 8000
+    peer.clock(dsc, 1, 5_000_001)
+    assert exchanges == [b'\xff' * LINE_FRAME_SAMPLES]
+    assert peer.active_idle_samples == LINE_FRAME_SAMPLES + 1
+    assert peer.feeds_ahead

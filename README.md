@@ -1,5 +1,74 @@
 # Courier XMF emulator harness
 
+The captured **3453 B/C and C normal firmware and bootmodem now boot and answer
+AT commands**. The loader accepts split bootmodem transfers and private 1 MiB
+whole-flash images; `--power-on` executes the real reset loader and its CRC checks,
+`--firmware-mode` selects a direct entry, and the guest `ATZ!!` handlers switch modes. See [3453 flash boot](docs/3453-flash-boot.md) for commands,
+regression evidence and hardware-model limitations. This does not establish
+working V.92 negotiation.
+
+Two unchanged B/C peers now exchange distinct **32-byte ASCII payloads exactly
+in both directions over native Bell-103 PCM**, after an explicit terminal typing
+delay. A single-sided external DTR drop also produces genuine `NO CARRIER` on
+both peers and on-hook cleanup. See the [3453 data-path evidence](artifacts/3453-bell103-data-path-20261015/README.md)
+for the original firmware, register/IRQ fixes, and limits of this control.
+
+An experimental [Apple USB Modem line backend](docs/apple-usb-line.md) now
+streams real hardware PCM directly at the Courier codec grid, with USB hook/ring
+control and verified native polling. Corrected unity output gain lets the ATA
+collect full extension numbers: Asterisk now routes 6312/6313 and records them
+answered. Native 7200 Hz, rate-retune and reset-continuity probes also pass.
+A physical-line call into a SIP-backed Courier-emu I-modem now exchanges
+**180-byte ASCII payloads exactly both ways at 9600 bps with V.32/LAPM**, using
+required error correction and an explicit 200-ms SIP reserve. See the
+[advanced modem controls](artifacts/apple-advanced-sip/README.md), including the
+earlier [Bell 103 control](artifacts/apple-courier-sip/bell103-fair-clock-180-buffer200/README.md).
+Normal-mode calls still expose corruption; sustained reliability and V.34
+operation remain unresolved. A subsequent [original-driver hook fix](docs/apple-firmware-hook-fix.md)
+replaces host-timed raw-register seizure with the Apple firmware hook command.
+Two fresh V.32/LAPM calls pass with timestamp-aware RTP playout (200-ms deadline
+plus the 200-ms bearer reserve), zero active USB/playout losses, and identical
+RTP packets/payloads at simultaneous local and PBX capture points. Protection
+remains enabled; the older intermittent network loss is not claimed repaired.
+The new [sustained binary/ASCII validator](docs/apple-sustained-traffic.md) exposes
+long asymmetric stalls beyond those short messages. Real firmware diagnostics
+show substantial LAPM block errors, retransmissions and a retrain; 20-second
+controls fail despite unchanged observed RTP forwarding. Sustained reliability
+is **not fixed**, and no 60-second binary soak is claimed passing. The follow-up
+adds phase-specific media telemetry, explicit physical release before reporting,
+and an opt-in asynchronous USB status monitor; a captured control verifies clean
+transport/shutdown while the modem traffic stall still fails acceptance.
+The [7910 training diagnosis](docs/apple-7910-training.md) decodes actual
+V.90 requests/V.34 fallback and correlates packet-sized Apple RX corruption
+with **ATA-reported incoming RTP loss**, despite clean PBX forwarding.
+Restoring VLAN-70 IGMP querying stopped the multicast flood; one unchanged call
+now reaches **CONNECT 19200/V34/LAPM**, with zero loss in eight ATA RTCP reports.
+V.90 and sustained throughput remain unqualified. Ordered mailbox recording is
+preserved across DSP reset.
+
+A separate [Linux I-modem call to RasFinder 6312](docs/imodem-rasfinder-v90-20261025.md)
+now reaches **CONNECT 49333/ARQ/V90/LAPM**, delivers the readable MULTITECH
+login prompt, and reports **12000/49333** in ATI6. It uses a 230400-bps saved
+DTE profile, S54=0, 200-ms media buffers, and an opt-in paced native live poller
+in an isolated vmhost container. The [live timing correction](docs/imodem-v90-live-timing-fix-20261025.md)
+fixes a wrong native DSP clock rate and supervisor catch-up that triggered the
+firmware IRQ13 watchdog, while preserving port-read protections. The later
+[UART starvation correction](docs/imodem-v90-uart-starvation-fix-20261025.md)
+completes **60-second idle/banner holds followed by ten ATI6 queries on both
+6312 and 6313**, both at 49333/V90/LAPM, with zero TX rebuffers or RX loss
+across the complete sessions and no watchdog abort. A subsequent
+[receive-latency improvement](docs/imodem-v90-faster-return-path-20261025.md)
+adds `--bri-sip-tx-buffer-ms`: keeping a 200-ms TX reserve while reducing RX
+reserves to 20 ms plus 40-ms RTP delay qualified **31200/49333 on 6312 and
+28800/49333 on 6313**, again with clean 60-second holds and ten ATI6 queries.
+These are I-modem receive/transmit rates; it is the digital V.90 endpoint,
+so the improved return direction uses V.34 and the 49333 direction is its
+PCM transmit direction. The low-delay preset requires a low-jitter path and
+host CPU headroom; conservative defaults remain unchanged. Sustained payload
+throughput and long-run repeatability are not certified. ATI6's
+half-scale call time is traced to firmware arithmetic. These are not Apple USB
+results; the live scheduler remains experimental and disabled by default.
+
 The I-modem's AT interface answers. `isdn-run` now models the 386EX SIO's
 receive side - RBR, IIR, MSR and the IRQ3 line its own ISR at `0xb2aa2`
 names - so commands can be typed at the firmware and its replies read back:
@@ -23,7 +92,23 @@ The [I-modem/analogue Courier pair](docs/imodem-analog-pair.md) establishes
 native Bell 103 carrier at 300 bps and transfers terminal data in both
 directions with the paired probe's `--protocol bell103` preset. The I-modem's
 six-word ASIC data window and acknowledgements now carry the payload through
-the original DSP firmware. V.34 carrier remains unresolved.
+the original DSP firmware. The later [analog UART starvation fix](docs/imodem-v34-uart-starvation-fix-20261026.md)
+passes repeated 20-second **512-byte ASCII payload** duplex gates at
+14400/21600 V.34/LAPM and a **60-second 14400 V.34/LAPM** gate, with zero
+reported UART overruns, BLERs, retransmissions or link timeouts. It corrects
+RX/TX request coupling, serial request ordering and zero-time TX completion.
+The [x2 follow-up](docs/imodem-x2-s39-headroom-20261027.md) traces the
+upstream CRC failure to the captured profile's invalid S39=0 transmit level.
+Explicit `--analog-tx-level 8` removes the dominant upstream corruption and
+permits one 20-second 52000/x2 duplex pass, but other calls—including a
+60-second run—still stall downstream. The [downstream boundary trace](docs/imodem-x2-downstream-output-boundary-20261027.md)
+finds an FCS-valid frame before analog DSP HDLC processing with three octets
+missing from its host-bank output. A true 53333 ceiling and finer service
+cadences still fail; one corrected call also has a residual upstream BLER.
+The [IRQ/lane follow-up](docs/imodem-x2-irq-lanes-20261027.md) confirms an actual
+48000/x2 CONNECT and output loss merging two valid input frames. Finer interrupt
+polling improves delivery but still fails; 53333 is not a hard-coded rate limit.
+**Sustained x2 and arbitrary-binary throughput remain unqualified.**
 
 The captured 20.16 MHz DSP boot ROM is now integrated for the 302/403
 firmware under `--with-dsp`. The DSP executes reset and downloads its resident
@@ -166,6 +251,117 @@ The DSP area is a segmented program image rather than one flat load:
 | `0x0eea4..0x101ff` | `de83..e830` | service overlay; entry at `de89` |
 | `0x10200..0x1b5df` | `8000..d9ef` | resident high bank |
 
+## Browser GUI
+
+```sh
+./courier gui
+```
+
+Opens a local browser interface with firmware selection, start/stop controls,
+an AT-command console, live front-panel LEDs, transcript download, and worker diagnostics. It uses the
+existing CLI workers and adds no dependencies. XMF and ROM images use the analog
+console; NAC images use the ISDN terminal. External analog backends and
+non-disconnected simulated lines enable DSP automatically. For a disconnected
+simulated line, **Enable DSP** is optional.
+The analog panel displays live AA, CD, OH, MR, CS, SYN, and ARQ/FAX states
+from the emulator's existing latch model. Bright red means on, dark red means
+off, and a grey `?` means unknown. HS, RD, and SD are not mapped yet and remain
+unknown; NAC/ISDN sessions do not currently provide panel telemetry. Stopped
+sessions show an idle panel rather than stale lit LEDs. The terminal's **Text
+display** defaults to **8-bit text (Latin-1)**, preserving all eight bits.
+**7-bit text (strip parity, opt-in)** is available for inspecting a known 7E1
+stream, but masking the display is not a fix for UART framing. Separately, the
+GUI now defaults the actual **DTE format** to **8N1**: its byte-oriented attention
+adapter publishes the selected format to the firmware's active setting when AT
+is accepted, after startup/profile loading. `ATI4` therefore reports
+`PARITY=N WORDLEN=8` (spacing varies). Choose **Preserve stored framing** under
+Analog board settings to leave that setting untouched. This does not emulate
+raw-pin autobaud timing or replace other EEPROM settings.
+This changes only the display and Save transcript conversion, not the firmware's
+UART settings or transmitted input; original console bytes remain in the bounded
+session buffer, so switching views also works on existing output. Binary terminal
+sessions are not exposed yet.
+
+The GUI lists `.xmf`, `.rom`, and `.nac` files directly in the current directory.
+Use `./courier gui --directory /path/to/firmware --port 8765 --no-browser` to
+choose another directory or suppress automatic browser launch. The server binds
+only to `127.0.0.1`; Ctrl-C stops the server and its emulator session. Closing
+the browser does not stop the modem. Terminal and diagnostic history are each
+limited to the latest 200,000 characters.
+
+### Calling from the GUI
+
+Choose a **Connection** before starting an analog XMF/ROM modem:
+
+| Connection | Configuration | What it connects to |
+| --- | --- | --- |
+| Simulated analog line | Disconnected, quiet, dial tone, or ringing | Local line state only; no external calls |
+| SIP / PBX | Server, username, password (or environment fallback), optional destination URI template, G.711 codec and local ports | Outgoing UDP/IPv4 SIP INVITE and RTP through the existing SIP backend |
+| Another emulator | UNIX socket path, Listen/Connect role, matching PCM-only setting | A separately running local emulator |
+| Physical line | Apple helper path, sample rate, transmit gain and explicit hardware confirmation | Experimental macOS Apple A1082 USB modem FXO bridge |
+
+Once the firmware is ready, enter the number and click **Dial · ATDT**. **Answer ·
+ATA** answers at the modem, not at the SIP signaling layer; incoming SIP calls
+are not exposed by these controls. These buttons send real serial commands and
+do not manufacture modem results. In online data mode, first use **Escape · +++**,
+wait for the firmware's `OK`, then **Hang up · ATH**. Escape sends no carriage
+return and pauses terminal input for the selected guard on each side. Increase
+the guard if you changed S12. `ATH` itself is not an out-of-band disconnect.
+Use **Stop** to end the worker session rather than send another command.
+
+**SIP:** select SIP / PBX and fill in the server, username, and masked password
+field. The entered password applies to that start only and takes precedence over
+the environment fallback. It is passed to the child through its environment,
+never command-line arguments; it is not saved to disk, returned in API state,
+or included in diagnostics. The field clears after a successful start, so
+re-enter it for the next session. This is a localhost interface, not a remote
+credential-management service.
+
+Alternatively, leave the password blank to use `COURIER_SIP_PASSWORD` (or another
+inherited variable named in the fallback field), set before launching the GUI:
+
+```sh
+export COURIER_SIP_PASSWORD='your-password'
+./courier gui
+```
+
+A target such as
+`sip:{number}@{server}` substitutes the dialed number and configured server.
+This minimal analog backend does not REGISTER; use a PBX that accepts direct
+INVITEs, optionally with Digest authentication. SIP/RTP success alone is not a
+trained modem connection.
+
+**Peer:** launch a second server with `./courier gui --port 8766`. Two tabs of the
+same server share one modem, so use separate server ports. On both, choose the
+same short socket path (for example `/tmp/courier-gui-line.sock`); use Listen on
+one and Connect on the other. Start both within 30 seconds. Socket role does not
+choose caller/answerer: dial on one and use Answer on the other. PCM-only is the
+GUI default and must match both ends; it disables modeled training/carrier
+events and supplies no generated dial tone (`ATX0` may be needed before dialing).
+Unchecking it enables the existing modeled call helpers, not proof of DSP-only
+training. A stopped listener may leave its socket behind: choose a fresh path
+or remove the stale socket **only after both workers stop**. The GUI never
+unlinks an existing path automatically.
+
+**Physical:** see [Apple USB Modem line backend](docs/apple-usb-line.md) for
+building `.build/apple_line`, macOS audio permissions, hardware selection, and
+qualified firmware/settings. This is not a generic USB/serial modem driver.
+Connect the A1082 FXO to a powered FXS/PBX analog line, not directly to another
+unpowered modem. Dial may place a real, billable call; the GUI requires explicit
+confirmation each start. **Analog board settings** exposes board ID, EEPROM
+fixture, DTE format and tick source. For the documented captured 4.03 setup, use its ROM
+directory with `--directory`, board 7, `idsdl403`, and the default timer. Do not
+apply that fixture to unrelated firmware. Stop first requests normal console
+cleanup; helper safety messages and final on-hook readback appear in Worker
+diagnostics. A forced shutdown or failed readback requires checking the line
+and, if necessary, unplugging the modem; a host crash cannot guarantee release.
+
+These controls expose existing backends, not new DSP capability. `main211.xmf`
+completes idle ATI11 but still has known call-training limitations. Other
+firmware/backend combinations have their own qualifications in the linked
+documentation. NAC sessions retain their existing ISDN terminal; these external
+analog controls are disabled for NAC.
+
 ## Usage
 
 Everything runs through the `./courier` launcher. There is nothing to install
@@ -199,7 +395,11 @@ Measure firmware execution with `python tools/benchmark_x86.py Ie030002.nac`
 or `python tools/benchmark_x86.py IDSDL302.ROM --with-dsp`. Add `--profile-exits`
 to identify native fallback addresses (with profiling overhead), or `--python`
 for the reference engine. See [interpreter performance](docs/interpreter-performance.md)
-for measured workloads and remaining limits.
+for measured workloads and remaining limits. Eligible native-worker runs also
+use native batch-call setup and empty post-run cleanup; see
+[native worker wrapper measurements](docs/native-worker-wrapper-performance.md).
+`COURIER_X86_NATIVE_WRAPPER=0` retains the Python wrapper without disabling
+native CPU execution.
 
 It uses `uv` when that is on `PATH` and falls back to `venv` plus `pip`
 otherwise. `PYTHON=<interpreter>` chooses the interpreter it builds the
@@ -1465,6 +1665,21 @@ signals into a clean CLI failure rather than crashing the controlling process.
 
 ## Current boundary
 
+**Live hardware status (10 November 2026):** the analog 403 firmware can
+negotiate V.34/LAPM and genuine V.90/LAPM over SIP and carry exact PPP payloads.
+Sustained reliability is still open: the latest V.90 series passed only one
+60-second call, and no 600-second-target attempt established V.90. Separate
+V.34 LAN controls show sender-side sample-clock excursions despite zero RTP
+sequence loss. The immediate priority is timely sample production and a
+matched 600-second V.34 qualification, not relaxed buffers or PPP checks.
+See [disconnect investigation](docs/analog-disconnect-investigation.md),
+[V.90 repeated tests](docs/v90-7930-repeated-tests.md), and the
+[TX timing measurement plan](docs/tx-timing-investigation.md).
+
+The older 2.1.x implementation boundaries below and the "Minimal SIP dial-out"
+section above describe historical bring-up, not the current 403 SIP feature
+set or evidence that all firmware variants share the same remaining blockers.
+
 The 80186 and C51 are lock-stepped at their recovered 20/25 MHz ratio. The
 supervisor's DSP bootstrap is reconstructed from ports `0x40..0x4e`, verified
 byte-for-byte against the XMF C51 boot segment, and published to the native DSP
@@ -1483,10 +1698,19 @@ boot-time NVRAM profile load in this firmware to model.
 
 ### Quad CPU AT terminal
 
-For the current server answer attempt, see
-[Quad server bring-up](docs/quad-server-bringup.md). The probe can now boot
-from the QF archive and records the watchdog-induced `NO CARRIER` path.
-CPU/DSP call control remains incomplete; it is not yet a negotiation peer.
+The Quad now connects to the original I-modem over **V.34/LAPM and symmetric
+x2/LAPM**, with bidirectional ASCII data. Both modems genuinely report
+**64000/x2/LAPM** in the symmetric control, with zero PCM underruns or UART
+drops. See [Quad server bring-up](docs/quad-server-bringup.md) for working
+commands, genuine chassis feature provisioning, setup/handoff fixes and evidence.
+Asymmetric **server** x2 also passes against an analog Courier client at
+52000/33333, with both payloads intact and carrier retained at a shared
+60-second media boundary. Run `tools/probe_quad_analog_pair.py --check-x2` with
+an `--output` directory. A **three-minute paced V.34 traffic soak passes at
+9600**. The default **31.2/33.6k** pair also passes 60 connected seconds after
+fixing a packet-boundary PCM sample insertion in the media harness.
+Full-rate application throughput, x2 soaks and binary DTE remain
+unverified. The vendor documents Quad client mode as unsupported.
 
 The QF060003 modem now executes `AT` → `OK` with an explicit byte-terminal
 adapter. Run `PYTHONPATH=. .venv/bin/python tools/probe_quad_at.py` to boot the
@@ -1509,8 +1733,9 @@ measure all sixteen stock keypad tones.
 The captured resident also contains QF's own G.711 expander and compressor.
 The component runner executes its DTMF generator, either compressor branch,
 and its byte serial ISR, producing raw 8 kHz `.g711` streams without a host
-codec. The chassis call-control request that arms this path remains unfinished;
-see `docs/quad-dsp-pcm-path.md`.
+codec. Chassis arming and answer now execute through the original mailbox;
+see `docs/quad-server-bringup.md` for the paired call and
+`docs/quad-dsp-pcm-path.md` for the component measurements.
 
 Its stock answer-signal family is executable as well: 2100 Hz ANS, ANS with
 periodic phase reversals, ANSam with the resident's 15.05 Hz amplitude

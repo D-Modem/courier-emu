@@ -11,9 +11,11 @@ import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
 
 # A 100 ms exchange plus a full receive reserve delays the analog caller's
 # training response past the first x2 transition. Keep the general line
@@ -25,7 +27,7 @@ from courier_emu.bearer_line import BearerLineLink
 from courier_emu.bri import BriNetwork
 from courier_emu.isdn import IsdnMachine
 from courier_emu.isdn_console import _on_the_wire, scripted_pump
-from courier_emu.line import LineLink
+from courier_emu.line import LineLink, LINE_FRAME_SAMPLES
 from courier_emu.nac import NacImage
 from courier_emu.timebase import ASIC_DSP_CLOCK_HZ
 
@@ -120,6 +122,31 @@ def connection_rate_bps(serial: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def traffic_stall_snapshot(traffic, frame, current, clock, bridge):
+    """Read-only evidence at the existing five-second record-gap boundary.
+
+    A missing complete record is not proof of a firmware block error. Preserve
+    partial bytes, both directions and preceding service counters so those
+    hypotheses can be distinguished without escaping or changing the call.
+    """
+    if not traffic.stalls:
+        return None
+    core = current.mailbox.core
+    return {
+        "reason": "complete-record receive gap exceeded five seconds",
+        "frame": frame, "instructions": current.instructions,
+        "timer_ticks": current.timer_ticks,
+        "traffic": traffic.status(frame), "clock": clock, "bridge": bridge,
+        "serial": {name: channel.status() for name, channel in current.channels.items()},
+        "dsp": core.state() if core else None,
+        "dsp_stack": core.stack() if core else None,
+        "dsp_lanes": core.io_port_stats(range(0x58, 0x5e)) if core else None,
+        "dsp_host_io": {f"{port:02x}": core.io(port)
+                        for port in range(0x50, 0x60)} if core else None,
+        "preceding_progress": list(traffic.progress),
+    }
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--imodem", type=Path, default=DEFAULT_IMODEM)
@@ -140,6 +167,22 @@ def parser() -> argparse.ArgumentParser:
                         help="observe an analogue supervisor instruction address, hexadecimal")
     result.add_argument("--analog-peek", action="append", default=[], metavar="ADDRESS",
                         help="report an analogue supervisor data word, hexadecimal")
+    result.add_argument('--analog-frame-source', choices=('periodic', 'dsp-xf'), default=None,
+                        help='analogue frame IRQ source; dsp-xf selects actual DSP edges '
+                             'and cooperative IRQ service')
+    result.add_argument('--analog-frame-irq-poll-instructions', type=int, metavar='N',
+                        help='DSP XF recognition interval, independent of timer/UART polling')
+    result.add_argument('--analog-interrupt-poll-instructions', type=int, metavar='N',
+                        help='override analogue IRQ recognition interval for controlled comparisons')
+    result.add_argument('--analog-frame-codec-samples', type=int, default=0, metavar='N',
+                        help='derive analogue periodic INT0 from N live codec samples; '
+                             '0 preserves legacy cadence (default)')
+    result.add_argument('--analog-frame-hz', type=int, metavar='HZ',
+                        help='fixed analogue INT0 rate, overriding codec-derived cadence')
+    result.add_argument('--analog-trace-lapm', action='store_true',
+                        help='passive bounded 403 LAPM packet/flow-control trace')
+    result.add_argument('--analog-trace-link-errors', action='store_true',
+                        help='passively observe the original analog 403 receive-error path')
     result.add_argument("--analog-mem-watch", metavar="FIRST:LAST",
                         help="record analogue supervisor memory writes in this hexadecimal range")
     result.add_argument("--analog-dsp-write-watch", metavar="ADDRESS",
@@ -172,6 +215,14 @@ def parser() -> argparse.ArgumentParser:
         help="additional gain on I-modem audio entering the analogue Courier",
     )
     result.add_argument("--output", type=Path)
+    result.add_argument('--clock-mode', choices=('coupled', 'independent'), default='independent',
+                        help='virtual I-modem clock domains: coupled executes CPU/DSP/PIT '
+                             'on one timebase and wall-paces the CPU; independent is the legacy mode')
+    result.add_argument("--wallclock", action="store_true",
+                        help="run the active I-modem call through the native live-call clock")
+    result.add_argument("--traffic-seconds", type=float, default=0,
+                        help="verify numbered bidirectional records for this many seconds after CONNECT")
+    result.add_argument("--traffic-size", type=int, default=512)
     result.add_argument("--audit-overlays", action="store_true",
                         help="read back every I-modem overlay at its completion strobe")
     result.add_argument("--assist-overlay-command", action="store_true",
@@ -180,14 +231,26 @@ def parser() -> argparse.ArgumentParser:
         "--disable-v34", action="store_true",
         help="set S56=192 on both modems to disable V.34 and V.FC",
     )
+    result.add_argument("--analog-tx-level", choices=['stored', *map(str, range(1, 30))],
+                        default='stored', metavar='stored|1..29',
+                        help="set analogue S39 through AT before dialling; 8 is the 403 factory "
+                             "level (stored preserves the captured profile, including its invalid 0)")
     result.add_argument("--analog-settings", default="S27=1", help="extra Hayes settings before dialling")
     result.add_argument("--analog-result-mode", type=int, choices=range(5), default=1,
                         help="Hayes X result mode (1 reports speed without dial-tone detection; 0 bare CONNECT)")
     result.add_argument("--imodem-settings", default="", help="extra Hayes settings before answering")
     result.add_argument("--analog-send", default="", help="text to send from the analogue DTE after CONNECT")
     result.add_argument("--imodem-send", default="", help="text to send from the I-modem DTE after CONNECT")
+    result.add_argument("--trace-link-bits", action="store_true",
+                        help="also retain coherent pre-HDLC DSP bits/counts at the first receive error")
+    result.add_argument('--trace-lapm', action='store_true',
+                        help='passive bounded I-modem LAPM packet/flow-control trace')
+    result.add_argument("--trace-link-errors", action="store_true",
+                        help="observe Ie030002 pending receive errors and ATI6 BLER increments")
+    result.add_argument("--analog-link-diagnostics", action="store_true",
+                        help="also query the analog ATI6 after the traffic window (requires --link-diagnostics)")
     result.add_argument("--link-diagnostics", action="store_true",
-                        help="query the I-modem's ATI6 after carrier and resume data mode")
+                        help="query ATI6 after carrier (after the measured window with --traffic-seconds)")
     result.add_argument("--diagnostics-command", action="append", default=[], metavar="AT",
                         help="what --link-diagnostics asks, in order; repeatable (default ATI6)")
     result.add_argument(
@@ -197,8 +260,28 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
+def analog_tx_settings(settings: str, level: str) -> str:
+    if level == 'stored':
+        return settings
+    if level not in set(map(str, range(1, 30))):
+        raise ValueError('analogue transmit level must be stored or 1..29')
+    return f'S39={level}' + settings
+
+
 def main() -> int:
     args = parser().parse_args()
+    # Do not rewrite a captured EEPROM or patch DSP power-control cells.
+    # An explicit level is an ordinary AT setting; later user settings win.
+    args.analog_settings = analog_tx_settings(args.analog_settings, args.analog_tx_level)
+    args.trace_link_errors = args.trace_link_errors or args.trace_link_bits
+    traffic = None
+    if args.analog_link_diagnostics and not (args.traffic_seconds and args.link_diagnostics):
+        raise ValueError('--analog-link-diagnostics requires --traffic-seconds and --link-diagnostics')
+    if args.traffic_seconds:
+        from tools.analog_traffic import AnalogTraffic
+        if args.analog_send or args.imodem_send:
+            raise ValueError("traffic cannot be combined with marker sends")
+        traffic = AnalogTraffic(args.traffic_seconds, args.traffic_size)
     if args.analog is None:
         args.analog = ROOT / "2_3_33.XMF" if args.analog_board == "3453c" else DEFAULT_ANALOG
     if args.analog_parameter_flash and args.analog_board != "3453c":
@@ -258,6 +341,22 @@ def main() -> int:
             analog_command.extend(("--line-record", str(output / "analog")))
         if args.analog_dsp_trace_range:
             analog_command.extend(("--dsp-trace-range", args.analog_dsp_trace_range))
+        if args.analog_frame_source is not None:
+            analog_command.extend(('--frame-source', args.analog_frame_source))
+        if args.analog_frame_irq_poll_instructions is not None:
+            analog_command.extend(('--frame-irq-poll-instructions',
+                                   str(args.analog_frame_irq_poll_instructions)))
+        if args.analog_interrupt_poll_instructions is not None:
+            analog_command.extend(('--interrupt-poll-instructions',
+                                   str(args.analog_interrupt_poll_instructions)))
+        if args.analog_frame_codec_samples:
+            analog_command.extend(('--frame-codec-samples', str(args.analog_frame_codec_samples)))
+        if args.analog_frame_hz is not None:
+            analog_command.extend(('--frame-hz', str(args.analog_frame_hz)))
+        if args.analog_trace_link_errors:
+            analog_command.append('--trace-rom-link-errors')
+        if args.analog_trace_lapm:
+            analog_command.append('--trace-rom-lapm')
         if args.analog_dsp_write_watch:
             analog_command.extend(("--dsp-write-watch", args.analog_dsp_write_watch))
         for address in args.analog_trace_pc:
@@ -275,15 +374,32 @@ def main() -> int:
                 analog_command.extend(("--send-after-connect", args.analog_send))
         analog_environment = os.environ.copy()
         analog_environment["COURIER_LINE_DIGITAL"] = "1"
+        terminal = child_terminal = None
+        if traffic:
+            # Reuse the CLI's exact board configuration, but inherit a live
+            # DTE descriptor directly into its worker rather than a CLI wrapper.
+            if args.analog_board == "403":
+                from courier_emu.cli import build_parser, _worker_command
+                analog_command = _worker_command(build_parser().parse_args(analog_command[3:]))
+            terminal, child_terminal = socket.socketpair()
+            cleanup.callback(terminal.close)
+            cleanup.callback(child_terminal.close)
+            terminal.setblocking(False)
+            analog_command.extend(("--serial-fd", str(child_terminal.fileno())))
         analog = subprocess.Popen(
             analog_command, cwd=ROOT, text=True, stdout=subprocess.PIPE,
             stderr=(cleanup.enter_context((output / "analog-stderr.log").open("w"))
                     if output else subprocess.PIPE), env=analog_environment,
+            pass_fds=(child_terminal.fileno(),) if child_terminal else (),
         )
+        if child_terminal:
+            child_terminal.close()
         cleanup.callback(stop_child, analog)
 
         peer = BearerLineLink(LineLink(socket_path, digital=True),
-                              codec="si3034" if args.analog_board == "3453c" else "ac01")
+                              codec="si3034" if args.analog_board == "3453c" else "ac01",
+                              realtime_clock=args.wallclock,
+                              instruction_clocked=args.clock_mode == 'coupled')
         peer.from_line *= 10 ** (args.analog_to_imodem_db / 20)
         peer.into_courier *= 10 ** (args.imodem_to_analog_db / 20)
         bri = BriNetwork(
@@ -329,6 +445,41 @@ def main() -> int:
         connected_at = 0
         diagnostic_cursor = 0
         queries = list(args.diagnostics_command or ["ATI6"])
+        started = time.monotonic()
+        analog_capture = (cleanup.enter_context((output / 'analog-dte.bin').open('wb'))
+                          if traffic and output else None)
+        imodem_capture = (cleanup.enter_context((output / 'imodem-terminal.txt').open('w'))
+                          if traffic and output else None)
+        analog_pending = bytearray()
+        analog_diagnostics = None
+        traffic_origin = None
+        traffic_health = None
+        first_stall = None
+        link_errors = None
+        lapm_trace = None
+
+        def link_error_context():
+            return {
+                'phase': ('post-window' if traffic_health is not None else
+                          'traffic' if traffic and all(s.start_frame is not None
+                                                       for s in traffic.streams.values()) else
+                          'pre-traffic'),
+                'frame': peer.line.frames * LINE_FRAME_SAMPLES // 800,
+                'call_state': bri.call_state,
+                'recent_serial': received_text[-160:],
+            }
+
+        def clock_status(current):
+            io = current._native_io
+            return {
+                "wall_seconds": time.monotonic() - started,
+                "native_io_live": bool(io and io.live),
+                "native_io_wallclock": bool(io and io.wallclock),
+                "pcm_frame_service": current.mailbox.pcm_frame_service is not None,
+                "realtime_cycles": current.mailbox.realtime_cycles,
+                "active_idle_samples": peer.active_idle_samples,
+                "native": io.clock_stats() if io else None,
+            }
 
         def send(current: IsdnMachine, value: str, direction: str = "sent") -> None:
             current.send_serial(_on_the_wire(value, current.dte_framing()))
@@ -337,18 +488,132 @@ def main() -> int:
         def pump(current: IsdnMachine) -> None:
             nonlocal traced_core, next_snapshot, data_sent, received_text, transcript_cursor
             nonlocal diagnostic_stage, connected_at, diagnostic_cursor
+            nonlocal traffic_origin, traffic_health, first_stall, link_errors, analog_diagnostics, lapm_trace
+            if args.trace_lapm and lapm_trace is None:
+                from courier_emu.rom_lapm_trace import RomLapmTrace
+                lapm_trace = RomLapmTrace(current, profile='imodem',
+                    line_getter=lambda: peer.line,
+                    online_getter=lambda: 'CONNECT' in received_text and bri.call_state == 'active')
+            if args.trace_link_errors and link_errors is None:
+                from tools.imodem_link_errors import LinkErrorObserver
+                link_errors = LinkErrorObserver(current, link_error_context)
             command_pump(current)
+            incoming = ""
             if transcript_cursor != len(transcript):
                 for _, direction, value in transcript[transcript_cursor:]:
                     if direction == "received":
                         received_text += value
+                        incoming += value
                 transcript_cursor = len(transcript)
+            if incoming and imodem_capture:
+                imodem_capture.write(incoming)
+            if traffic and traffic_health is None:
+                from tools.probe_imodem_pair import dte_data_ready, dte_receive_state
+                # Traffic uses 100-ms ticks independently of socket frame size.
+                frame = peer.line.frames * LINE_FRAME_SAMPLES // 800
+                traffic.receive('imodem', incoming, frame)
+                while True:
+                    try:
+                        data = terminal.recv(65536)
+                    except BlockingIOError:
+                        break
+                    if not data:
+                        traffic.failure = 'analog live terminal closed'
+                        break
+                    if analog_capture:
+                        analog_capture.write(data)
+                    traffic.receive('analog', bytes(b & 127 for b in data).decode('ascii'), frame)
+                if peer.answered and traffic_origin is None:
+                    traffic_origin = frame
+                if (traffic_origin is not None and len(traffic.windows) != 2
+                        and bri.call_state != 'active'):
+                    traffic.failure = 'call cleared before the traffic window completed'
+                if (traffic_origin is not None and frame - traffic_origin > 450
+                        and not all(s.start_frame is not None for s in traffic.streams.values())):
+                    traffic.failure = 'no CONNECT within 45 active bearer seconds'
+                traffic.update(frame)
+                if first_stall is None and traffic.stalls:
+                    first_stall = traffic_stall_snapshot(
+                        traffic, frame, current, clock_status(current), peer.status())
+                    if output:
+                        (output / 'first-stall.json').write_text(
+                            json.dumps(first_stall, indent=2) + '\n')
+                if dte_data_ready(dte_receive_state(current)):
+                    value = traffic.next_record('imodem', frame)
+                    if value:
+                        send(current, value, 'sent_data')
+                    value = traffic.next_record('analog', frame)
+                    if value:
+                        analog_pending.extend(value.encode('ascii'))
+                if analog_pending:
+                    try:
+                        count = terminal.send(analog_pending)
+                        del analog_pending[:count]
+                    except BlockingIOError:
+                        pass
+                if frame >= traffic.next_progress or traffic.failure:
+                    traffic.next_progress = frame + 10
+                    core = current.mailbox.core
+                    traffic.progress.append({
+                        'frame': frame, 'instructions': current.instructions,
+                        'timer_ticks': current.timer_ticks,
+                        'traffic': traffic.status(frame), 'clock': clock_status(current),
+                        'pa6': core.io(0x56) if core else None,
+                        'dsp_lanes': core.io_port_stats(range(0x58, 0x5e)) if core else None,
+                    })
+                    if output:
+                        (output / 'traffic-progress.json').write_text(json.dumps(list(traffic.progress), indent=2) + '\n')
+                if traffic.done(frame):
+                    traffic_health = {
+                        'frame': frame, 'clock': clock_status(current),
+                        'bridge': peer.status(), 'call_state': bri.call_state,
+                        'pcm_underruns': (current.mailbox.core.g711_rx_underruns()
+                                          if current.mailbox.core else None),
+                        'serial': {name: channel.status() for name, channel in current.channels.items()},
+                    }
+                    if args.analog_link_diagnostics and bri.call_state == 'active':
+                        from tools.analog_link_diagnostics import AnalogLinkDiagnostics
+                        analog_diagnostics = AnalogLinkDiagnostics(frame)
+                    if args.link_diagnostics and bri.call_state == 'active':
+                        # Freeze the measured window before escaping. ATI6
+                        # then observes the firmware's own link counters.
+                        diagnostic_stage = 'guard'
+                        connected_at = current.instructions
+                        diagnostic_cursor = len(received_text)
+                    else:
+                        current.uc.emu_stop()
+                # Keep the saved session bounded by coalescing streamed bytes.
+                if len(transcript) >= 2 and transcript[-1][1] == transcript[-2][1] == 'received':
+                    last = transcript.pop()
+                    old = transcript.pop()
+                    transcript.append((last[0], 'received', old[2] + last[2]))
+                    transcript_cursor = len(transcript)
+            if analog_diagnostics is not None and not analog_diagnostics.done:
+                diagnostic_input = ''
+                while True:
+                    try:
+                        data = terminal.recv(65536)
+                    except BlockingIOError:
+                        break
+                    if not data:
+                        break
+                    if analog_capture:
+                        analog_capture.write(data)
+                    diagnostic_input += bytes(b & 127 for b in data).decode('ascii')
+                frame = peer.line.frames * LINE_FRAME_SAMPLES // 800
+                analog_pending.extend(analog_diagnostics.poll(frame, diagnostic_input))
+                if analog_pending:
+                    try:
+                        count = terminal.send(analog_pending)
+                        del analog_pending[:count]
+                    except BlockingIOError:
+                        pass
             if (args.imodem_send and not data_sent
                     and carrier_connected(received_text, complete=True)):
                 current.send_serial(_on_the_wire(args.imodem_send, current.dte_framing()))
                 transcript.append((current.instructions, "sent_data", args.imodem_send))
                 data_sent = True
-            if args.link_diagnostics:
+            if args.link_diagnostics and (not traffic or traffic_health is not None):
                 if diagnostic_stage == "connecting" and carrier_connected(received_text, complete=True):
                     connected_at = current.instructions
                     diagnostic_stage = "guard"
@@ -362,10 +627,20 @@ def main() -> int:
                 elif diagnostic_stage == "diagnostics" and "\r\nOK\r\n" in received_text[diagnostic_cursor:]:
                     send(current, "ATO\r")
                     diagnostic_stage = "done"
+                if (traffic and diagnostic_stage == 'done'
+                        and (analog_diagnostics is None or analog_diagnostics.done)):
+                    current.uc.emu_stop()
             core = getattr(current.mailbox, "core", None)
             # The mask-ROM bootstrap creates a fresh core, so object identity
             # rather than a one-shot flag decides whether tracing is armed.
             fresh_core = core is not None and core is not traced_core
+            if args.trace_link_bits and core is not None and not getattr(core, '_link_bit_capture', False):
+                # Native captures are coherent at instruction entry. ACC holds
+                # the descrambled bits about to be stored; 0322 is their count.
+                # Wait for the resident image rather than probing a blank core.
+                if core.program(0x9096) == 0x9020 and core.program(0x9097) == 0x6a1e:
+                    core.set_pc_capture(0x9096, [0x322])
+                    core._link_bit_capture = True
             if trace_range is not None and fresh_core:
                 core.set_pc_trace_range(*trace_range)
             if data_trace_address is not None and fresh_core:
@@ -376,6 +651,7 @@ def main() -> int:
             if output and args.snapshot_every > 0 and current.instructions >= next_snapshot:
                 snapshots.append({
                     "instructions": current.instructions,
+                    "clock": clock_status(current),
                     "serial": received_text,
                     "call_state": bri.call_state,
                     "line_frames": peer.line.frames,
@@ -395,12 +671,16 @@ def main() -> int:
 
         def next_due(current: IsdnMachine) -> int | None:
             """When `pump` next has something to do (see IsdnMachine._update_elision)."""
+            if traffic:
+                return 0
             if args.link_diagnostics and diagnostic_stage != "done":
                 return 0
             if args.imodem_send and not data_sent and carrier_connected(
                     received_text, complete=True):
                 return 0
             core = getattr(current.mailbox, "core", None)
+            if args.trace_link_bits and core is not None and not getattr(core, '_link_bit_capture', False):
+                return 0
             if ((trace_range is not None or data_trace_address is not None)
                     and core is not None and core is not traced_core):
                 return 0
@@ -427,6 +707,15 @@ def main() -> int:
             machine.mailbox.write = overlay_audit.write
         try:
             imodem_result = machine.run(args.instructions).to_dict()
+            imodem_result["clock"] = clock_status(machine)
+            if link_errors is not None:
+                imodem_result['link_errors'] = link_errors.status()
+            if lapm_trace is not None:
+                imodem_result['lapm_trace'] = lapm_trace.status()
+                if output:
+                    (output / 'link-errors.json').write_text(
+                        json.dumps(imodem_result['link_errors'], indent=2) + '\n')
+            bridge_at_limit = peer.status()
             imodem_result["working_s_registers"] = {
                 str(number): machine.uc.mem_read(0x26000 + 0xD17B + number, 1)[0]
                 for number in (54, 56, 58)
@@ -470,6 +759,8 @@ def main() -> int:
                         for address in range(0x10000)
                     ))
         finally:
+            if terminal:
+                terminal.close()
             peer.close()
             machine.mailbox.close()
 
@@ -495,6 +786,8 @@ def main() -> int:
         "speed_index": args.speed_index,
         "disable_v34": args.disable_v34,
         "analog_settings": args.analog_settings,
+        "wallclock": args.wallclock,
+        "clock_mode": args.clock_mode,
         "analog_result_mode": args.analog_result_mode,
         "imodem_settings": args.imodem_settings,
         "imodem_nvram": str(args.imodem_nvram.resolve()) if args.imodem_nvram else None,
@@ -511,7 +804,41 @@ def main() -> int:
         ],
         "analog": analog_result,
         "bridge": peer.status(),
+        "bridge_at_limit": bridge_at_limit,
     }
+    if args.analog_link_diagnostics:
+        result['analog_link_diagnostics'] = analog_diagnostics.status() if analog_diagnostics else None
+        if output:
+            (output / 'analog-link-diagnostics.json').write_text(
+                json.dumps(result['analog_link_diagnostics'], indent=2) + '\n')
+    if traffic:
+        frame = traffic_health['frame'] if traffic_health else peer.line.frames * LINE_FRAME_SAMPLES // 800
+        result['traffic'] = traffic.status(frame)
+        result['traffic_seconds'] = args.traffic_seconds
+        result['traffic_stream_start_frames'] = {side: stream.start_frame
+            for side, stream in traffic.streams.items()}
+        result['traffic_health'] = traffic_health
+        result['first_stall'] = first_stall
+        try:
+            traffic.verify(frame)
+            if not traffic_health or traffic_health['call_state'] != 'active':
+                raise AssertionError('carrier not active at traffic completion')
+            if imodem_result['error'] or imodem_result['mailbox']['error'] or analog_result['error'] or analog_result['dsp_bridge']['error']:
+                raise AssertionError('CPU/DSP failure')
+            if traffic_health['pcm_underruns'] or analog_result['dsp_bridge']['line_service']['rx_empty_connected']:
+                raise AssertionError('receive underrun')
+            if any(c['overruns'] or c['output_dropped'] for c in traffic_health['serial'].values()):
+                raise AssertionError('I-modem UART overrun or output drop')
+            if analog_result['console']['dropped']:
+                raise AssertionError('analog live terminal output dropped')
+            if (analog_result.get('serial_uart') or {}).get('overruns', 0):
+                raise AssertionError('analog UART overrun')
+            if (analog_result.get('serial_uart') or {}).get('transmit_overruns', 0):
+                raise AssertionError('analog UART transmit overrun')
+        except AssertionError as exc:
+            result['traffic_verified'], result['traffic_failure'] = False, str(exc)
+        else:
+            result['traffic_verified'], result['traffic_failure'] = True, None
     if output:
         (output / "result.json").write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n"
@@ -526,6 +853,8 @@ def main() -> int:
             "speed_index": args.speed_index,
             "disable_v34": args.disable_v34,
             "analog_settings": args.analog_settings,
+            "wallclock": args.wallclock,
+            "clock_mode": args.clock_mode,
             "analog_result_mode": args.analog_result_mode,
             "imodem_settings": args.imodem_settings,
             "foreground_overlay_assist": args.assist_overlay_command,
@@ -535,6 +864,7 @@ def main() -> int:
                 "imodem_to_analog": args.imodem_send in analog_serial if args.imodem_send else None,
             },
             "imodem": {
+                "clock": imodem_result["clock"],
                 "serial": imodem_serial,
                 "connect_rate_bps": connection_rate_bps(imodem_serial),
                 "carrier_connected": carrier_connected(imodem_serial),
@@ -550,10 +880,17 @@ def main() -> int:
                 "error": analog_result["error"],
             },
             "bridge": peer.status(),
+            "bridge_at_limit": bridge_at_limit,
         }
+        if traffic:
+            summary.update({key: result[key] for key in (
+                'traffic_verified', 'traffic_failure', 'traffic_seconds', 'traffic')})
+            (output / 'traffic-verification.json').write_text(json.dumps({
+                key: result[key] for key in ('traffic', 'traffic_health', 'traffic_verified', 'traffic_failure')
+            }, indent=2) + '\n')
         (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 1 if traffic and not result['traffic_verified'] else 0
 
 
 if __name__ == "__main__":

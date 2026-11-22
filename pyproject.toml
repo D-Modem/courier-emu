@@ -18,3 +18,9 @@ courier-emu = "courier_emu.cli:main"
 
 [tool.setuptools]
 packages = ["courier_emu"]
+
+[tool.setuptools.package-data]
+courier_emu = ["gui.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

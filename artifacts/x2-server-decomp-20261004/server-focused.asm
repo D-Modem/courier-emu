@@ -950,6 +950,91 @@ e6ab  7a89 847e      call    847e, *, ar1
 e6ad  bc07           ldp     #007
 e6ae  ef00           ret
 
+; range e6fe..e768
+e6fe  ae00 ff00      splk    @00, #ff00
+e700  8e7e           sst     st0, @7e
+e701  bc07           ldp     #007
+e702  8e7f           sst     st0, @7f
+e703  bc00           ldp     #000
+e704  5e7e 00ff      apl     @7e, #00ff
+e706  5e7f 00ff      apl     @7f, #00ff
+e708  6a7e           lacc16  @7e
+e709  657f           sub16   @7f
+e70a  bc07           ldp     #007
+e70b  e388 843e      bcnd    843e, eq
+e70d  bc13           ldp     #013
+e70e  bf80 e71c      lacc    #0000e71c
+e710  881f           samm    @1f
+e711  8b00           nop
+e712  8b00           nop
+e713  5707           bldp    @07
+e714  1007           lacc    @07
+e715  880d           samm    @0d
+e716  b157           lar     ar1, #57
+e717  6b7b           lact    @7b
+e718  6e80           and     *
+e719  e388 e729      bcnd    e729, eq
+e71b  af00 0062      in      @00, #0062
+e71d  1007           lacc    @07
+e71e  b801           add     #01
+e71f  9007           sacl    @07
+e720  5f07 0068      cpl     @07, #0068
+e722  e200 e726      bcnd    e726, ntc
+e724  ae07 0062      splk    @07, #0062
+e726  ff00           retd
+e727  6b7b           lact    @7b
+e728  8857           samm    @57
+e729  8b89           mar     *, ar1
+e72a  bf09 039f      lar     ar1, #039f
+e72c  4180           bit     14, *
+e72d  8b00           nop
+e72e  f500           xc      2, tc
+e72f  ae07 0062      splk    @07, #0062
+e731  ef00           ret
+e732  4e71           bit     1, @71
+e733  e200 e73c      bcnd    e73c, ntc
+e735  8b89           mar     *, ar1
+e736  5f72 ff00      cpl     @72, #ff00
+e738  1072           lacc    @72
+e739  3020           sub     @20
+e73a  ed88           retc    eq, tc
+e73b  8b8e           mar     *, ar6
+e73c  1020           lacc    @20
+e73d  9072           sacl    @72
+e73e  8e7e           sst     st0, @7e
+e73f  bc06           ldp     #006
+e740  8e7f           sst     st0, @7f
+e741  bc00           ldp     #000
+e742  5e7e 00ff      apl     @7e, #00ff
+e744  5e7f 00ff      apl     @7f, #00ff
+e746  6a7e           lacc16  @7e
+e747  657f           sub16   @7f
+e748  bc06           ldp     #006
+e749  e388 84a0      bcnd    84a0, eq
+e74b  bc13           ldp     #013
+e74c  bf80 e75b      lacc    #0000e75b
+e74e  881f           samm    @1f
+e74f  8b00           nop
+e750  8b00           nop
+e751  5727           bldp    @27
+e752  1027           lacc    @27
+e753  b808           add     #08
+e754  880d           samm    @0d
+e755  b657           lar     ar6, #57
+e756  6b7b           lact    @7b
+e757  6e89           and     *, ar1
+e758  e388 84ad      bcnd    84ad, eq
+e75a  0c20 0062      out     @20, 0062
+e75c  1027           lacc    @27
+e75d  b801           add     #01
+e75e  9027           sacl    @27
+e75f  5f27 0068      cpl     @27, #0068
+e761  e200 e765      bcnd    e765, ntc
+e763  ae27 0062      splk    @27, #0062
+e765  ff00           retd
+e766  6b7b           lact    @7b
+e767  8857           samm    @57
+
 ; range e7e7..e7f2
 e7e7  be1e           sacb
 e7e8  b907           lacl    #07

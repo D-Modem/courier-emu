@@ -1,0 +1,117 @@
+[
+  {
+    "capture": "v22-1200",
+    "requested": "v22",
+    "caller_connect": "CONNECT 1200/NONE",
+    "receiver_connect": "CONNECT 1200",
+    "apple_to_sip_exact": false,
+    "sip_to_apple_exact": false,
+    "payload_bytes_each_way": 180,
+    "apple_active_output_gaps": 0,
+    "apple_input_overflows": 0,
+    "hook_released": true,
+    "sip_receive": {
+      "duplicates": 0,
+      "invalid_packets": 0,
+      "max_arrival_gap_ms": 316.46558293141425,
+      "max_timestamp_gap_samples": 0,
+      "reordered_packets": 0,
+      "sequence_gap_events": 0,
+      "ssrc_changes": 0,
+      "timestamp_jump_events": 0
+    },
+    "active_receive_fill": 1393
+  },
+  {
+    "capture": "v22bis-2400",
+    "requested": "v22bis",
+    "caller_connect": "CONNECT 2400/NONE",
+    "receiver_connect": "CONNECT 2400",
+    "apple_to_sip_exact": false,
+    "sip_to_apple_exact": true,
+    "payload_bytes_each_way": 180,
+    "apple_active_output_gaps": 0,
+    "apple_input_overflows": 0,
+    "hook_released": true,
+    "sip_receive": {
+      "duplicates": 0,
+      "invalid_packets": 0,
+      "max_arrival_gap_ms": 100.42475000955164,
+      "max_timestamp_gap_samples": 480,
+      "reordered_packets": 0,
+      "sequence_gap_events": 1,
+      "ssrc_changes": 0,
+      "timestamp_jump_events": 1
+    },
+    "active_receive_fill": 0
+  },
+  {
+    "capture": "v32-9600",
+    "requested": "v32",
+    "caller_connect": "CONNECT 9600/V32/NONE",
+    "receiver_connect": "CONNECT 9600",
+    "apple_to_sip_exact": false,
+    "sip_to_apple_exact": true,
+    "payload_bytes_each_way": 180,
+    "apple_active_output_gaps": 0,
+    "apple_input_overflows": 0,
+    "hook_released": true,
+    "sip_receive": {
+      "duplicates": 0,
+      "invalid_packets": 0,
+      "max_arrival_gap_ms": 87.5982919242233,
+      "max_timestamp_gap_samples": 0,
+      "reordered_packets": 0,
+      "sequence_gap_events": 0,
+      "ssrc_changes": 0,
+      "timestamp_jump_events": 0
+    },
+    "active_receive_fill": 0
+  },
+  {
+    "capture": "v34-auto",
+    "requested": "v34",
+    "caller_connect": "CONNECT 19200/V32/NONE",
+    "receiver_connect": "CONNECT 19200",
+    "apple_to_sip_exact": false,
+    "sip_to_apple_exact": false,
+    "payload_bytes_each_way": 180,
+    "apple_active_output_gaps": 0,
+    "apple_input_overflows": 0,
+    "hook_released": true,
+    "sip_receive": {
+      "duplicates": 0,
+      "invalid_packets": 0,
+      "max_arrival_gap_ms": 109.69841608311981,
+      "max_timestamp_gap_samples": 320,
+      "reordered_packets": 0,
+      "sequence_gap_events": 1,
+      "ssrc_changes": 0,
+      "timestamp_jump_events": 1
+    },
+    "active_receive_fill": 0
+  },
+  {
+    "capture": "v32-9600-lapm",
+    "requested": "v32-lapm",
+    "caller_connect": "CONNECT 9600/ARQ/V32/LAPM",
+    "receiver_connect": "CONNECT 9600/ARQ",
+    "apple_to_sip_exact": true,
+    "sip_to_apple_exact": true,
+    "payload_bytes_each_way": 180,
+    "apple_active_output_gaps": 0,
+    "apple_input_overflows": 0,
+    "hook_released": true,
+    "sip_receive": {
+      "duplicates": 0,
+      "invalid_packets": 0,
+      "max_arrival_gap_ms": 98.67758303880692,
+      "max_timestamp_gap_samples": 160,
+      "reordered_packets": 0,
+      "sequence_gap_events": 1,
+      "ssrc_changes": 0,
+      "timestamp_jump_events": 1
+    },
+    "active_receive_fill": 0
+  }
+]

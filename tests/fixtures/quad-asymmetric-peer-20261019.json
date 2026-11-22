@@ -1,0 +1,60 @@
+{
+  "source": "artifacts/quad-asymmetric-peer-retest-20261019",
+  "analog": {
+    "dsp_bridge": {
+      "dsp_mailbox_log": [
+        {
+          "tag": "006a",
+          "words": [
+            "0000",
+            "0a0b"
+          ]
+        },
+        {
+          "tag": "006a",
+          "words": [
+            "0000",
+            "0a0c"
+          ]
+        },
+        {
+          "tag": "006a",
+          "words": [
+            "0000",
+            "0b0c"
+          ]
+        }
+      ]
+    }
+  },
+  "quad": {
+    "terminal": "\r\nOK\r\n\r\nCONNECT 33333/ARQ/x2/LAPM\r\nANALOG-TO-QUAD-482619",
+    "x2_status_inputs": {
+      "8954": 1
+    },
+    "dsp_cells": {
+      "039a": 50069,
+      "039b": 42061
+    },
+    "v34_receive_code_sha256": "8f9a8c7bbcba884d94fa969bd20636f39580f12b8a2d3ac027a56a55795e81e5",
+    "endpoint": {
+      "exchanges": [
+        {
+          "direction": "dsp-to-cpu",
+          "command": 106,
+          "argument": 266
+        },
+        {
+          "direction": "dsp-to-cpu",
+          "command": 106,
+          "argument": 3082
+        },
+        {
+          "direction": "dsp-to-cpu",
+          "command": 106,
+          "argument": 3083
+        }
+      ]
+    }
+  }
+}

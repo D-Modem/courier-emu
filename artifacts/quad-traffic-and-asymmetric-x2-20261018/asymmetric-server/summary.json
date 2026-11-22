@@ -1,0 +1,29 @@
+{
+  "topology": "digital Quad server / analog Courier client",
+  "frame_ms": 20,
+  "analog_connect": "CONNECT 52000/ARQ/x2/LAPM",
+  "quad_connect": "CONNECT 33333/ARQ/x2/LAPM",
+  "analog_terminal": "\r\nCONNECT 52000/ARQ/x2/LAPM\r\nQUAD-TO-ANALOG-731954",
+  "quad_terminal": "\r\nOK\r\n\r\nCONNECT 33333/ARQ/x2/LAPM\r\nANALOG-TO-QUAD-482619",
+  "quad_x2_status": {
+    "8838": 239,
+    "8954": 1,
+    "895f": 255,
+    "9f56": 2,
+    "89b2": 0,
+    "a889": 8,
+    "a8a2": 0,
+    "a8a3": 0
+  },
+  "payload_checks": {
+    "analog_to_quad": true,
+    "quad_to_analog": true
+  },
+  "x2_data_verified": true,
+  "verification_failure": null,
+  "line_frames_requested": 3000,
+  "line_frames": {
+    "analog": 3000,
+    "quad": 3000
+  }
+}

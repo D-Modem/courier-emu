@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+import threading
 
 import pytest
 
@@ -19,6 +20,7 @@ class Socket:
 def session():
     value = object.__new__(SipSession)
     value.closed = False
+    value._rtp_lock = threading.RLock()
     value.state = 'idle'
     value.config = SimpleNamespace(username='2904')
     value.server_host = 'pbx.test'

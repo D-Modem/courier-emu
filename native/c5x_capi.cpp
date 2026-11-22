@@ -2,8 +2,11 @@
 #include "c5x_core.h"
 #include "bearer.hpp"
 #include "resample.hpp"
+#include "g711.hpp"
 
 #include <algorithm>
+#include <array>
+#include <deque>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -14,6 +17,7 @@
 #include <string>
 #include <vector>
 #include <poll.h>
+#include <time.h>
 #include <sys/socket.h>
 
 using courier::C5xCore;
@@ -140,8 +144,57 @@ struct LaneHostIo {
     struct LaneRecord { uint64_t now; uint8_t kind, port; uint16_t value; };
     bool cap_on = false;
     std::vector<LaneRecord> cap;
+    bool recent_on = false;
+    std::shared_ptr<courier::BoardLaneTrace> bank_trace;
+    ~LaneHostIo() { if (bank_trace) bank_trace->enabled = false; }
+    std::deque<std::array<uint64_t, 8>> recent;
+    // Sample at frame-IRQ observations, at most once per 60000 CPU
+    // instructions (~18 ms). This is not a clock or an execution callback.
+    std::deque<std::array<uint64_t, 20>> clock_trace;
+    uint64_t frame_entries = 0, frame_eois = 0, rx_entries = 0, tx_entries = 0,
+        tick_entries = 0, max_frame_gap = 0, last_frame_entry = 0, clock_epoch = 0;
+    C5xCore *clock_core = nullptr;
+    uint64_t clock_generation = 0;
+    void recent_record(uint64_t now, uint64_t kind, uint64_t port, uint64_t value,
+                       uint64_t pc = 0, uint64_t flags = 0)
+    {
+        if (!recent_on) return;
+        if (recent.size() >= 2048) recent.pop_front();
+        const courier::BoardLaneTrace::Row row{now, core ? core->instruction_count() : 0,
+            core ? core->cycle_count() : 0, kind, port, value, pc, flags};
+        recent.push_back(row);
+        if (bank_trace) bank_trace->record(row);
+        const bool entry = kind == 4 || kind == 6;
+        if (entry && port == 20) ++rx_entries;
+        if (entry && port == 21) ++tx_entries;
+        if (entry && port == 15) ++tick_entries;
+        if ((kind == 5 || kind == 7) && port == 12) ++frame_eois;
+        if (entry && port == 12) {
+            ++frame_entries;
+            if (last_frame_entry && now >= last_frame_entry)
+                max_frame_gap = std::max(max_frame_gap, now - last_frame_entry);
+            last_frame_entry = now;
+            if (core && (clock_trace.empty() || core != clock_core
+                || core->reset_generation() != clock_generation
+                || now >= clock_trace.back()[0] + 60000)) {
+                if (core != clock_core || core->reset_generation() != clock_generation)
+                    ++clock_epoch;
+                clock_core = core;
+                clock_generation = core->reset_generation();
+                const auto codec = core->codec_state();
+                const auto input = core->line_input_counts();
+                if (clock_trace.size() >= 8192) clock_trace.pop_front();
+                clock_trace.push_back({now, core->instruction_count(), core->cycle_count(),
+                    core->xf_falling_edges(), codec.primary_frames, codec.frame_period,
+                    input[0], input[1], input[2], core->line_tx_count(), frame_entries,
+                    frame_eois, rx_entries, tx_entries, tick_entries, core->io(dsp_status),
+                    pc, flags, clock_epoch, max_frame_gap});
+            }
+        }
+    }
     void record(uint64_t now, uint8_t kind, uint8_t port, uint16_t value)
     {
+        recent_record(now, kind, port, value);
         if (cap_on && cap.size() < (std::size_t(1) << 24))
             cap.push_back({now, kind, port, value});
     }
@@ -310,7 +363,17 @@ struct PollState {
     // has moved past tout_seen (IsdnMachine.poll_timers does the same).
     uint8_t tout_on;
     uint64_t tout_seen;
+    uint64_t live_ns, live_until_ns, live_peripheral, live_dsp;
+    uint64_t live_cpu_ns, live_cpu_count;
+    uint64_t serial_until;
 };
+
+static uint64_t monotonic_ns()
+{
+    timespec stamp{};
+    clock_gettime(CLOCK_MONOTONIC, &stamp);
+    return uint64_t(stamp.tv_sec) * 1000000000ULL + uint64_t(stamp.tv_nsec);
+}
 
 // pic.py, line for line.
 namespace pic {
@@ -457,18 +520,54 @@ struct ImodemHostIo {
     ImodemShared *shared = nullptr;
     C5xCore *core = nullptr;
     bool live = false;
-    // A live bearer clocks the C5x from wall time (ImodemDsp.pace_realtime),
-    // not from the 386's instruction count: the ports are then served from
-    // wherever that left the core, and advance() steps nothing.
+    // A live bearer clocks the C5x toward the harness's wall target rather
+    // than deriving elapsed DSP time from the 386's instruction count.
     bool wallclock = false;
     // With wallclock, the core cycle the harness's wall clock has reached:
     // advance() runs the C5x up to it, as it runs it up to `now` otherwise.
     uint64_t wall_target = 0;
+    uint64_t last_live_turn = 0, last_live_turn_cycles = 0;
+    uint64_t wall_peak_lag = 0, wall_bounded_advances = 0, wall_advances = 0;
+    uint64_t data_posts = 0, data_acks = 0, data_reads = 0;
+    uint64_t data_torn_words = 0;
+    uint16_t data_read_word[6] = {};
+    uint8_t data_read_half[6] = {};
     double cycles_per_instruction = 0;
     uint32_t read_quantum = 0;
     uint32_t in_count[256] = {}, out_count[256] = {};
+    struct SerialStatus {
+        uint16_t base = 0;
+        uint8_t lsr = 0, msr = 0, valid = 0;
+        uint64_t lsr_reads = 0, msr_reads = 0;
+    } serial_status[3];
     courier::Bearer *bearer = nullptr;
     PollState *ps = nullptr;
+
+    // LSR is side-effect-free; MSR is published only AFTER Python has
+    // acknowledged all delta bits, and never in loopback mode. Every other
+    // UART access invalidates both snapshots BEFORE falling back. Python
+    // republishes after accesses/advances; TX deadlines force Python service.
+    bool serve_serial_status(int direction, uint16_t port, int size, uint16_t *out)
+    {
+        for (auto &slot : serial_status) {
+            if (!slot.base || port < slot.base || port >= slot.base + 8) continue;
+            if (direction == 1 && size == 1) {
+                if (port == slot.base + 5 && (slot.valid & 1)) {
+                    *out = slot.lsr;
+                    ++slot.lsr_reads;
+                    return true;
+                }
+                if (port == slot.base + 6 && (slot.valid & 2)) {
+                    *out = slot.msr;
+                    ++slot.msr_reads;
+                    return true;
+                }
+            }
+            slot.valid = 0;
+            return false;
+        }
+        return false;
+    }
 
     // The 8259 registers at 0xf020/0xf021 and 0xf0a0/0xf0a1.
     bool serve_pic(int direction, uint16_t port, uint16_t value, uint16_t *out)
@@ -697,7 +796,9 @@ struct ImodemHostIo {
     bool tail(uint64_t now, uint32_t flags, const PollCpu &cpu)
     {
         PollState &s = *ps;
-        const uint64_t value = uint64_t(int64_t(now) - s.clock_origin);
+        const uint64_t value = s.live_ns
+            ? s.live_peripheral + (monotonic_ns() - s.live_ns) * s.ips / 1000000000ULL
+            : uint64_t(int64_t(now) - s.clock_origin);
         if (s.rtos_on && value >= s.next_rtos) {
             s.next_rtos = value + s.rtos_interval;
             pic::raise(s, 11);
@@ -746,11 +847,32 @@ struct ImodemHostIo {
 
     int poll(uint64_t now, uint32_t flags, const PollCpu &cpu)
     {
+        // CPU pacing is independent of poll elision. Serial output/dirty
+        // devices require Python service, not an unclocked supervisor. Match
+        // IsdnMachine._pace_live_cpu for polls that exit directly to Python.
+        if (ps && ps->live_cpu_ns && ps->ips && now >= ps->live_cpu_count) {
+            const uint64_t due = ps->live_cpu_ns
+                + (now - ps->live_cpu_count) * 1000000000ULL / ps->ips;
+            const uint64_t at = monotonic_ns();
+            if (at > due && at - due > 1000000) {
+                // Host stalls must not bank an unlimited CPU instruction
+                // sprint against wall-clock PIT edges. DSP time stays owed.
+                ps->live_cpu_ns = at;
+                ps->live_cpu_count = now;
+            } else if (due > at && due - at > 50000) {
+                const uint64_t delay = std::min<uint64_t>(due - at, 1000000);
+                timespec request{0, long(delay)};
+                nanosleep(&request, nullptr);
+            }
+        }
         ImodemShared *sh = shared;
         if (!sh || !core || !live || !bearer || !sh->elide_on) return 0;
         if (sh->poll_dirty) { ++sh->poll_why[1]; return 0; }
         if (sh->needs_service) { ++sh->poll_why[2]; return 0; }
-        if (now >= sh->elide_until) { ++sh->poll_why[3]; return 0; }
+        if (now >= sh->elide_until
+            || (ps->live_ns && monotonic_ns() >= ps->live_until_ns)) {
+            ++sh->poll_why[3]; return 0;
+        }
         courier::Bearer &b = *bearer;
         // No channel carries a call: nothing may be fed ahead, and each frame
         // is settled as it finishes (see clocks()).
@@ -775,11 +897,15 @@ struct ImodemHostIo {
         }
         if (b.ahead.size() * 2 <= b.lookahead_frames) b.prefeed(core);
         int result = 0;
-        if (!advance(now, 0)) result = service();
+        if (!advance(now, 0, true)) result = service();
         if (result) {
             ++sh->polls_resumed;
             return result;
         }
+        // A UART deadline needs Python's serial model, not another socket
+        // poll/DSP pass. Leave the ordinary PIC/timer tail to that resume so
+        // it still runs exactly once at the existing scheduler cadence.
+        if (ps->serial_until && now >= ps->serial_until) return 5;
         const bool delivered = tail(now, flags, cpu);
         ++sh->polls_native;
         // An interrupt taken costs the dispatch edge one retired instruction
@@ -789,22 +915,67 @@ struct ImodemHostIo {
 
     // true: the C5x is where the harness would have put it; false: the
     // harness has to take over from here.
-    bool advance(uint64_t now, uint32_t quantum)
+    bool advance(uint64_t now, uint32_t quantum, bool supervisor_turn = false)
     {
         ImodemShared *sh = shared;
         if (sh->needs_service) return false;
         int64_t remaining;
+        bool live_turn = false;
         if (wallclock) {
             // The owed time is the wall clock's, not the instruction count's;
             // a read's quantum still keeps a tight poll from stepping a
             // handful of cycles at a time.
             // Kept current, so the instruction-coupled advance resumes from
             // here rather than owing the whole call once the bearer drops.
+            const uint64_t cpu_elapsed = now > sh->dsp_instructions
+                ? now - sh->dsp_instructions : 0;
             sh->dsp_instructions = now;
             const uint64_t at = core->cycle_count();
+            if (ps && ps->live_ns)
+                // Use the configured DSP/CPU ratio, not the analog Courier's
+                // 20.16 MHz clock. The I-modem digital PCM core runs at
+                // 40.32 MHz; a half-rate extrapolation made every Python
+                // anchor refresh jump ahead and bunch TOUT/IRQ13 service.
+                wall_target = ps->live_dsp + uint64_t(
+                    double(monotonic_ns() - ps->live_ns)
+                    * cycles_per_instruction * double(ps->ips) / 1000000000.0);
             if (wall_target <= at) return true;
             remaining = int64_t(wall_target - at);
+            wall_peak_lag = std::max(wall_peak_lag, uint64_t(remaining));
+            ++wall_advances;
+            if (remaining > 5040) ++wall_bounded_advances;
             if (double(remaining) < double(quantum) * cycles_per_instruction) return true;
+            // A delayed socket exchange can leave several milliseconds owed.
+            // Give the supervisor a turn between DS0 frames while catching
+            // up: running the entire deficit here bursts received data into
+            // its finite data lanes before it can drain them. The absolute
+            // target stays owed; no cycles or bearer octets are discarded.
+            // A port access is not a new CPU scheduling turn. In particular
+            // status -> bytes -> ACK can take only a few 386 instructions;
+            // advancing a whole frame again at every access drains the DSP's
+            // three-bit FSK banks faster than the supervisor can service them
+            // whenever the wall target has a backlog. Bound catch-up by the
+            // CPU work actually retired as well as one DS0 frame. The absolute
+            // wall target remains owed for subsequent CPU turns.
+            int64_t cpu_budget = int64_t(double(cpu_elapsed) * cycles_per_instruction);
+            if (supervisor_turn && ps && ps->live_cpu_ns && now > last_live_turn) {
+                // In paced live mode the DSP has its own clock. A genuine
+                // scheduler turn may catch up ONE DS0 frame even when the
+                // host executed the supervisor slowly. Port accesses still
+                // get only their retired-instruction budget, and a repeated
+                // service at the same instruction count grants nothing extra.
+                const uint64_t spent = last_live_turn_cycles && at >= last_live_turn_cycles
+                    ? at - last_live_turn_cycles : 0;
+                const int64_t frame_room = spent < 5040 ? int64_t(5040 - spent) : 0;
+                last_live_turn = now;
+                live_turn = true;
+                cpu_budget = std::max<int64_t>(cpu_budget, frame_room);
+            }
+            remaining = std::min<int64_t>(remaining, std::min<int64_t>(5040, cpu_budget));
+            if (remaining < 1) {
+                if (live_turn) last_live_turn_cycles = at;
+                return true;
+            }
         } else {
             const int64_t elapsed = int64_t(now) - int64_t(sh->dsp_instructions);
             if (elapsed < int64_t(quantum)) return true;
@@ -851,6 +1022,7 @@ struct ImodemHostIo {
         } catch (const std::exception &) {
             stop = true;
         }
+        if (live_turn) last_live_turn_cycles = core->cycle_count();
         if (!wallclock) sh->cycle_debt -= double(spent_total);
         if (stop) sh->needs_service = 1;
         return !stop;
@@ -873,7 +1045,10 @@ void courier_laneio_configure(void *context, void *core, int live,
     uint16_t banks, uint16_t dsp_first, uint16_t dsp_status)
 {
     auto *io = static_cast<LaneHostIo *>(context);
+    if (io->bank_trace && io->core != core && io->bank_trace->armed)
+        io->bank_trace->arm(); // A rebuilt DSP has a new instruction epoch.
     io->core = static_cast<C5xCore *>(core);
+    if (io->core && io->bank_trace) io->core->set_board_lane_trace(io->bank_trace);
     io->live = live != 0;
     io->command_port = command_port;
     io->ack_port = ack_port;
@@ -982,6 +1157,76 @@ std::size_t courier_laneio_take_boot(void *context, uint8_t *out, std::size_t ca
     return count;
 }
 
+void courier_laneio_set_recent(void *context, int enabled)
+{
+    auto *io = static_cast<LaneHostIo *>(context);
+    io->recent_on = enabled != 0;
+    io->recent.clear();
+    io->clock_trace.clear();
+    io->frame_entries = io->frame_eois = io->rx_entries = io->tx_entries = 0;
+    io->tick_entries = io->max_frame_gap = io->last_frame_entry = io->clock_epoch = 0;
+    io->clock_core = nullptr;
+    io->clock_generation = 0;
+    if (io->bank_trace) io->bank_trace->enabled = false;
+    io->bank_trace = enabled ? std::make_shared<courier::BoardLaneTrace>() : nullptr;
+    if (io->core) io->core->set_board_lane_trace(io->bank_trace);
+}
+
+std::size_t courier_laneio_clock_trace(void *context, uint64_t *out, std::size_t capacity)
+{
+    const auto &rows = static_cast<LaneHostIo *>(context)->clock_trace;
+    const std::size_t count = std::min(capacity, rows.size());
+    for (std::size_t i = 0; i < count; ++i)
+        std::copy(rows[rows.size() - count + i].begin(), rows[rows.size() - count + i].end(),
+                  out + 20 * i);
+    return count;
+}
+
+void courier_laneio_arm_bank_trace(void *context, uint16_t pc, uint16_t caller,
+                                   uint16_t address, uint16_t idle_word)
+{
+    auto *io = static_cast<LaneHostIo *>(context);
+    if (io->bank_trace) {
+        io->bank_trace->trigger_pc = pc;
+        io->bank_trace->trigger_return = caller;
+        io->bank_trace->trigger_data = address;
+        io->bank_trace->idle_word = idle_word;
+        io->bank_trace->arm();
+    }
+}
+
+std::size_t courier_laneio_bank_trace(void *context, uint64_t *out,
+                                    std::size_t capacity, uint64_t *info)
+{
+    const auto &trace = static_cast<LaneHostIo *>(context)->bank_trace;
+    info[0] = trace && trace->armed;
+    info[1] = trace ? trace->full_reads : 0;
+    info[2] = trace ? trace->post_remaining : 0;
+    info[3] = trace ? trace->epoch : 0;
+    info[4] = trace ? trace->trigger_index : 0;
+    if (!trace) return 0;
+    const std::size_t count = std::min(capacity, trace->snapshot.size());
+    for (std::size_t i = 0; i < count; ++i)
+        std::copy(trace->snapshot[i].begin(), trace->snapshot[i].end(), out + 8 * i);
+    return count;
+}
+
+void courier_laneio_record_irq(void *context, uint64_t now, uint64_t kind,
+    uint64_t vector, uint64_t value, uint64_t pc, uint64_t flags)
+{
+    static_cast<LaneHostIo *>(context)->recent_record(now, kind, vector, value, pc, flags);
+}
+
+std::size_t courier_laneio_recent(void *context, uint64_t *out, std::size_t capacity)
+{
+    const auto &recent = static_cast<LaneHostIo *>(context)->recent;
+    const std::size_t count = std::min(capacity, recent.size());
+    for (std::size_t i = 0; i < count; ++i)
+        std::copy(recent[recent.size() - count + i].begin(),
+                  recent[recent.size() - count + i].end(), out + 8 * i);
+    return count;
+}
+
 void courier_laneio_set_capture(void *context, int enabled)
 {
     static_cast<LaneHostIo *>(context)->cap_on = enabled != 0;
@@ -1076,6 +1321,11 @@ int courier_laneio_access(void *context, int direction, uint16_t port,
             answer = port == io->command_port
                 ? uint16_t(0xC0 | (~status & mask))
                 : uint16_t(0xC0 | (~(status >> 8) & mask));
+            // Keep legacy recent/capture streams unchanged; the new combined
+            // trace additionally needs the CPU's actual status observations.
+            if (io->bank_trace)
+                io->bank_trace->record({now, io->core->instruction_count(),
+                    io->core->cycle_count(), 10, port, answer, 0, 0});
         } else if (port >= io->lane_first && port < lane_last) {
             const unsigned offset = port - io->lane_first;
             const uint16_t word = io->core->io_output(
@@ -1168,18 +1418,29 @@ int courier_imodemio_advance(void *context, uint64_t now, unsigned quantum)
 // the native model can do it. 1: done; 2: nothing changed and the harness
 // runs ImodemDsp.service_pending; 3: begun here, ImodemDsp.resume_service
 // finishes it.
-int courier_imodemio_advance_serve(void *context, uint64_t now, unsigned quantum)
+static int imodemio_advance_serve(void *context, uint64_t now, unsigned quantum,
+                                bool supervisor_turn)
 {
     auto *io = static_cast<ImodemHostIo *>(context);
     if (!io->shared || !io->core || !io->live) return 2;
-    if (io->advance(now, quantum)) return 1;
+    if (io->advance(now, quantum, supervisor_turn)) return 1;
     if (!io->bearer) return 2;
     const int result = io->service();
     return result ? result : 1;
 }
 
-// Serve the ports without stepping the C5x, which the harness is pacing
-// against wall time (see ImodemHostIo::wallclock).
+int courier_imodemio_advance_serve(void *context, uint64_t now, unsigned quantum)
+{
+    return imodemio_advance_serve(context, now, quantum, false);
+}
+
+// A scheduler turn is explicit: zero-quantum port writes are NOT turns.
+int courier_imodemio_advance_turn_serve(void *context, uint64_t now, unsigned quantum)
+{
+    return imodemio_advance_serve(context, now, quantum, true);
+}
+
+// Use the wall target published by the harness instead of CPU instructions.
 void courier_imodemio_set_wallclock(void *context, int enabled)
 {
     static_cast<ImodemHostIo *>(context)->wallclock = enabled != 0;
@@ -1188,6 +1449,44 @@ void courier_imodemio_set_wallclock(void *context, int enabled)
 void courier_imodemio_set_wall_target(void *context, uint64_t cycles)
 {
     static_cast<ImodemHostIo *>(context)->wall_target = cycles;
+}
+
+void courier_imodemio_clock_stats(void *context, uint64_t *values)
+{
+    const auto *io = static_cast<ImodemHostIo *>(context);
+    const uint64_t stats[] = {io->wall_peak_lag, io->wall_bounded_advances,
+        io->wall_advances, io->data_posts, io->data_acks, io->data_reads};
+    std::copy(stats, stats + 6, values);
+    for (unsigned bank = 0; bank < 6; ++bank)
+        values[6 + bank] = io->core ? io->core->data_busy_writes(bank) : 0;
+    values[12] = io->data_torn_words;
+}
+
+int courier_imodemio_uart_resume_supported() { return 1; }
+
+void courier_imodemio_set_serial_status(void *context, unsigned index,
+                                       uint16_t base, uint8_t lsr, uint8_t msr,
+                                       uint8_t valid)
+{
+    if (index >= 3) return;
+    auto &slot = static_cast<ImodemHostIo *>(context)->serial_status[index];
+    slot.base = base;
+    slot.lsr = lsr;
+    slot.msr = msr;
+    slot.valid = valid & 3;
+}
+
+void courier_imodemio_take_serial_counts(void *context, uint16_t *ports, uint64_t *reads)
+{
+    auto *io = static_cast<ImodemHostIo *>(context);
+    for (unsigned index = 0; index < 3; ++index) {
+        auto &slot = io->serial_status[index];
+        ports[2 * index] = uint16_t(slot.base + 5);
+        ports[2 * index + 1] = uint16_t(slot.base + 6);
+        reads[2 * index] = slot.lsr_reads;
+        reads[2 * index + 1] = slot.msr_reads;
+        slot.lsr_reads = slot.msr_reads = 0;
+    }
 }
 
 void courier_imodemio_set_poll_state(void *context, void *state)
@@ -1211,6 +1510,7 @@ int courier_imodemio_access(void *context, int direction, uint16_t port,
     auto *io = static_cast<ImodemHostIo *>(context);
     ImodemShared *sh = io->shared;
     if (io->ps && port >= 0xF020 && io->serve_pic(direction, port, value, out)) return 1;
+    if (port >= 0x80 && io->serve_serial_status(direction, port, size, out)) return 1;
     if (!sh || size != 1 || port >= 0x60) return 0;
     const bool lane = port >= 0x40 && port < 0x58 && !(port & 1);
     if (direction == 2 && lane) {
@@ -1223,7 +1523,11 @@ int courier_imodemio_access(void *context, int direction, uint16_t port,
     if (port == 0x1c || port == 0x1e) return io->serve_host_port(direction, port, value, now, out);
     if (direction == 1) {
         if (port != 0x18 && port != 0x1a && !lane) return 0;
-        if (!io->advance(now, io->read_quantum)) return 0;
+        // The two byte reads of a holding word must see the same DSP turn.
+        // Status reads and periodic polls pace a live DSP. Catching up the
+        // wall-clock deficit again on each byte can replace the register
+        // between the high/low reads after the CPU's receive ACK.
+        if ((!lane || !io->wallclock) && !io->advance(now, io->read_quantum)) return 0;
         uint16_t answer;
         if (port == 0x18 || port == 0x1a) {
             const uint16_t status = io->core->io(0x56);
@@ -1233,7 +1537,17 @@ int courier_imodemio_access(void *context, int direction, uint16_t port,
                                   : uint16_t(0xc0 | (~(status >> 8) & 0x3f));
         } else {
             const unsigned offset = port - 0x40;
+            ++io->data_reads;
             const uint16_t word = io->core->io_output(uint16_t(0x58 + offset / 4));
+            const unsigned bank = offset / 4;
+            const uint8_t half = (offset & 2) ? 2 : 1;
+            if (io->data_read_half[bank] && io->data_read_half[bank] != half) {
+                if (io->data_read_word[bank] != word) ++io->data_torn_words;
+                io->data_read_half[bank] = 0;
+            } else {
+                io->data_read_half[bank] = half;
+                io->data_read_word[bank] = word;
+            }
             answer = (word >> ((offset & 2) ? 8 : 0)) & 0xff;
         }
         ++io->in_count[port];
@@ -1246,12 +1560,16 @@ int courier_imodemio_access(void *context, int direction, uint16_t port,
     if (!io->advance(now, 0)) return 0;
     uint16_t bits = value & 0x3f;
     if (port == 0x18) {
+        io->data_posts += unsigned(__builtin_popcount(value & 0x3f));
         bits |= value & 0x80;  // a stream acknowledgement (ImodemDsp.write)
         for (unsigned bank = 0; bank < 6; ++bank)
             if (bits & (1u << bank))
                 io->core->set_io(uint16_t(0x58 + bank),
                     io->word(uint16_t(0x40 + 4 * bank)));
     } else {
+        io->data_acks += unsigned(__builtin_popcount(value & 0x3f));
+        for (unsigned bank = 0; bank < 6; ++bank)
+            if (value & (1u << bank)) io->data_read_half[bank] = 0;
         bits = uint16_t(bits << 8);
     }
     io->core->set_io(0x56, uint16_t(io->core->io(0x56) | bits));
@@ -1463,6 +1781,27 @@ int courier_c5x_step_cycles(void *handle, uint64_t count,
     }
 }
 
+// Stateless bulk RTP codecs. law 0 is mu-law, law 1 is A-law.
+std::size_t courier_g711_encode(const int16_t *in, std::size_t count, uint8_t *out,
+                               std::size_t capacity, unsigned law)
+{
+    return courier::g711::encode(in, count, out, capacity, law);
+}
+std::size_t courier_g711_decode(const uint8_t *in, std::size_t count, int16_t *out,
+                               std::size_t capacity, unsigned law)
+{
+    return courier::g711::decode(in, count, out, capacity, law);
+}
+
+// Immutable Kaiser coefficients used by Python's resampler kernel builder.
+std::size_t courier_resample_windows(double *out, std::size_t capacity, double norm)
+{
+    constexpr std::size_t count = courier::resample::PHASES * courier::resample::TAPS;
+    if (!out || capacity < count || !(norm > 0 && std::isfinite(norm))) return 0;
+    courier::resample::windows(out, norm);
+    return count;
+}
+
 // BandLimitedResampler's retuned state in native memory (resample.Timed).
 void *courier_timed_create(double norm)
 {
@@ -1600,6 +1939,21 @@ uint16_t courier_c5x_get_io_output(void *handle, uint16_t port)
     return handle ? static_cast<C5xCore *>(handle)->io_output(port) : 0;
 }
 
+uint16_t courier_c5x_data_channel_status(void *handle)
+{
+    return handle ? static_cast<C5xCore *>(handle)->data_channel_status() : 0;
+}
+
+void courier_c5x_post_data_channels(void *handle, uint16_t mask)
+{
+    if (handle) static_cast<C5xCore *>(handle)->post_data_channels(mask);
+}
+
+void courier_c5x_ack_data_channels(void *handle, uint16_t mask)
+{
+    if (handle) static_cast<C5xCore *>(handle)->ack_data_channels(mask);
+}
+
 void courier_c5x_set_io(void *handle, uint16_t port, uint16_t value)
 {
     if (handle) static_cast<C5xCore *>(handle)->set_io(port, value);
@@ -1621,6 +1975,25 @@ uint64_t courier_c5x_get_xf_falling_edges(void *handle)
     return handle ? static_cast<C5xCore *>(handle)->xf_falling_edges() : 0;
 }
 
+// Read together at a cooperative scheduler boundary; neither advances the DSP.
+void courier_c5x_get_xf_frame_state(void *handle, uint64_t *values)
+{
+    if (!values) return;
+    const auto *core = static_cast<C5xCore *>(handle);
+    values[0] = core ? core->xf_falling_edges() : 0;
+    values[1] = core ? core->reset_generation() : 0;
+}
+
+uint64_t courier_c5x_get_cycle_count(void *handle)
+{
+    return handle ? static_cast<C5xCore *>(handle)->cycle_count() : 0;
+}
+
+uint64_t courier_c5x_get_reset_generation(void *handle)
+{
+    return handle ? static_cast<C5xCore *>(handle)->reset_generation() : 0;
+}
+
 void courier_c5x_host_write(void *handle, uint16_t address, uint16_t value)
 {
     if (handle) static_cast<C5xCore *>(handle)->host_write(address, value);
@@ -1639,6 +2012,22 @@ void courier_c5x_queue_codec_boot(void *handle, const uint16_t *words, std::size
 void courier_c5x_queue_codec_rx(void *handle, const uint16_t *samples, std::size_t count)
 {
     if (handle && samples) static_cast<C5xCore *>(handle)->queue_codec_rx(samples, count);
+}
+
+int courier_c5x_prepare_line_input(double source_rate, double codec_rate, char *error, std::size_t size)
+{
+    try { C5xCore::prepare_line_input(source_rate, codec_rate); return 0; }
+    catch (const std::exception &e) { copy_error(error, size, e.what()); return -1; }
+}
+
+int courier_c5x_set_line_input_rate(void *handle, double rate, unsigned cushion,
+    int prepared_only, char *error, std::size_t size)
+{
+    try {
+        if (!handle) throw std::runtime_error("null C5x handle");
+        static_cast<C5xCore *>(handle)->set_line_input_rate(rate, cushion, prepared_only);
+        return 0;
+    } catch (const std::exception &e) { copy_error(error, size, e.what()); return -1; }
 }
 
 void courier_c5x_queue_line_rx(void *handle, const uint16_t *samples, std::size_t count)
@@ -1927,6 +2316,11 @@ void courier_c5x_get_state(void *handle, uint64_t *values, std::size_t count)
     std::copy(std::begin(result), std::end(result), values);
 }
 
+void courier_c5x_set_data_trace_reads(void *handle, int enabled)
+{
+    if (handle) static_cast<C5xCore *>(handle)->set_data_trace_reads(enabled != 0);
+}
+
 void courier_c5x_set_data_trace(void *handle, int enabled)
 {
     if (handle) static_cast<C5xCore *>(handle)->set_data_trace(enabled != 0);
@@ -1945,6 +2339,11 @@ std::size_t courier_c5x_get_data_event_count(void *handle)
 std::size_t courier_c5x_get_io_event_count(void *handle)
 {
     return handle ? static_cast<C5xCore *>(handle)->io_events().size() : 0;
+}
+
+uint64_t courier_c5x_get_io_event_total(void *handle)
+{
+    return handle ? static_cast<C5xCore *>(handle)->io_event_total() : 0;
 }
 
 void courier_c5x_get_io_port_stats(
@@ -2369,8 +2768,8 @@ struct WorkerPollState {
     // controller's in-service stack.
     int64_t timer_poll_owed;
     uint64_t timer_poll_period;
-    int64_t last_frame;
-    uint64_t frame_instructions, int0_ok, int0_in_service, stack_depth;
+    double last_frame, frame_instructions;
+    uint64_t int0_ok, int0_in_service, stack_depth;
     uint8_t stack[64];
     // DspBridge.clock_x86_fast's counters.
     int64_t bridge_instructions, probe_last;
@@ -2428,7 +2827,72 @@ struct WorkerPollState {
     uint64_t tx_record_count, rx_record_count, rx_log_count;
     int16_t tx_record[4096], rx_record[4096], rx_log[4096];
     char error[512];
+    uint64_t physical_codec_rate; // milliHz at last hardware service; zero for sockets
+    void *diagnostic_trace; // optional LaneHostIo, read-only bounded timeline
+    uint64_t frame_auto, frame_codec_samples;
+    double frame_fallback;
+    uint64_t frame_codec_active;
+    uint64_t frame_xf, frame_xf_seen, frame_xf_sample, frame_xf_generation,
+        frame_xf_delivered, frame_xf_coalesced;
+    uint64_t quiet_sip;
+    void *quiet_laneio;
 };
+
+// Match Machine._refresh_frame_cadence: a configurable number of codec
+// samples per periodic INT0. Retunes preserve normalized phase. Keep the
+// fractional instruction period; integer truncation would accumulate drift.
+void worker_frame_cadence(WorkerPollState &s, int64_t now)
+{
+#pragma clang fp contract(off)
+    if (!s.frame_auto) return;
+    double period = s.frame_fallback;
+    s.frame_codec_active = 0;
+    if (s.core && s.frame_codec_samples && s.cycles_per_x86 > 0) {
+        const auto codec = static_cast<C5xCore *>(s.core)->codec_state();
+        if (codec.rate_programmed && codec.free_run && codec.line_frame_irq >= 0
+            && codec.frame_period > 0) {
+            period = std::max(1.0, double(s.frame_codec_samples) * codec.frame_period
+                                  / s.cycles_per_x86);
+            s.frame_codec_active = 1;
+        }
+    }
+    if (period != s.frame_instructions) {
+        const double phase = (double(now) - s.last_frame) / s.frame_instructions;
+        s.last_frame = double(now) - phase * period;
+        s.frame_instructions = period;
+    }
+}
+
+bool worker_frame_due(WorkerPollState &s, int64_t now)
+{
+    auto *core = static_cast<C5xCore *>(s.core);
+    if (s.frame_xf && core) {
+        const uint64_t count = core->xf_falling_edges();
+        const uint64_t generation = core->reset_generation();
+        if (count < s.frame_xf_seen || generation != s.frame_xf_generation)
+            s.frame_xf_seen = 0;
+        s.frame_xf_generation = generation;
+        s.frame_xf_sample = count;
+        return count > s.frame_xf_seen;
+    }
+    worker_frame_cadence(s, now);
+    return double(now) - s.last_frame >= s.frame_instructions;
+}
+
+void worker_consume_frame(WorkerPollState &s, int64_t now)
+{
+    if (s.frame_xf && s.core) {
+        if (s.frame_xf_sample > s.frame_xf_seen)
+            s.frame_xf_coalesced += s.frame_xf_sample - s.frame_xf_seen - 1;
+        s.frame_xf_seen = s.frame_xf_sample;
+        ++s.frame_xf_delivered;
+        s.last_frame = double(now);
+    } else {
+        s.last_frame += s.frame_instructions;
+        if (double(now) - s.last_frame >= s.frame_instructions)
+            s.last_frame = double(now) - s.frame_instructions;
+    }
+}
 
 constexpr uint32_t WORKER_IF = 0x0200;
 constexpr unsigned WORKER_INT0 = 12;
@@ -2436,7 +2900,7 @@ constexpr unsigned WORKER_INT0 = 12;
 // Machine.on_mmio_write's end-of-interrupt handling, for the writes the
 // engine logged since this batch began; each is marked so the harness's replay
 // leaves the stack alone.
-void worker_apply_eois(WorkerPollState &s, const PollCpu &cpu)
+void worker_apply_eois(WorkerPollState &s, const PollCpu &cpu, uint64_t now)
 {
     if (!cpu.mmio_events) return;
     for (uint64_t index = s.mmio_cursor; index < cpu.mmio_count; ++index) {
@@ -2455,6 +2919,12 @@ void worker_apply_eois(WorkerPollState &s, const PollCpu &cpu)
                         --s.stack_depth;
                         break;
                     }
+            }
+            if (s.diagnostic_trace) {
+                const auto *r = cpu.regs;
+                static_cast<LaneHostIo *>(s.diagnostic_trace)->recent_record(
+                    uint64_t(s.instruction_base + int64_t(now)), 5, completed, value,
+                    (r[REG_CS] & 0xffff) * 16 + (r[REG_IP] & 0xffff), r[REG_FLAGS]);
             }
             if (completed == WORKER_INT0) s.int0_in_service = 0;
             s.dirty = 1;
@@ -2596,7 +3066,7 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     WorkerPollState &s = *static_cast<WorkerPollState *>(context);
     if (!s.armed) return 0;
     const PollCpu &cpu = *static_cast<const PollCpu *>(lent);
-    worker_apply_eois(s, cpu);
+    worker_apply_eois(s, cpu, now);
     const int64_t total = s.instruction_base + int64_t(now);
     if (uint64_t(total) >= s.elide_until) { s.armed = 0; return 0; }
     // Lamp writes waiting for the harness's replay: harmless only if they
@@ -2608,29 +3078,44 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     s.io_cursor = cpu.io_event_count;
     C5xCore *core = static_cast<C5xCore *>(s.core);
     const int64_t elapsed = total - int64_t(s.last_service);
+    // Quiet SIP passes never step the DSP or service the exchange. Python
+    // bounds elide_until by BOTH batch deadlines. Native host strobes can
+    // themselves step the loader, so yield before committing if any occurred.
+    const bool quiet = s.quiet_sip != 0;
+    if (quiet && s.quiet_laneio) {
+        const auto &io = *static_cast<LaneHostIo *>(s.quiet_laneio);
+        if (!io.boot_events.empty() || !io.boot_error.empty()
+            || !io.ov_events.empty() || !io.ov_error.empty()) {
+            s.armed = 0; return 0;
+        }
+    }
     // clock_x86_fast's tests that a service can change.
-    if (s.x86_ticks + elapsed < s.batch
+    if ((quiet ? s.x86_ticks + elapsed >= s.batch : s.x86_ticks + elapsed < s.batch)
         || (s.codec_present && s.codec_instructions + elapsed >= s.line_frame_instructions)) {
+        s.armed = 0; return 0;
+    }
+    if (s.physical_codec_rate && core->codec_sample_rate_millihz() != s.physical_codec_rate) {
         s.armed = 0; return 0;
     }
     const int64_t produced = int64_t(core->line_tx_count());
     const int64_t fresh = produced - s.line_codec_last;
-    const bool line_skip = 0 < fresh && fresh < s.line_min_samples
-        && s.line_skipped < s.line_max_skip;
+    const bool line_skip = quiet || (0 < fresh && fresh < s.line_min_samples
+        && s.line_skipped < s.line_max_skip);
     if ((!line_skip && (fresh <= 0 || !s.timed))
         || s.bridge_instructions + elapsed - s.probe_last >= 200000) {
         s.armed = 0; return 0;
     }
-    // fast_service's frame edge, decided now: nothing it reads moves in the
-    // DSP step. An entry this cannot make the way dispatch_interrupt would is
-    // left to the harness.
+    // Validate a possible frame entry before committing any DSP/line work.
+    // Decide whether it is due AFTER the DSP step: that step can retune the
+    // codec and therefore change the frame cadence. Unreadable CPU state is
+    // conservatively handed to the harness even if the frame is not yet due.
     const bool timer_poll = s.timer_poll_owed - elapsed <= 0;
     bool frame_edge = false;
     uint32_t *r = cpu.regs;
     const uint32_t sp = r[REG_SP] & 0xFFFF, ss = r[REG_SS] & 0xFFFF;
     uint32_t slots[3];
-    if (timer_poll && s.int0_ok && !s.int0_in_service && (flags & WORKER_IF)
-        && total - s.last_frame >= int64_t(s.frame_instructions)) {
+    if ((timer_poll || s.frame_xf) && s.int0_ok && !s.int0_in_service && (flags & WORKER_IF)
+        && (s.frame_xf || s.frame_auto || double(total) - s.last_frame >= s.frame_instructions)) {
         if (!worker_readable(cpu, WORKER_INT0 * 4, 4)) { s.armed = 0; return 0; }
         const uint8_t *vector = cpu.memory + WORKER_INT0 * 4;
         if (vector[0] | vector[1] | vector[2] | vector[3]) {
@@ -2733,6 +3218,7 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     s.bridge_instructions += elapsed;
     if (s.codec_present) s.codec_instructions += elapsed;
     s.x86_ticks += elapsed;
+    if (!quiet) {
     s.debt += double(s.x86_ticks) * s.cycles_per_x86;
     s.x86_ticks = 0;
     if (line_skip) s.line_skipped += 1;
@@ -2798,31 +3284,35 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
         return 2;
     }
     if (s.boot_rom) s.mailbox_writes = writes;
+    }
     // fast_service's tail. The 80186 timers are brought up to date lazily:
     // every access to one advances it first, and the harness made sure none
     // reaches a max count before elide_until.
     s.timer_poll_owed -= elapsed;
-    if (s.timer_poll_owed <= 0) {
-        s.timer_poll_owed += int64_t(s.timer_poll_period);
-        if (frame_edge) {
-            s.last_frame += int64_t(s.frame_instructions);
-            if (total - s.last_frame >= int64_t(s.frame_instructions))
-                s.last_frame = total - int64_t(s.frame_instructions);
-            s.int0_in_service = 1;
-            // dispatch_interrupt(INT0_VECTOR, software=False)
-            const uint32_t flags16 = r[REG_FLAGS] & 0xFFFF;
-            const uint32_t values[3] = {flags16, r[REG_CS] & 0xFFFF, r[REG_IP] & 0xFFFF};
-            for (unsigned k = 0; k < 3; ++k) {
-                cpu.memory[slots[k]] = uint8_t(values[k]);
-                cpu.memory[slots[k] + 1] = uint8_t(values[k] >> 8);
-            }
-            r[REG_SP] = (sp - 6) & 0xFFFF;
-            const uint8_t *vector = cpu.memory + WORKER_INT0 * 4;
-            s.stack[s.stack_depth++] = WORKER_INT0;
-            r[REG_FLAGS] = flags16 & ~WORKER_IF;
-            r[REG_CS] = uint32_t(vector[2] | vector[3] << 8);
-            r[REG_IP] = uint32_t(vector[0] | vector[1] << 8);
+    if (s.timer_poll_owed <= 0) s.timer_poll_owed += int64_t(s.timer_poll_period);
+    // XF recognition is independent of the ordinary timer/UART poll. The
+    // harness only arms this fast path when other IRQ sources cannot change
+    // before its deadline; EOI/in-service and IF still guard every entry.
+    if (frame_edge && worker_frame_due(s, total)) {
+        worker_consume_frame(s, total);
+        s.int0_in_service = 1;
+        // dispatch_interrupt(INT0_VECTOR, software=False)
+        const uint32_t flags16 = r[REG_FLAGS] & 0xFFFF;
+        if (s.diagnostic_trace)
+            static_cast<LaneHostIo *>(s.diagnostic_trace)->recent_record(
+                uint64_t(total), 4, WORKER_INT0, 0,
+                (r[REG_CS] & 0xffff) * 16 + (r[REG_IP] & 0xffff), flags16);
+        const uint32_t values[3] = {flags16, r[REG_CS] & 0xFFFF, r[REG_IP] & 0xFFFF};
+        for (unsigned k = 0; k < 3; ++k) {
+            cpu.memory[slots[k]] = uint8_t(values[k]);
+            cpu.memory[slots[k] + 1] = uint8_t(values[k] >> 8);
         }
+        r[REG_SP] = (sp - 6) & 0xFFFF;
+        const uint8_t *vector = cpu.memory + WORKER_INT0 * 4;
+        s.stack[s.stack_depth++] = WORKER_INT0;
+        r[REG_FLAGS] = flags16 & ~WORKER_IF;
+        r[REG_CS] = uint32_t(vector[2] | vector[3] << 8);
+        r[REG_IP] = uint32_t(vector[0] | vector[1] << 8);
     }
     // A far end that hangs up or rings changes the next frame's call state:
     // that one is the harness's.
@@ -2831,7 +3321,29 @@ extern "C" int courier_worker_poll(void *context, uint64_t now, uint32_t flags, 
     return 1;
 }
 
+extern "C" int courier_worker_frame_cadence(void *context, int64_t now)
+{
+    auto &s = *static_cast<WorkerPollState *>(context);
+    return worker_frame_due(s, now);
+}
+
+extern "C" void courier_worker_consume_frame(void *context, int64_t now)
+{
+    worker_consume_frame(*static_cast<WorkerPollState *>(context), now);
+}
+
 // For worker_poll.py to check its mirror of WorkerPollState against.
+// The no-publication case of Machine's after_run. This is invoked by the
+// x86 wrapper under the same exclusive worker ownership as courier_worker_poll.
+// Nonzero means Python must publish dirty/error state exactly as before.
+extern "C" int courier_worker_after_run_gate(void *context)
+{
+    if (!context) return 1;
+    auto &state = *static_cast<WorkerPollState *>(context);
+    state.armed = 0;
+    return state.dirty || state.presend_error;
+}
+
 extern "C" void courier_worker_poll_layout(uint64_t *out)
 {
     out[0] = sizeof(WorkerPollState);

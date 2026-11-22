@@ -43,11 +43,36 @@ inline double tl_to_d(TripleLength total)
 }
 
 // math.sumprod(a, b) for `count` floats.
-inline double sumprod(const double *a, const double *b, long count)
+inline double sumprod_portable(const double *a, const double *b, long count)
 {
     TripleLength total{0.0, 0.0, 0.0};
     for (long index = 0; index < count; ++index) total = tl_fma(a[index], b[index], total);
     return tl_to_d(total);
+}
+
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+// The portable x86-64 ABI does not include FMA. Without a targeted version,
+// every tap's explicit std::fma is a libm call, even on CPUs with hardware
+// FMA. Specialize only this exact compensated dot product: -march=native or
+// fast-math for the whole library could change the audio's rounding elsewhere.
+__attribute__((target("fma"))) inline double sumprod_fma(
+    const double *a, const double *b, long count)
+{
+    TripleLength total{0.0, 0.0, 0.0};
+    for (long index = 0; index < count; ++index) total = tl_fma(a[index], b[index], total);
+    return tl_to_d(total);
+}
+#endif
+
+inline double sumprod(const double *a, const double *b, long count)
+{
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+    // Select once, not once per tap. The fallback remains safe on older CPUs.
+    static const auto dot = __builtin_cpu_supports("fma") ? sumprod_fma : sumprod_portable;
+    return dot(a, b, count);
+#else
+    return sumprod_portable(a, b, count);
+#endif
 }
 
 constexpr double KAISER_BETA = 8.0;
@@ -65,6 +90,31 @@ inline double bessel_i0(double x)
         ++k;
     }
     return total;
+}
+
+// resample._windows(), operation for operation. Build the immutable Kaiser
+// table outside Python's 131,072-tap loop; do not change its coefficients.
+inline void windows(double *out, double norm)
+{
+#pragma clang fp contract(off)
+    static_assert((PHASES & (PHASES - 1)) == 0);
+    static_assert((HALF_TAPS & (HALF_TAPS - 1)) == 0);
+    for (long phase = 0; phase <= PHASES / 2; ++phase) {
+        const double fraction = double(phase) / PHASES;
+        for (long k = 0; k < TAPS; ++k) {
+            const double t = double(k - (HALF_TAPS - 1)) - fraction;
+            const double ratio = t / HALF_TAPS;
+            const double value = std::abs(ratio) < 1
+                ? bessel_i0(KAISER_BETA * std::sqrt(1 - ratio * ratio)) / norm : 0.0;
+            out[phase * TAPS + k] = value;
+            // The paired row has exactly -t at the reversed tap. Both t
+            // and ratio are exact binary fractions on this power-of-two
+            // grid, so the squared argument (and every output bit) agrees.
+            // Phase zero has no PHASES row; compute it independently.
+            if (phase != 0)
+                out[(PHASES - phase) * TAPS + (TAPS - 1 - k)] = value;
+        }
+    }
 }
 
 // The sample whose window crosses a clock edge: Kaiser-windowed sinc weights

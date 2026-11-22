@@ -3,8 +3,9 @@
 
 Input is a raw log of the octets one end received (``COURIER_PAIR_WIRELOG`` in
 tools/probe_imodem_pair.py writes one file per endpoint process).  Output is JSON:
-a segment timeline, the V.8 octets, each INFO0 frame with its CRC result and named
-capability bits, and the start of the digital startup source and of data.
+a segment timeline, V.21 framed-octet candidates, and INFO frames with their CRC
+results. Spectral bands alone do not identify ANSam, physical call/answer roles,
+or a completed startup/data transition.
 
 Needs numpy.  Decoding is signal processing on the saved octets, not firmware state.
 """
@@ -66,7 +67,7 @@ def crc16(bits):
     return crc
 
 
-def info0(x, carrier, t0, t1):
+def info0(x, carrier, t0, t1, *, body_lengths=(17, 7, 30)):
     n = np.arange(len(x))
     z = x * np.exp(-2j * np.pi * carrier * n / RATE)
     k = np.ones(13) / 13
@@ -81,12 +82,16 @@ def info0(x, carrier, t0, t1):
     text = "".join(map(str, bits))
     frames, i = [], text.find("01110010")
     while i >= 0:
-        for length in (17, 7, 30):
+        for length in body_lengths:
             body = bits[i + 8:i + 8 + length]
             crc = bits[i + 8 + length:i + 8 + length + 16]
             if len(crc) == 16 and crc16(bits[i + 8:i + 8 + length + 16]) in (0xF0B8, 0):
+                end = i + 8 + length + 16
                 frames.append({"body_length": length, "body_bits": "".join(map(str, body)),
-                               "crc_ok": True})
+                               "crc_ok": True, "crc_residue": crc16(body+crc),
+                               "fill_before": text[max(0, i-4):i],
+                               "fill_after": text[end:end+4],
+                               "sync_decision_sample": round(a+off+(i+1)*spb)})
         i = text.find("01110010", i + 1)
     return frames
 
@@ -144,7 +149,7 @@ def main(path):
         ev.append({"from_s": round(t0, 3), "to_s": round(t1, 3), "kind": kind, **extra})
 
     for t0, t1 in runs(win, lambda r, p: abs(p - 2100) <= 40 and r > 500, 0.5):
-        add(t0, t1, "answer tone ANSam, about 2100 Hz")
+        add(t0, t1, "2100 Hz answer-tone candidate (ANS/ANSam)")
     # V.8 FSK: channel 1 (980/1180) and channel 2 (1650/1850), 300 baud
     for name, lo, hi, f1, f0 in (("V.21 ch1 980/1180", 940, 1220, 980, 1180),
                                  ("V.21 ch2 1650/1850", 1600, 1900, 1650, 1850)):
@@ -156,8 +161,8 @@ def main(path):
             add(t0, t1, name, octets_hex=" ".join(f"{v:02x}" for v in o[:14]),
                 note="first 14 decoded octets")
     # Tones A (2400) and B (1200) and the INFO0 burst just before each
-    for freq, label, carrier_name in ((2400, "tone A, 2400 Hz (answer modem)", "answer"),
-                                      (1200, "tone B, 1200 Hz (call modem)", "call")):
+    for freq, label, carrier_name in ((2400, "2400 Hz training-tone band (A)", "2400 Hz"),
+                                      (1200, "1200 Hz training-tone band (B)", "1200 Hz")):
         for t0, t1 in runs(win, lambda r, p, f=freq: abs(p - f) <= 20 and r > 500, 0.2):
             if t1 - t0 > 0.15 and (t1 - t0) < 1.0:
                 seen, frames = set(), []
@@ -172,20 +177,22 @@ def main(path):
                 add(t0, t1, label, off_frequency_windows_s=glitches)
                 for f in frames:
                     if f["body_length"] == 17:
-                        add(f["window"][0], f["window"][1], f"INFO0 from the {carrier_name} modem (found in this search window)",
+                        add(f["window"][0], f["window"][1], f"17-bit INFO0/INFO0a on {carrier_name} (found in this search window)",
                             body_bits_12_to_28=f["body_bits"], crc_ok=True,
                             named_bits=name_bits(f["body_bits"]))
+                    elif f["body_length"] == 30:
+                        add(f["window"][0], f["window"][1],
+                            f"30-bit V.90 INFO0d on {carrier_name} (found in this search window)",
+                            body_bits_12_to_41=f["body_bits"], crc_ok=True)
                     elif f["body_length"] == 7:
                         v = sum(int(b) << k for k, b in enumerate(f["body_bits"]))
                         add(f["window"][0], f["window"][1], f"7-bit x2 marker frame from the {carrier_name} modem (found in this search window)",
                             body_bits_first_sent_first=f["body_bits"], crc_ok=True, value_hex=f"{v:02x}",
                             carrier_bit=v & 1, first_index=(v >> 1) & 7, second_index=(v >> 4) & 7)
-    first7e = next((i for i in range(len(raw) - 7) if all(raw[i:i + 7] == 0x7E)), None)
-    if first7e is not None:
-        add(first7e / RATE, first7e / RATE + 2010 / RATE, "startup source (7e x1747, zeros, 128 pairs)")
-        sustained = [r for r in runs(win, lambda r, p: r > 5000, 0.3) if r[0] > first7e / RATE + 0.25]
-        if sustained:
-            add(sustained[0][0], result["seconds"], "full-scale scrambled data")
+    # 0x7e is also ordinary near-zero mu-law audio. A short run does not
+    # establish the structured startup source; high RMS does not establish
+    # scrambled data or successful training. Require a real protocol decoder
+    # before adding either label.
     ev.sort(key=lambda e: e["from_s"])
     return result
 

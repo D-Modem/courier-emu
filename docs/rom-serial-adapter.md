@@ -86,3 +86,73 @@ panel suite passed **31 tests and 8 subtests**. Both ROMs completed
 Captured 403 returned identification `5607A`. These tests executed Unicorn
 outside the filesystem sandbox because its sandboxed memory mapping crashes
 on this host before firmware starts.
+
+## UART status reconstruction (2026-10-13)
+
+The integrated UART now exposes receive completion (`0040`), transmit
+completion (`0020`) and unread-buffer overrun (`0004`). Reading `S0STS`
+clears those status flags without consuming the receive byte or cancelling
+the independently latched interrupt requests. Reading `S0RBUF` consumes the
+byte without clearing receive completion. A subsequent unread reception
+replaces the buffer with the newer byte and sets overrun. CTS (`0002`) and
+transmitter-empty (`0008`) remain set across status reads.
+
+These semantics follow Intel manual 270830-003, Figure 10-14 and section
+10.4.1; the local copy is
+`docs/270830-003 80C186EB,80C188EB Microprocessor Users Manual-Feb95.pdf`.
+The 302 ISR at `80f23` reads the buffer and calls `[026a]`, without reading
+status. The 403 ISR at `80f54` does the same through `[0164]`. Thus receive
+completion and unread data must be tracked separately. The online 403
+handlers at `81829` and `8189d` also test status for BREAK (`0300`) before
+reading the buffer; interpreting all status reads as discarded
+acknowledgements misses these paths.
+
+Reproduce the offline disassembly and full command regressions with:
+
+```sh
+.venv/bin/python tools/verify_rom_uart_status.py
+.venv/bin/python -m pytest -q tests/test_eb_serial.py tests/test_3453c_uart_status.py
+```
+
+Both ROMs execute `AT`, `ATI`, `ATQ1`, `ATQ0`, `AT` for 60M instructions
+with the native interpreter, board ID 7, a 5 ms tick and their respective
+EEPROM fixtures. All 20 input bytes are consumed, IDs are `5607` / `5607A`,
+four OK responses are generated, Q1 is silent and neither run overruns.
+Fingerprints, raw bytes and ISR listings are saved under
+`artifacts/rom-uart-status-20261013/`.
+
+The later [analog UART starvation fix](imodem-v34-uart-starvation-fix-20261026.md)
+adds a baud-timed, double-buffered transmitter for internally clocked asynchronous
+mode 1 in ROM runs, with TI at the stop bit and TXE only when both slots empty.
+It also separates RX admission from TX requests and services RX before TX.
+Other modes and standalone legacy UART instances retain synchronous completion;
+console output is captured on buffer writes rather than encoded onto a wire.
+CTS remains asserted by the terminal adapter when it delivers input; a physical
+RTS/DTR handshake, parity/framing errors and BREAK generation remain separate work.
+
+## Console DTE format defaults
+
+The byte-oriented attention adapter bypasses raw-pin format discovery as well as
+raw-pin baud measurement. Previously it handed AT to the parser without
+publishing a format, leaving an unprovisioned modem at 9600/7E1. After CONNECT,
+parity appeared as accented characters in an eight-bit GUI. Changing the GUI
+view to seven bits hid that mismatch and could hide legitimate eight-bit data.
+
+Console/pty runs now default to `--dte-framing 8N1`. The adapter publishes the
+selected format when accepting AT, after boot has loaded its profile. The GUI
+also explicitly defaults to 8N1 and offers stored framing and 7E1/7O1/7M1.
+`--dte-framing stored` performs no setting write; batch runs retain stored
+framing by default. No factory EEPROM image is installed or changed.
+
+The active framing byte is identified by the full ATI4 WORDLEN-reader prologue,
+including its alternate-format branch. ATI5's stored-profile reader must not
+match. Observed active bytes are 0936 (211), 0958 (2205), 095a (2.3.33), 05e6
+(IDSDL302) and 04de (captured 403). Unknown or ambiguous layouts reject an
+explicit format rather than borrowing one of these addresses. Serial decoding
+uses the accepted active format rather than dropping bit 7 merely because the
+modem is in command mode; eight-bit data remains eight-bit data.
+
+This is format completion at the existing CPU-only byte adapter, not a claim
+that raw autobaud timing, parity-error detection or connected-call training has
+been implemented. Verify the setting with firmware-produced ATI4, not a display
+mask or synthetic response.

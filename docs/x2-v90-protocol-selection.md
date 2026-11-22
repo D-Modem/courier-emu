@@ -4719,6 +4719,15 @@ At this checkpoint there were two later interop gaps (the analog Phase 2 gap is 
   symmetric x2 session; a successful native symmetric control is evidence
   of that separate mode, not proof of software-engine interoperability.
 
+The 19 October native continuation audit clarifies the I-modem sequence:
+`8cbb` schedules callbacks rather than returning through them, and `96be`
+uses a computed return to skip fallback while counter `031a <= 48000`.
+Thus `92ef` is the eventual recovery boundary, not an immediate rejection
+after INFO0. Both asymmetric orientations arm the same seven-bit receiver
+without selecting a transmit script. See the original-instruction cases
+and fresh digital peer traces in
+[`quad-imodem-role-decomp-20261019`](../artifacts/quad-imodem-role-decomp-20261019/README.md).
+
 The closed loop also exposed two recovery omissions now fixed in the
 software session: it must stop Tone A during MARKER_WAIT, and it must still
 recognize 17-bit acknowledged INFO0 after the initial INFO0 rather than

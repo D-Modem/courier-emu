@@ -11,6 +11,7 @@ class Board3453:
     def __init__(self, bridge):
         self.bridge = bridge
         self.started = False
+        self.identity_reported = False
         self.destination = bridge.image.dsp_program_segments()[0][0]
         self.entry = self.destination
         self.groups = 0
@@ -18,6 +19,7 @@ class Board3453:
         self.finished = False
         self.header = 0
         self.word = 0
+        self.data_window = bytearray(12)
         self.overlay_pending = False
         self.overlay_mark = 0
         self.overlay_groups = 0
@@ -36,11 +38,13 @@ class Board3453:
         return self.bridge.core
 
     def reset(self):
+        self.identity_reported = False
         self.started = False
         self.finished = False
         self.groups = 0
         self.overlay_pending = False
         self.overlay_groups = 0
+        self.data_window[:] = bytes(12)
         self.destination = self.bridge._download_destination
         self.entry = self.destination
         self.core.set_io(0x57, 0)
@@ -137,6 +141,25 @@ class Board3453:
     def write(self, port, size, value, pc=None):
         b = self.bridge
         value &= 0xff
+        if self.finished and 0x40 <= port <= 0x56 and port % 2 == 0:
+            # Six bidirectional holding words. Host writes feed DSP IN;
+            # DSP OUT has its own holding register, read by the host below.
+            channel, half = divmod((port - 0x40) // 2, 2)
+            self.data_window[channel * 2 + half] = value
+        if self.finished and port in (0x18, 0x1a):
+            # Low bank posts CPU-to-DSP words; high bank releases received
+            # slots. DSP PA6 uses the same banks, with write-to-clear ACKs.
+            bits = value & 0x3f
+            if port == 0x18:
+                for channel in range(6):
+                    if bits & (1 << channel):
+                        offset = channel * 2
+                        word = int.from_bytes(self.data_window[offset:offset + 2], 'little')
+                        self.core.set_io(0x58 + channel, word)
+                self.core.post_data_channels(bits)
+            else:
+                self.core.ack_data_channels(bits)
+            return
         if port in b._lanes:
             _, lane = b._lanes[port]
             b.window[lane] = value
@@ -167,7 +190,8 @@ class Board3453:
             status = self.core.io(0x57)
             if value & 2:
                 if b._runtime_inbound:
-                    b._runtime_inbound.popleft()
+                    tag, word = b._runtime_inbound.popleft()
+                    b._runtime_inbound_delivered[f'{tag:04x}:{word:04x}'] += 1
                 self.core.set_io(0x57, status | 2)
                 status |= 2
             if value & 1:
@@ -177,8 +201,31 @@ class Board3453:
                 b._record_runtime_message((self.header, self.word), pc)
                 b.host_messages_delivered += 1
 
+    def report_codec_identity(self):
+        if not self.finished or self.identity_reported:
+            return
+        state = self.core.codec_state()
+        registers = state['registers']
+        if not state['rate_programmed'] or registers[6] & 0x18:
+            return
+        # ASIC power-up report, not a DSP-originated message or an ATI patch.
+        # CBID/REVB are sampled from the native serial codec's register model.
+        identity = ((registers[13] >> 6) & 1) << 4 | ((registers[13] >> 2) & 0xF)
+        if self.bridge.codec is not None:
+            identity = self.bridge.codec.codec.revision
+        self.bridge._queue_runtime_message(0x7B, identity)
+        self.identity_reported = True
+
     def read(self, port, size):
         b = self.bridge
+        if self.finished and port in (0x18, 0x1a):
+            host = self.core.data_channel_status()
+            return host >> (8 if port == 0x1a else 0) & 0xff
+        if self.finished and 0x40 <= port <= 0x56 and port % 2 == 0:
+            channel, half = divmod((port - 0x40) // 2, 2)
+            return self.core.io_output(0x58 + channel) >> (half * 8) & 0xff
+        if port == 0x1C:
+            self.report_codec_identity()
         if not self.finished and port in (0x1c, 0x1e):
             return (1 << size * 8) - 1
         if port == 0x1e:

@@ -155,6 +155,9 @@ class PacketSession:
     def hangup(self):
         pass
 
+    def status(self):
+        return {'state': self.state}
+
 
 @pytest.mark.parametrize('reserve', [320, 800])
 def test_packet_jitter_preserves_every_codeword_without_midstream_silence(reserve):
@@ -176,6 +179,8 @@ def test_packet_jitter_preserves_every_codeword_without_midstream_silence(reserv
     assert output[:initial_delay] == b'\xff' * initial_delay
     assert output[initial_delay:] == source
     assert bearer.underrun == initial_delay
+    assert bearer.startup_underrun == initial_delay
+    assert bearer.active_underrun == 0
     assert bearer.octets_from_rtp == len(source)
 
 
@@ -207,6 +212,9 @@ def test_receive_outage_rebuilds_reserve_before_resuming_waveform():
     assert output[320:960] == b'\xff' * 640
     assert output[960:] == resumed
     assert bearer.underrun == 640
+    assert bearer.startup_underrun == 0
+    assert bearer.active_underrun == 640
+    assert bearer.status()['octets']['active_silence_filled'] == 640
 
 
 class OutgoingSession:
