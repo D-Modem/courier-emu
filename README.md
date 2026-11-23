@@ -44,3 +44,7 @@ Ctrl-].
 - [Firmware catalogue](firmware/README.md): the firmware images and where they come from
 - [Experiments](artifacts/README.md): the captured runs and their reports
 - [Documentation style](docs/STYLE.md): the rules for ASD-STE100 Simplified Technical English
+
+## Licence
+
+AGPL-3.0-only ([LICENSE](LICENSE)), or a commercial licence from the D-Modem Authors ([COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)). Contributions come with a contributor agreement ([CONTRIBUTING.md](CONTRIBUTING.md)). The firmware images belong to their owners and are not under these terms.
