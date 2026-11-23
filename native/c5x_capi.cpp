@@ -1793,6 +1793,23 @@ std::size_t courier_g711_decode(const uint8_t *in, std::size_t count, int16_t *o
     return courier::g711::decode(in, count, out, capacity, law);
 }
 
+std::size_t courier_resample_fixed(const double *history, std::size_t length,
+    const double *kernel, std::size_t kernel_length, double step, double position,
+    int16_t *out, std::size_t capacity, double *position_out, int *status, unsigned mode)
+{
+    return courier::resample::fixed(history, length, kernel, kernel_length, step,
+        position, out, capacity, position_out, status, mode);
+}
+
+std::size_t courier_resample_polyphase(const double *history, std::size_t length,
+    const double *kernel, std::size_t kernel_length, uint64_t up, uint64_t down,
+    uint64_t taps, int64_t half, int64_t origin, int64_t output,
+    int16_t *out, std::size_t capacity, int64_t *output_out, int *status)
+{
+    return courier::resample::polyphase(history, length, kernel, kernel_length,
+        up, down, taps, half, origin, output, out, capacity, output_out, status);
+}
+
 // Immutable Kaiser coefficients used by Python's resampler kernel builder.
 std::size_t courier_resample_windows(double *out, std::size_t capacity, double norm)
 {

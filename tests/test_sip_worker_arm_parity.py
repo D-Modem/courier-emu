@@ -19,14 +19,16 @@ class LocalPort:
     def close(self):self.state='closed';self.closed=True
 
 
-def test_native_sip_arm_matches_cooperative_service_at_boot(monkeypatch):
+@pytest.mark.parametrize('serial_input', [b'', b'AT\r'])
+def test_native_sip_arm_matches_cooperative_service_at_boot(monkeypatch, serial_input):
     path=Path(__file__).resolve().parents[1]/'dumps/courier-board-21210-capture-403/courier-board.rom'
     if not path.exists():pytest.skip('optional captured original firmware unavailable')
     machines=[]
     results=[]
     for mode in ['0','auto']:
         monkeypatch.setenv('COURIER_WORKER_POLL',mode)
-        machine=CourierMachine(load_image(path),with_dsp=True,sip=LocalPort(),exchange=LineExchange(),board_id=7)
+        machine=CourierMachine(load_image(path),with_dsp=True,sip=LocalPort(),exchange=LineExchange(),board_id=7,
+                               serial_input=serial_input)
         # A synthetic idle DSP loop makes quiet-SIP polling eligible without
         # a real call. CPU firmware and all its I/O hooks remain untouched.
         bridge=machine.dsp_bridge
@@ -44,7 +46,8 @@ def test_native_sip_arm_matches_cooperative_service_at_boot(monkeypatch):
     assert slow._interrupt_stack==fast._interrupt_stack
     assert slow.serial==fast.serial
     assert fast._worker_poll.state.instruction_base==0
-    assert fast._worker_poll.state.polls>0
+    if not serial_input:
+        assert fast._worker_poll.state.polls>0
     assert results[0].dsp_bridge['dsp']==results[1].dsp_bridge['dsp']
     for field in ['_instructions','_x86_ticks','_exchange_instructions',
                   '_codec_instructions','_dsp_cycle_debt']:

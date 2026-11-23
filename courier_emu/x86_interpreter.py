@@ -249,6 +249,8 @@ class Uc:
         # Optional (callback identity, native gate function, context). A zero
         # gate result means native code already performed the callback's work.
         self.native_after_run_gate: tuple[object, int, int] | None = None
+        # Trusted worker-only rejection gate; extensions without it ignore it.
+        self.native_before_run_gate = None
         self.native_after_io: Callable[[], None] | None = None
         self.native_host_base = 0
         # Optional filter for native_after_io: a 64 KiB table of ports.

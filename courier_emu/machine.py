@@ -4133,6 +4133,14 @@ class CourierMachine:
                 worker_arm[0] = True
 
             uc.native_before_run = before_run
+            # These are sufficient rejection conditions, not a replacement
+            # for arm's eligibility/deadline checks. Exact classes only: the
+            # extension must not bypass a subclass's attribute dispatch.
+            uc.native_before_run_gate = (
+                (before_run, worker_arm, self,
+                 ('_serial_started', 'online_mode', 'serial_rx'), deque)
+                if type(self) is CourierMachine and type(bridge) is CourierDspBridge
+                and os.environ.get('COURIER_NATIVE_ARM_GATE', '1') != '0' else None)
             uc.native_after_run = after_run
             uc.native_after_run_gate = (
                 (after_run, *poll.after_run_gate) if poll.after_run_gate is not None else None)

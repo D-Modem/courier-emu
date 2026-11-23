@@ -23,9 +23,13 @@ from __future__ import annotations
 import ctypes
 import math
 import os
+import sys
 from array import array
 from bisect import bisect_left, bisect_right
 from operator import mul
+from types import BuiltinFunctionType
+
+from . import resample_native
 
 # Input samples each side of the output instant. 64 narrows the transition
 # band enough that 8 kHz <-> 9600 Hz stays at 62-75 dB SNR for tones from
@@ -44,7 +48,18 @@ PHASES = 1024
 
 # C-implemented dot product where the interpreter has one (3.12+); the FIR
 # below runs it once per output sample.
-_dot = getattr(math, "sumprod", None) or (lambda a, b: sum(map(mul, a, b)))
+_fallback_dot = lambda a, b: sum(map(mul, a, b))
+_dot = getattr(math, "sumprod", None) or _fallback_dot
+_REFERENCE_SUM, _REFERENCE_MUL = sum, mul
+_FIXED_DOT_MODE = int(_dot is not _fallback_dot)
+# Only accelerate known stdlib arithmetic, never an import-time replacement.
+# Python 3.12+ sum is compensated even if math.sumprod has been removed.
+_REFERENCE_DOT = _dot if (
+    (type(_dot) is BuiltinFunctionType and _dot.__module__ == 'math'
+     and _dot.__name__ == 'sumprod') or
+    (_dot is _fallback_dot and sys.version_info < (3, 12)
+     and type(sum) is BuiltinFunctionType and sum.__module__ == 'builtins' and sum.__name__ == 'sum'
+     and type(mul) is BuiltinFunctionType and mul.__module__ == '_operator' and mul.__name__ == 'mul')) else None
 
 
 def _bessel_i0(x: float) -> float:
@@ -292,6 +307,7 @@ class BandLimitedResampler:
         # Output instant, in input samples, relative to _history[HALF_TAPS-1].
         self._position = 0.0
         self._kernel: list[tuple[float, ...]] | None = None
+        self._fixed_kernel_key = None
         # Keep extra input history for a clock change: its old sample spacing
         # must survive until the FIR window has crossed the boundary.
         self._recent_input: list[float] = [0.0] * (2 * TAPS)
@@ -416,8 +432,9 @@ class BandLimitedResampler:
         if output_rate != self.output_rate or input_rate != self.input_rate:
             input_changed = input_rate != self.input_rate
             self.input_rate, self.output_rate = input_rate, output_rate
-            self._kernel = _kernel_for(
-                CUTOFF * min(input_rate, output_rate) / 2 / input_rate)
+            cutoff = CUTOFF * min(input_rate, output_rate) / 2 / input_rate
+            self._kernel = _kernel_for(cutoff)
+            self._fixed_kernel_key = round(cutoff, 9)
             if input_changed:
                 self._position = 0.0
         kernel = self._kernel
@@ -428,16 +445,30 @@ class BandLimitedResampler:
         result: list[int] = []
         position = self._position
         limit = len(history) - TAPS
-        while position <= limit:
-            base = int(position)
-            phase = int((position - base) * PHASES + 0.5)
-            if phase == PHASES:
-                base, phase = base + 1, 0
-                if base > limit:
-                    break
-            value = _dot(kernel[phase], history[base:base + TAPS])
-            result.append(max(-32768, min(32767, int(round(value)))))
-            position += step
+        native = None
+        # Amortize block marshalling; tiny conversions keep the scalar loop.
+        if (type(position) is float and type(step) is float and step > 0
+                and limit - position >= 31 * step
+                and sys.implementation.name == 'cpython' and _dot is _REFERENCE_DOT
+                and (_FIXED_DOT_MODE or (sum is _REFERENCE_SUM and mul is _REFERENCE_MUL))
+                and self._fixed_kernel_key is not None
+                and kernel is _KERNELS.get(self._fixed_kernel_key)
+                and resample_native.fixed_available()):
+            native = resample_native.fixed(history, _flat_kernel_for(self._fixed_kernel_key),
+                                           step, position, _FIXED_DOT_MODE)
+        if native is not None:
+            result, position = native
+        else:
+            while position <= limit:
+                base = int(position)
+                phase = int((position - base) * PHASES + 0.5)
+                if phase == PHASES:
+                    base, phase = base + 1, 0
+                    if base > limit:
+                        break
+                value = _dot(kernel[phase], history[base:base + TAPS])
+                result.append(max(-32768, min(32767, int(round(value)))))
+                position += step
         consumed = len(history) - TAPS
         self._history = history[consumed:]
         self._position = position - consumed

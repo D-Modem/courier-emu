@@ -293,6 +293,70 @@ def test_subclasses_keep_attribute_dispatch_in_python(monkeypatch):
     assert CustomRunner(x86.Uc(0, 0))._run_cpu is None
 
 
+@pytest.mark.parametrize('requested,started,online,queued', [
+    (r, s, o, q) for r in (False, True) for s in (False, True)
+    for o in (False, True) for q in (False, True)
+])
+def test_before_worker_rejection_gate_preserves_requests_and_work(
+        requested, started, online, queued, monkeypatch):
+    from collections import deque
+    results = []
+    for enabled in (False, True):
+        cpu, native = setup(monkeypatch, enabled)
+        request, work, calls = [requested], [], []
+        machine = SimpleNamespace(_serial_started=started, online_mode=online,
+                                  serial_rx=deque([1] if queued else []))
+        def before():
+            calls.append('before')
+            if request[0]:
+                request[0] = False
+                if machine._serial_started or (machine.serial_rx and not machine.online_mode):
+                    return
+                work.append('eligible')
+        cpu.native_before_run = before
+        cpu.native_before_run_gate = (
+            before, request, machine, ('_serial_started', 'online_mode', 'serial_rx'), deque)
+        native.execute(cpu, 3)
+        results.append((snapshot(cpu, native), request.copy(), work))
+        rejected = started or (queued and not online)
+        assert len(calls) == int(not enabled or (requested and not rejected))
+    assert results[0] == results[1]
+
+
+def test_before_gate_does_not_apply_to_replaced_hook(monkeypatch):
+    from collections import deque
+    cpu, native = setup(monkeypatch, True)
+    request, calls = [True], []
+    machine = SimpleNamespace(_serial_started=True, online_mode=False, serial_rx=deque([1]))
+    cpu.native_before_run_gate = (
+        lambda: None, request, machine, ('_serial_started', 'online_mode', 'serial_rx'), deque)
+    cpu.native_before_run = lambda: calls.append('replacement')
+    native.execute(cpu, 3)
+    assert calls == ['replacement'] and request == [True]
+
+
+def test_before_gate_keeps_custom_queue_truth_callbacks(monkeypatch):
+    from collections import deque
+    calls = []
+    class CustomQueue(deque):
+        def __len__(self):
+            calls.append('length')
+            return super().__len__()
+    cpu, native = setup(monkeypatch, True)
+    request = [True]
+    machine = SimpleNamespace(_serial_started=False, online_mode=False,
+                              serial_rx=CustomQueue([1]))
+    def before():
+        calls.append('before')
+        request[0] = False
+        bool(machine.serial_rx)
+    cpu.native_before_run = before
+    cpu.native_before_run_gate = (
+        before, request, machine, ('_serial_started', 'online_mode', 'serial_rx'), deque)
+    native.execute(cpu, 3)
+    assert calls == ['before', 'length'] and request == [False]
+
+
 def test_ordinary_cpu_without_worker_gate_keeps_python_wrapper(monkeypatch):
     monkeypatch.setenv('COURIER_X86_NATIVE_WRAPPER', '1')
     assert x86_native.NativeInterpreter(x86.Uc(0, 0))._run_cpu is None

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from array import array
 from collections import deque
 from dataclasses import asdict, dataclass
 from hashlib import md5
@@ -13,7 +14,7 @@ import threading
 import time
 
 from .rtp import RtpPlayout, RtpReceiveStats, RtpTransmitStats, parse_rtp
-from . import g711_native
+from . import g711_native, resample_native
 
 
 SIP_PORT = 5060
@@ -145,6 +146,15 @@ class PolyphaseResampler:
         self._buffer: list[float] = [0.0] * self.taps_per_phase
         self._origin = -self.taps_per_phase
         self._output = 0
+        self._native_kernel = None
+        # Only an acceleration heuristic: never changes sample readiness.
+        # Amortize interop/table validation over at least 32 outputs and one
+        # phase table's worth of dot products. Nonstandard numeric rates fall
+        # back without invoking additional arithmetic callbacks.
+        self._native_min_buffer = (
+            self.taps_per_phase + (max(32, self.up) * self.down + self.up - 1) // self.up
+            if all(type(v) is int for v in (self.up, self.down, self.taps_per_phase))
+            and self.up > 0 and self.down > 0 else math.inf)
 
     def _design(self) -> list[list[float]]:
         """Return the filter as `up` phases of `taps_per_phase` taps each."""
@@ -181,6 +191,22 @@ class PolyphaseResampler:
             phases.append([tap / total for tap in taps])
         return phases
 
+    def _native_coefficients(self):
+        # Bound table-validation work for unusual nearly-coprime rates. Custom
+        # numeric taps keep their Python multiplication semantics.
+        if (type(self.up) is not int or type(self.taps_per_phase) is not int
+                or type(self._taps) not in (list, tuple)
+                or not (0 < self.up <= 1024 and 0 < self.taps_per_phase <= 4096)
+                or any(type(row) not in (list, tuple) for row in self._taps)):
+            return None
+        rows = tuple(tuple(row) for row in self._taps)
+        if (len(rows) != self.up or any(len(row) != self.taps_per_phase for row in rows)
+                or any(type(value) is not float for row in rows for value in row)):
+            return None
+        if self._native_kernel is None or rows != self._native_kernel[0]:
+            self._native_kernel = (rows, array('d', (v for row in rows for v in row)))
+        return self._native_kernel[1]
+
     def convert(self, samples) -> list[int]:
         """Take input samples and return every output sample now determined."""
         if self.up == self.down == 1:
@@ -192,20 +218,30 @@ class PolyphaseResampler:
             return [int(sample) for sample in samples]
         self._buffer.extend(float(sample) for sample in samples)
         result: list[int] = []
-        newest = self._origin + len(self._buffer) - 1
-        while True:
-            position = self._output * self.down
-            base = position // self.up
-            if base + self._half > newest:
-                break
-            taps = self._taps[position % self.up]
-            total = 0.0
-            for index, tap in enumerate(taps):
-                sample = base + self._half - index - self._origin
-                if 0 <= sample < len(self._buffer):
-                    total += tap * self._buffer[sample]
-            result.append(max(-32_768, min(32_767, int(round(total)))))
-            self._output += 1
+        length = len(self._buffer)
+        newest = self._origin + length - 1
+        native = None
+        if length >= self._native_min_buffer and resample_native.polyphase_available():
+            kernel = self._native_coefficients()
+            if kernel is not None:
+                native = resample_native.polyphase(self._buffer, kernel, self.up, self.down,
+                    self.taps_per_phase, self._half, self._origin, self._output)
+        if native is not None:
+            result, self._output = native
+        else:
+            while True:
+                position = self._output * self.down
+                base = position // self.up
+                if base + self._half > newest:
+                    break
+                taps = self._taps[position % self.up]
+                total = 0.0
+                for index, tap in enumerate(taps):
+                    sample = base + self._half - index - self._origin
+                    if 0 <= sample < len(self._buffer):
+                        total += tap * self._buffer[sample]
+                result.append(max(-32_768, min(32_767, int(round(total)))))
+                self._output += 1
         # Drop everything the next output can no longer reach back to.
         oldest = (self._output * self.down) // self.up + self._half - self.taps_per_phase + 1
         drop = oldest - self._origin

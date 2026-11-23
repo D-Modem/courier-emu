@@ -452,6 +452,52 @@ static bool runner_callback(PyObject *function) {
     RunnerRef result(PyObject_CallNoArgs(function));
     return bool(result);
 }
+// A worker request which is already false does nothing. While AT input is
+// queued outside data mode, _serial_receive_quiet_until is necessarily None;
+// timer_poll_static therefore rejects arm. _serial_started independently
+// rejects fast_service_static. All other cases keep the full Python checks.
+static int worker_before_needed(PyObject *cpu, PyObject *callback) {
+    RunnerRef gate(PyObject_GetAttrString(cpu,"native_before_run_gate"));
+    if (!gate) {
+        if (!PyErr_ExceptionMatches(PyExc_AttributeError)) return -1;
+        PyErr_Clear();
+        return 1;
+    }
+    if (!PyTuple_Check(gate.p) || PyTuple_GET_SIZE(gate.p)!=5
+        || PyTuple_GET_ITEM(gate.p,0)!=callback) return 1;
+    PyObject *request=PyTuple_GET_ITEM(gate.p,1);
+    if (!PyList_CheckExact(request) || PyList_GET_SIZE(request)!=1) return 1;
+    if (PyList_GET_ITEM(request,0)==Py_False) return 0;
+    if (PyList_GET_ITEM(request,0)!=Py_True) return 1;
+    PyObject *names=PyTuple_GET_ITEM(gate.p,3);
+    if (!PyTuple_Check(names) || PyTuple_GET_SIZE(names)!=3) return 1;
+    RunnerRef machine(PyObject_GenericGetDict(PyTuple_GET_ITEM(gate.p,2),nullptr));
+    if (!machine) return -1;
+    PyObject *started=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,0));
+    if (PyErr_Occurred()) return -1;
+    bool reject=started==Py_True;
+    if (!reject) {
+        PyObject *online=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,1));
+        if (PyErr_Occurred()) return -1;
+        if (online==Py_False) {
+            PyObject *rx=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,2));
+            if (PyErr_Occurred()) return -1;
+            PyObject *deque_type=PyTuple_GET_ITEM(gate.p,4);
+            if (rx && reinterpret_cast<PyObject*>(Py_TYPE(rx))==deque_type) {
+                const Py_ssize_t length=PyObject_Length(rx);
+                if (length<0) return -1;
+                reject=length!=0;
+            }
+        }
+    }
+    if (reject) {
+        // arm() begins by clearing this request, even when it rejects.
+        PyList_SetItem(request,0,Py_NewRef(Py_False));
+        return 0;
+    }
+    return 1;
+}
+
 static PyObject *run_cpu_python(PyObject *, PyObject *args) {
     PyObject *cpu, *wrapper, *keys;
     unsigned int count;
@@ -517,7 +563,9 @@ static PyObject *run_cpu_python(PyObject *, PyObject *args) {
     // registers, memory and interrupt buffers are obtained after it. Keep every
     // borrowed execution buffer alive even if a native I/O callback replaces it.
     RunnerRef before(PyObject_GetAttr(cpu,PyTuple_GET_ITEM(keys,RF_BEFORE)));
-    if (!before || !runner_callback(before.p)) return nullptr;
+    if (!before) return nullptr;
+    const int before_needed=before.p==Py_None ? 0 : worker_before_needed(cpu,before.p);
+    if (before_needed<0 || (before_needed && !runner_callback(before.p))) return nullptr;
     RunnerRef state(PyObject_GenericGetDict(cpu,nullptr));
     RunnerRef buffers(PyObject_GenericGetDict(wrapper,nullptr));
     if (!state || !buffers) return nullptr;

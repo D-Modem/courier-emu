@@ -399,7 +399,13 @@ for measured workloads and remaining limits. Eligible native-worker runs also
 use native batch-call setup and empty post-run cleanup; see
 [native worker wrapper measurements](docs/native-worker-wrapper-performance.md).
 `COURIER_X86_NATIVE_WRAPPER=0` retains the Python wrapper without disabling
-native CPU execution.
+native CPU execution. A further worker arming-rejection gate and native
+fixed-rate FIR/polyphase block loops are described in
+[native service/resampler performance](docs/native-service-resample-performance.md).
+`COURIER_NATIVE_ARM_GATE=0`, `COURIER_NATIVE_FIXED_RESAMPLE=0`, and
+`COURIER_NATIVE_POLYPHASE=0` disable those paths independently. The resampler
+kernels use only an already-loaded core library; older libraries retain Python
+fallbacks. These execution-cost improvements do not establish live-call stability.
 
 It uses `uv` when that is on `PATH` and falls back to `venv` plus `pip`
 otherwise. `PYTHON=<interpreter>` chooses the interpreter it builds the
