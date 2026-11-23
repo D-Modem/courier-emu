@@ -27,7 +27,7 @@ RANGES = [(0x83c4, 0x84af), (0x851c, 0x8559), (0x8faa, 0x8ff3),
           (0x91a1, 0x91b4), (0x927f, 0x9292), (0x9617, 0x9633),
           (0xe11a, 0xe184), (0xe4ca, 0xe4f0), (0xe585, 0xe5b8),
           (0xe1d2, 0xe253), (0xe2b1, 0xe31a), (0xe438, 0xe4ca),
-          (0xe5e7, 0xe6af), (0xe7e7, 0xe7f2)]
+          (0xe5e7, 0xe6af), (0xe6fe, 0xe768), (0xe7e7, 0xe7f2)]
 
 
 def listing(words, first, last):
@@ -61,6 +61,8 @@ def main():
                         "-o", str(libpath)], check=True)
         lift = ctypes.CDLL(str(libpath))
         d = (ctypes.c_uint16 * 65536)()
+        io = (ctypes.c_uint16 * 65536)()
+        output = (ctypes.c_uint16 * 65536)()
         first = DSP_IMAGES[0]
         offset = first[0]*16-base
         with NativeC5x.from_program(first[2], blob[offset:offset+first[1]]) as core:
@@ -172,6 +174,106 @@ def main():
                     compare((0x380,0x384,0x385), "training reservoir")
             report["checks"]["training_words"] = 512
 
+            # Execute the real local PA6 source and sink with directional
+            # lanes enabled, rather than closing their gates as below.
+            core.configure_host_mailbox()
+            for receive, entry, page in ((False, 0x8439, 0x380),
+                                          (True, 0x849a, 0x300)):
+                for cursor in range(0x58, 0x5e):
+                    for ready in (False, True):
+                        for reset in (False, True):
+                            for _ in range(16):
+                                flags = rng.getrandbits(16) & ~0xc000
+                                put(0x39f, flags | (0x4000 if reset else 0))
+                                put(page+0x7b, 1)
+                                put(page+(0x27 if receive else 7), cursor)
+                                put(page+(0x20 if receive else 0), rng.getrandbits(16))
+                                bit = 1 << (cursor & (15 if receive else 7))
+                                status = rng.getrandbits(16) & ~bit
+                                if ready: status |= bit
+                                io[0x56] = status
+                                core.set_io(0x56, status)
+                                value = rng.getrandbits(16)
+                                io[cursor] = value
+                                core.set_io(cursor, value)
+                                fn = lift.server_lane_sink if receive else lift.server_lane_source
+                                if receive: fn(d, io, output, ctypes.c_uint16(page))
+                                else: fn(d, io, ctypes.c_uint16(page))
+                                invoke(entry, dp=page>>7)
+                                compare((page+(0x20 if receive else 0),
+                                         page+(0x27 if receive else 7)), "local lane")
+                                assert core.io(0x56) == io[0x56]
+                                assert core.io(cursor) == value, "output overwrote input lane"
+                                if receive and ready:
+                                    assert core.io_output(cursor) == output[cursor]
+                report["checks"]["lane_sink" if receive else "lane_source"] = 384
+
+            # Bit-15 routes: normal pages fall back to PA6; DP=13
+            # patches the IN/OUT operand; data 0057 aliases board port 57.
+            for receive, entry in ((False, 0x8439), (True, 0x849a)):
+                cases = 0
+                for page in ((0x300 if receive else 0x380), 0x980):
+                    for cursor in range(0x62 if page == 0x980 else 0x58,
+                                        0x68 if page == 0x980 else 0x5e):
+                        for ready in (False, True):
+                            for reset in (False, True):
+                                for suppress in (False, True):
+                                    for word, previous in ((0xff00, 0xff00),
+                                                           (0xff00, 0x1234),
+                                                           (0xbeef, 0xbeef),
+                                                           (0xbeef, 0x1234)):
+                                        put(0x39f, 0x8000 | (0x4000 if reset else 0))
+                                        put(page+0x7b, 1)
+                                        put(page+(0x27 if receive else 7), cursor)
+                                        put(page+(0x20 if receive else 0), word)
+                                        put(page+0x71, 2 if suppress else 0)
+                                        put(page+0x72, previous)
+                                        shift = ((cursor+8) & 15) if receive else (cursor & 15)
+                                        mask = 1 << shift
+                                        io[0x57] = (mask if ready else 0) | 1
+                                        core.set_io(0x57, io[0x57])
+                                        io[0x56] = (0xff00 if receive else 0x3f) if ready else 0
+                                        core.set_io(0x56, io[0x56])
+                                        io[cursor] = 0x2468
+                                        core.set_io(cursor, io[cursor])
+                                        output[cursor] = 0x2468
+                                        # Prime output to detect drops, even after previous cases.
+                                        if page != 0x980:
+                                            output[cursor] = core.io_output(cursor)
+                                        fn = lift.server_stream_sink if receive else lift.server_stream_source
+                                        if receive: fn(d, io, output, ctypes.c_uint16(page))
+                                        else: fn(d, io, ctypes.c_uint16(page))
+                                        invoke(entry, dp=page>>7)
+                                        compare((page+(0x20 if receive else 0),
+                                                 page+(0x27 if receive else 7),
+                                                 page+0x72),
+                                                ("bit-15 stream route", receive, hex(page),
+                                                 hex(cursor), ready, reset, suppress, hex(word)))
+                                        assert core.io(0x56) == io[0x56]
+                                        assert core.io(0x57) == io[0x57]
+                                        if receive:
+                                            assert core.io_output(cursor) == output[cursor]
+                                        cases += 1
+                report["checks"]["stream_sink" if receive else "stream_source"] = cases
+
+            for width in (7, 8, 9):
+                for count in range(8):
+                    for ready in (False, True):
+                        for _ in range(16):
+                            put(0x39f, 0); put(0x37b, 1)
+                            put(0x320, rng.getrandbits(width)); put(0x322, width)
+                            put(0x324, rng.getrandbits(count)); put(0x325, count)
+                            put(0x327, 0x58)
+                            io[0x56] = 0xff00 if ready else 0
+                            core.set_io(0x56, io[0x56])
+                            lift.server_receive_octets(d, io, output, ctypes.c_uint16(0x300))
+                            invoke(0x8483, dp=6)
+                            compare((0x320, 0x324, 0x325, 0x327), "RX reservoir")
+                            assert core.io(0x56) == io[0x56]
+                            for cursor in range(0x58, d[0x327]):
+                                assert core.io_output(cursor) == output[cursor]
+            report["checks"]["receive_octet_reservoir"] = 768
+
             for receive in (False, True):
                 for width in (7, 8):
                     for scramble in (False, True):
@@ -197,6 +299,36 @@ def main():
                                     invoke(0xe65f, dp=7, ar1=0x888)
                                     compare((0xff01,0xff0c,0x888,0x380,0x3d8,0x3d9), "tx callback")
                 report["checks"]["rx_callback" if receive else "tx_callback"] = 256
+
+            # Open the original RX dispatch gate: callback, reversal,
+            # descrambling, octet assembly and hardware lane delivery in
+            # one invocation, including full-lane drops.
+            for width in (7, 8):
+                for scramble in (False, True):
+                    for reverse in (False, True):
+                        for ready in (False, True):
+                            for _ in range(16):
+                                put(0x6f, 8); put(0x39f, 0); put(0x37b, 1)
+                                put(0x3e0, 0x200 if scramble else 0)
+                                put(0xffd9, 0x8000 if reverse else 0)
+                                put(0x889, rng.getrandbits(8))
+                                put(0x321, (1<<width)-1); put(0x322, width)
+                                state = rng.getrandbits(23)
+                                put(0x31e, state>>16); put(0x31f, state&65535)
+                                count = rng.randrange(8)
+                                put(0x324, rng.getrandbits(count)); put(0x325, count)
+                                put(0x326, 0x8483); put(0x327, 0x58)
+                                io[0x56] = 0xff00 if ready else 0
+                                core.set_io(0x56, io[0x56])
+                                lift.server_receive_preloaded(d, ctypes.c_uint16(0x889))
+                                lift.server_receive_octets(d, io, output, ctypes.c_uint16(0x300))
+                                invoke(0xe67b, dp=7, ar1=0x889)
+                                compare((0xff00, 0x320, 0x31e, 0x31f, 0x324,
+                                         0x325, 0x327), "open RX callback")
+                                assert core.io(0x56) == io[0x56]
+                                for cursor in range(0x58, d[0x327]):
+                                    assert core.io_output(cursor) == output[cursor]
+            report["checks"]["rx_callback_open_sink"] = 256
         quad = QuadImage.controller(ROOT / "docs/x2/Qf060003.zip")
         qwords = [0]*65536
         for offset, length, origin in (RESIDENT, PCM_CORE, PCM_MODE):

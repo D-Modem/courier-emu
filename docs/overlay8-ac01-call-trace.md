@@ -8,7 +8,7 @@ not evidence that the caller qualifies the answer signal.
 ## Reproduce with the settings EEPROM loaded
 
 ```sh
-./courier link artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier link dumps/courier-board-21210-capture-403/courier-board.rom \
   --with-dsp --nvram-fixture idsdl403 \
   --a-at ATX0 --a-at ATDT5551234 --b-at ATA \
   --line-frames 400 --instructions 400000000 \

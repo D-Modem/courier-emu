@@ -1,0 +1,65 @@
+{
+  "firmware": "B/C supervisor 2.2.09, DSP 2.0.34",
+  "normal_image_sha256": "6c3271782955f837fe23db7712f090cc84854e49cc43c2f4396cd1cc211371fc",
+  "transport": "native PCM only; no decoded-byte peer channel",
+  "commands": [
+    "AT&M0&N1&U1",
+    "AT&L1"
+  ],
+  "external_terminal_input_instruction": 28000000,
+  "instruction_budget": 35000000,
+  "requested_common_frames": 95,
+  "scope": "32 printable ASCII bytes each way after both peers settle; not immediate-CONNECT or binary/long-run proof",
+  "peers": {
+    "a": {
+      "sent_ascii": "A0a1b2c3d4e5f6g7A0a1b2c3d4e5f6g7",
+      "received_ascii": "B9z8y7x6w5v4u3t2B9z8y7x6w5v4u3t2",
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n\r\nCONNECT\r\nB9z8y7x6w5v4u3t2B9z8y7x6w5v4u3t2",
+      "terminal_input_bytes": 32,
+      "terminal_payload_bytes": 32,
+      "error": null,
+      "queue_drop_counts": {}
+    },
+    "b": {
+      "sent_ascii": "B9z8y7x6w5v4u3t2B9z8y7x6w5v4u3t2",
+      "received_ascii": "A0a1b2c3d4e5f6g7A0a1b2c3d4e5f6g7",
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n\r\nCONNECT\r\nA0a1b2c3d4e5f6g7A0a1b2c3d4e5f6g7",
+      "terminal_input_bytes": 32,
+      "terminal_payload_bytes": 32,
+      "error": null,
+      "queue_drop_counts": {}
+    }
+  },
+  "framer_control": {
+    "a": {
+      "before_irq_ownership_fix": {
+        "input_words": 3860,
+        "completed_call_pairs": 3845,
+        "state_discontinuities_between_calls": 133
+      },
+      "after_irq_ownership_fix": {
+        "input_words": 3862,
+        "completed_call_pairs": 3862,
+        "state_discontinuities_between_calls": 0
+      },
+      "receiver_input_wav_exact_payload": true,
+      "receiver_input_wav_sha256": "e332bcba2f8b4f0d4d7e322669f4e9f47757b63961f4497b0259e6246ca83c7d",
+      "isolated_original_cpu_replay_expected_ascii": "B9z8y7x6w5v4u3t2B9z8y7x6w5v4u3t2"
+    },
+    "b": {
+      "before_irq_ownership_fix": {
+        "input_words": 3861,
+        "completed_call_pairs": 3836,
+        "state_discontinuities_between_calls": 158
+      },
+      "after_irq_ownership_fix": {
+        "input_words": 3861,
+        "completed_call_pairs": 3861,
+        "state_discontinuities_between_calls": 0
+      },
+      "receiver_input_wav_exact_payload": true,
+      "receiver_input_wav_sha256": "59fd4637df579986ab3d1cb834034cd648cf940a09e7d312161b281b955781d9",
+      "isolated_original_cpu_replay_expected_ascii": "A0a1b2c3d4e5f6g7A0a1b2c3d4e5f6g7"
+    }
+  }
+}

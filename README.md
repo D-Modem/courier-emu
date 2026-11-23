@@ -12,14 +12,21 @@ through SIP.
 
 - Analog Couriers (`main211.xmf` and other XMF images), the ISDN I-modem
   (`.nac` and `.xmp` images) and the Quad server modem
-- A live AT console on the firmware of the modem
+- A live AT console on the firmware of the modem, and a browser console
+  (`./courier gui`)
 - Two modems on one line (`link`), with Bell 103, V.34 and x2 tests
 - A minimal SIP user agent on the modeled DAA
+- An experimental line backend for the Apple USB Modem (macOS)
 - Tools that read the flash, the RAM and the ASIC ports of a real board
 
-Status: this is research work. The I-modem answers AT commands, and two
-modems connect at 300 bit/s with Bell 103. V.34 carrier is not yet solved.
-Refer to [Current boundary](docs/current-boundary.md).
+Status: this is research work. The analog 403 firmware negotiates V.34/LAPM
+and V.90/LAPM over SIP, and the I-modem connects at V.90 to a RasFinder. The
+Quad connects with V.34 and x2. Sustained reliability is not yet solved.
+Refer to [Current boundary](docs/current-boundary.md) and
+[Research notes](docs/research-log.md).
+
+This repository is a fork of
+[cryan209/courier-emu](https://github.com/cryan209/courier-emu).
 
 ## Quick start
 

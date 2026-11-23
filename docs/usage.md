@@ -34,6 +34,26 @@ fallback addresses, add `--profile-exits`. This option adds profiling overhead.
 To use the reference engine, add `--python`. For measured workloads, see
 [paired emulation performance](paired-emulation-performance.md).
 
+Native-worker runs that are applicable also do the batch-call setup and the
+cleanup after the run in native code. Refer to
+[native worker wrapper measurements](native-worker-wrapper-performance.md).
+`COURIER_X86_NATIVE_WRAPPER=0` keeps the Python wrapper, and the CPU still runs
+in native code. The worker arming-rejection gate and the native FIR and
+polyphase block loops of the resampler are in
+[native service and resampler performance](native-service-resample-performance.md).
+Each of these variables disables one path:
+
+- `COURIER_NATIVE_ARM_GATE=0`
+- `COURIER_NATIVE_FIXED_RESAMPLE=0`
+- `COURIER_NATIVE_POLYPHASE=0`
+
+The resampler kernels use only a core library that is already loaded. Older
+libraries use the Python paths. These changes make the runs faster. They do
+not show that live calls are stable.
+
+To open the browser console, run `./courier gui`. Refer to
+[the browser GUI](gui.md).
+
 The launcher uses `uv` when `uv` is on `PATH`. If not, it falls back to `venv`
 and `pip`. These settings change its behavior:
 

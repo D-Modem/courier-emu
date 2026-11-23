@@ -6,6 +6,9 @@ The two different terminal payloads arrive at the opposite DTE. The settings are
 `S54=0S58=48`, with the server and symmetric modes enabled, and a 230400-bps DTE
 profile. The controls below document the earlier tests with a restricted rate.
 
+For sustained traffic testing and the 64-KB terminal-output fix, see
+[Sustained I-modem x2 traffic](imodem-x2-traffic.md).
+
 The pair harness now accepts `--protocol x2`. It sets `S58=32` on the two ends.
 This disables V.90, and the x2 server and symmetric modes stay enabled. The harness selects detailed
 result codes (`&A3`) and terminal operation at the line rate (`&B0`).

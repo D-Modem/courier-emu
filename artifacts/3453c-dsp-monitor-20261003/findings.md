@@ -155,7 +155,7 @@ EOT. The source starts at segment 4000. Thus option 1 covers exactly physical
 40000..F7FFF (B8000 bytes). It does not include the parameter sectors and the
 boot block. The live menu prompts `Start Xmodem-1K receiver`. This is not the
 earlier wording that we recorded from an adjacent inline string. The read
-capture is in `artifacts/3453c-firmware-read-20261003/`.
+capture is in `dumps/3453c-firmware-read-20261003/`.
 
 ### Hardware readback result
 

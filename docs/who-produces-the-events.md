@@ -6,7 +6,7 @@ ports. This settles what is on the other end of those ports, from the DSP
 program in the board image rather than from the port traffic.
 
 Addresses are file offsets in
-`artifacts/courier-board-21210-capture-403/courier-board.rom` (supervisor
+`dumps/courier-board-21210-capture-403/courier-board.rom` (supervisor
 7.4.16 / DSP 3.1.2) and DSP program addresses where noted. `IDSDL302.ROM`
 carries the same two routines at `0x29856` and `0x299ee`.
 

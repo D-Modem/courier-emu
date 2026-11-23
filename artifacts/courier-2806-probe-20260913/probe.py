@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from courier_emu.flash_dump import SerialPort, command_for, parse_page, validate_identity
 from courier_emu.asic_probe import MonitorPort, MAILBOX_PORTS
 out=Path('artifacts/courier-2806-probe-20260913')
-reference=Path('artifacts/courier-2806-25mhz-flash-20260912/courier-board.rom').read_bytes()
+reference=Path('dumps/courier-2806-25mhz-flash-20260912/courier-board.rom').read_bytes()
 report={'started':datetime.now(timezone.utc).isoformat(),'device':'/dev/cu.usbserial-FT4TQOFT','baud':115200,'flash':[], 'ports':[], 'writes':False}
 def save(): (out/'results.json').write_text(json.dumps(report,indent=2)+'\n')
 with SerialPort(report['device'],115200) as p:

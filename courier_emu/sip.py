@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from array import array
 from collections import deque
 from dataclasses import asdict, dataclass
 from hashlib import md5
+from itertools import islice
 import math
+import os
 import random
 import re
 import socket
 import threading
 import time
+
+from .rtp import RtpPlayout, RtpReceiveStats, RtpTransmitStats, parse_rtp
+from . import g711_native, resample_native
 
 
 SIP_PORT = 5060
@@ -140,6 +146,15 @@ class PolyphaseResampler:
         self._buffer: list[float] = [0.0] * self.taps_per_phase
         self._origin = -self.taps_per_phase
         self._output = 0
+        self._native_kernel = None
+        # Only an acceleration heuristic: never changes sample readiness.
+        # Amortize interop/table validation over at least 32 outputs and one
+        # phase table's worth of dot products. Nonstandard numeric rates fall
+        # back without invoking additional arithmetic callbacks.
+        self._native_min_buffer = (
+            self.taps_per_phase + (max(32, self.up) * self.down + self.up - 1) // self.up
+            if all(type(v) is int for v in (self.up, self.down, self.taps_per_phase))
+            and self.up > 0 and self.down > 0 else math.inf)
 
     def _design(self) -> list[list[float]]:
         """Return the filter as `up` phases of `taps_per_phase` taps each."""
@@ -176,6 +191,22 @@ class PolyphaseResampler:
             phases.append([tap / total for tap in taps])
         return phases
 
+    def _native_coefficients(self):
+        # Bound table-validation work for unusual nearly-coprime rates. Custom
+        # numeric taps keep their Python multiplication semantics.
+        if (type(self.up) is not int or type(self.taps_per_phase) is not int
+                or type(self._taps) not in (list, tuple)
+                or not (0 < self.up <= 1024 and 0 < self.taps_per_phase <= 4096)
+                or any(type(row) not in (list, tuple) for row in self._taps)):
+            return None
+        rows = tuple(tuple(row) for row in self._taps)
+        if (len(rows) != self.up or any(len(row) != self.taps_per_phase for row in rows)
+                or any(type(value) is not float for row in rows for value in row)):
+            return None
+        if self._native_kernel is None or rows != self._native_kernel[0]:
+            self._native_kernel = (rows, array('d', (v for row in rows for v in row)))
+        return self._native_kernel[1]
+
     def convert(self, samples) -> list[int]:
         """Take input samples and return every output sample now determined."""
         if self.up == self.down == 1:
@@ -187,20 +218,30 @@ class PolyphaseResampler:
             return [int(sample) for sample in samples]
         self._buffer.extend(float(sample) for sample in samples)
         result: list[int] = []
-        newest = self._origin + len(self._buffer) - 1
-        while True:
-            position = self._output * self.down
-            base = position // self.up
-            if base + self._half > newest:
-                break
-            taps = self._taps[position % self.up]
-            total = 0.0
-            for index, tap in enumerate(taps):
-                sample = base + self._half - index - self._origin
-                if 0 <= sample < len(self._buffer):
-                    total += tap * self._buffer[sample]
-            result.append(max(-32_768, min(32_767, int(round(total)))))
-            self._output += 1
+        length = len(self._buffer)
+        newest = self._origin + length - 1
+        native = None
+        if length >= self._native_min_buffer and resample_native.polyphase_available():
+            kernel = self._native_coefficients()
+            if kernel is not None:
+                native = resample_native.polyphase(self._buffer, kernel, self.up, self.down,
+                    self.taps_per_phase, self._half, self._origin, self._output)
+        if native is not None:
+            result, self._output = native
+        else:
+            while True:
+                position = self._output * self.down
+                base = position // self.up
+                if base + self._half > newest:
+                    break
+                taps = self._taps[position % self.up]
+                total = 0.0
+                for index, tap in enumerate(taps):
+                    sample = base + self._half - index - self._origin
+                    if 0 <= sample < len(self._buffer):
+                        total += tap * self._buffer[sample]
+                result.append(max(-32_768, min(32_767, int(round(total)))))
+                self._output += 1
         # Drop everything the next output can no longer reach back to.
         oldest = (self._output * self.down) // self.up + self._half - self.taps_per_phase + 1
         drop = oldest - self._origin
@@ -255,6 +296,7 @@ class SipConfig:
     rtp_port: int = 0
     display_name: str = "Courier Emulator"
     codec: str = "pcmu"
+    receive_delay_samples: int = 480
 
 
 class SipSession:
@@ -269,6 +311,9 @@ class SipSession:
         self.config = config
         (self.payload_type, self.encoding,
          self._encode, self._decode) = CODECS[config.codec]
+        self._rtp_playout = RtpPlayout(
+            delay_samples=config.receive_delay_samples,
+            silence=0xd5 if self.encoding == 'PCMA' else 0xff)
         self.server_host, self.server_port = _split_server(config.server)
         addresses = socket.getaddrinfo(
             self.server_host, self.server_port, socket.AF_INET, socket.SOCK_DGRAM
@@ -338,6 +383,8 @@ class SipSession:
         self.rtp_packets_received = 0
         self.rtp_octets_sent = 0
         self.rtp_octets_received = 0
+        self._rtp_rx_stats = RtpReceiveStats()
+        self._rtp_tx_stats = RtpTransmitStats()
         self.preanswer_samples_discarded = 0
         self.closed = False
         self._rtp_lock = threading.RLock()
@@ -345,10 +392,18 @@ class SipSession:
         self._rtp_clock_stop = threading.Event()
         self._rtp_clock_wake = threading.Event()
         self._rtp_tx_primed = False
+        self._rtp_tx_recovering = False
+        self._rtp_packet_recovery = os.environ.get('COURIER_RTP_PACKET_RECOVERY') == '1'
         self._rtp_tx_buffer_samples = 480
+        self._rtp_media_error = ''
+        # Bound audio already released by RTP playout but not yet consumed by
+        # the emulator. Never use a maxlen deque: it silently drops old audio.
+        self._rtp_receive_capacity = PCMU_RATE * 2
+        self._rtp_receive_last_service = None
+        self._rtp_receive_max_service_gap_ms = 0.0
 
     def enable_media_clock(self, *, buffer_samples: int = 480) -> None:
-        """Send B-channel RTP independently of emulator scheduler passes."""
+        """Service RTP in both directions independently of emulator passes."""
         if buffer_samples < RTP_PACKET_SAMPLES:
             raise ValueError('RTP transmit buffer must hold at least one packet')
         with self._rtp_lock:
@@ -363,16 +418,23 @@ class SipSession:
         while not self._rtp_clock_stop.is_set():
             self._rtp_clock_wake.clear()
             try:
+                self._service_receive_rtp()
                 self._flush_rtp(time.monotonic())
-            except OSError as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 if not self.closed:
-                    self.error = str(exc)
+                    self._rtp_media_error = f'RTP media worker failed: {exc}'
+                    self.error = self._rtp_media_error
                 return
             # Producer arrivals wake an unprimed sender. Once primed, the
             # packet deadline is independent of the producer's call frequency.
             delay = (max(0.001, self._next_rtp_at - time.monotonic())
                      if self._rtp_tx_primed else 0.02)
-            self._rtp_clock_wake.wait(min(0.02, delay))
+            # Receive deadlines must also be serviced while TX is unprimed.
+            self._rtp_clock_wake.wait(min(0.005, delay))
+
+    def _check_media_error(self) -> None:
+        if getattr(self, '_rtp_media_error', ''):
+            raise RuntimeError(self._rtp_media_error)
 
     def _target(self, number: str) -> str:
         if self.config.target:
@@ -384,6 +446,8 @@ class SipSession:
     def start_call(self, number: str) -> None:
         if self.state not in ("idle", "closed", "failed"):
             return
+        self._reset_receive_media()
+        self.remote_rtp = None
         # Each call is its own dialogue; reusing the identifiers of the last
         # one makes the second INVITE look like a retransmission of the first.
         self.call_id = f"{random.getrandbits(64):016x}@{self.local_ip}"
@@ -781,6 +845,7 @@ class SipSession:
                     self._response(488, "Not Acceptable Here", headers), "tx 488"
                 )
                 return
+            self._reset_receive_media()
             self.direction = "inbound"
             self.from_tag = f"{random.getrandbits(32):08x}"
             self.call_id = headers.get("call-id", self.call_id)
@@ -866,6 +931,7 @@ class SipSession:
     def poll(self) -> None:
         if self.closed:
             return
+        self._check_media_error()
         while True:
             try:
                 data, source = self.socket.recvfrom(65_535)
@@ -875,27 +941,16 @@ class SipSession:
                 self._handle_response(data, source)
             else:
                 self._handle_request(data, source)
-        while True:
-            try:
-                packet, _source = self.rtp_socket.recvfrom(2_048)
-            except BlockingIOError:
-                break
-            if len(packet) < 12 or packet[1] & 0x7F != self.payload_type:
-                continue
-            if self.codewords:
-                self._rx_codewords.extend(packet[12:])
-            else:
-                self._rx_audio.extend(self._decode(value)
-                                      for value in packet[12:])
-            self.rtp_packets_received += 1
-            self.rtp_octets_received += len(packet) - 12
+        # Only one consumer owns the RTP socket/playout clock. With a media
+        # worker enabled, reception no longer waits for emulator poll passes.
+        # OS/GIL stalls can still delay it. Signalling stays on the caller.
+        if getattr(self, '_rtp_clock_thread', None) is None:
+            self._service_receive_rtp()
         now = time.monotonic()
         refresh_at = getattr(self, "_register_refresh_at", None)
         if refresh_at is not None and now >= refresh_at:
             self.register()
-        # Only an INVITE that has drawn no response at all is retransmitted.
-        # RFC 3261 stops timer A on the first provisional, and retransmitting
-        # through a long ringback sent the proxy one INVITE a second.
+        # RFC 3261 timer A stops on the first provisional response.
         if self.state == "inviting" and self._invite:
             if now - self._invite_sent_at >= self._retransmit_after:
                 self.socket.send(self._invite)
@@ -904,10 +959,73 @@ class SipSession:
                 self.events.append("tx INVITE retransmit")
         self._flush_rtp(now)
 
+    def _service_receive_rtp(self) -> None:
+        with self._rtp_lock:
+            self._receive_rtp_locked()
+
+    def _receive_rtp_locked(self) -> None:
+        now = time.monotonic()
+        if self.state in ('connected', 'trying', 'ringing'):
+            previous = getattr(self, '_rtp_receive_last_service', None)
+            if previous is not None:
+                self._rtp_receive_max_service_gap_ms = max(
+                    getattr(self, '_rtp_receive_max_service_gap_ms', 0.0),
+                    max(0.0, now - previous) * 1000)
+            self._rtp_receive_last_service = now
+        else:
+            self._rtp_receive_last_service = None
+        while True:
+            try:
+                packet, source = self.rtp_socket.recvfrom(65_535)
+            except BlockingIOError:
+                break
+            stats = self._rtp_rx_stats
+            try:
+                media = parse_rtp(packet)
+            except ValueError:
+                stats.invalid_packets += 1
+                continue
+            if media.payload_type != self.payload_type:
+                continue
+            self.rtp_packets_received += 1
+            self.rtp_octets_received += len(media.payload)
+            if self.state not in ('connected', 'trying', 'ringing'):
+                continue
+            now = time.monotonic()
+            if not self._rtp_playout.push(media, source, self.remote_rtp, now):
+                # Keep duplicate diagnostics without allowing foreign streams to
+                # poison the arrival-order observer for the owned stream.
+                if self._rtp_playout.owns(source, media.ssrc):
+                    stats.observe(media, now)
+                continue
+            stats.observe(media, now)
+        now = time.monotonic()
+        if self.state in ('connected', 'trying', 'ringing'):
+            incoming = self._rtp_playout.drain(now)
+            target = self._rx_codewords if self.codewords else self._rx_audio
+            if len(target) + len(incoming) > getattr(self, '_rtp_receive_capacity', PCMU_RATE * 2):
+                raise RuntimeError('RTP receive backlog exceeds queue capacity; refusing silent sample loss')
+            if self.codewords:
+                target.extend(incoming)
+            else:
+                law = (0 if self._decode is ulaw_to_linear else
+                       1 if self._decode is alaw_to_linear else None)
+                decoded = g711_native.decode_octets(incoming, law) if law is not None else None
+                target.extend(decoded if decoded is not None else
+                              (self._decode(value) for value in incoming))
+
     def send_audio(self, samples: list[int]) -> None:
+        self._check_media_error()
         with self._rtp_lock:
             if self.state == "connected":
+                capacity = self._tx_audio.maxlen
+                if capacity is not None and len(self._tx_audio) + len(samples) > capacity:
+                    self.error = 'RTP audio transmit backlog exceeds queue capacity; refusing silent sample loss'
+                    raise RuntimeError(self.error)
                 self._tx_audio.extend(samples)
+                if not hasattr(self, '_rtp_tx_stats'):
+                    self._rtp_tx_stats = RtpTransmitStats()
+                self._rtp_tx_stats.produced(time.monotonic(), len(samples), len(self._tx_audio))
             elif self.state in ("inviting", "trying", "ringing"):
                 self.preanswer_samples_discarded += len(samples)
         if self._rtp_clock_thread is not None and not self._rtp_tx_primed:
@@ -934,12 +1052,16 @@ class SipSession:
         self.codewords = enabled
 
     def send_pcmu(self, octets: bytes) -> None:
+        self._check_media_error()
         # The DSP-facing bearer can start before the SIP peer answers. Those
         # samples have already elapsed when the RTP media clock starts;
         # queueing them adds a permanent ring-time delay to training replies.
         with self._rtp_lock:
             if self.state == "connected":
                 self._tx_codewords.extend(octets)
+                if not hasattr(self, '_rtp_tx_stats'):
+                    self._rtp_tx_stats = RtpTransmitStats()
+                self._rtp_tx_stats.produced(time.monotonic(), len(octets), len(self._tx_codewords))
             elif self.state in ("inviting", "trying", "ringing"):
                 self.preanswer_samples_discarded += len(octets)
         if self._rtp_clock_thread is not None and not self._rtp_tx_primed:
@@ -947,11 +1069,28 @@ class SipSession:
         self._flush_rtp(time.monotonic())
 
     def receive_pcmu(self, count: int | None = None) -> bytes:
-        if count is None:
-            count = len(self._rx_codewords)
-        taken = bytes(self._rx_codewords.popleft()
-                      for _ in range(min(count, len(self._rx_codewords))))
-        return taken
+        self._check_media_error()
+        with self._rtp_lock:
+            if count is None:
+                count = len(self._rx_codewords)
+            return bytes(self._rx_codewords.popleft()
+                         for _ in range(min(count, len(self._rx_codewords))))
+
+    def _encode_rtp_audio(self) -> bytes:
+        """Encode one packet without changing custom scalar-codec behavior."""
+        encode = self._encode
+        law = (0 if encode is linear_to_ulaw else
+               1 if encode is linear_to_alaw else None)
+        if law is not None and g711_native.available():
+            # Peek first: a declined fast path must neither consume input nor
+            # change scalar clipping/type-conversion/exception behavior.
+            values = list(islice(self._tx_audio, RTP_PACKET_SAMPLES))
+            payload = g711_native.encode_pcm16(values, law)
+            if payload is not None:
+                for _ in range(RTP_PACKET_SAMPLES):
+                    self._tx_audio.popleft()
+                return payload
+        return bytes(encode(self._tx_audio.popleft()) for _ in range(RTP_PACKET_SAMPLES))
 
     def _flush_rtp(self, now: float) -> None:
         worker = self._rtp_clock_thread
@@ -961,20 +1100,47 @@ class SipSession:
             self._flush_rtp_locked(now)
 
     def _flush_rtp_locked(self, now: float) -> None:
+        if not hasattr(self, '_rtp_tx_stats'):
+            self._rtp_tx_stats = RtpTransmitStats()
+        stats = self._rtp_tx_stats
         source = self._tx_codewords if self.codewords else self._tx_audio
+        stats.max_queue_samples = max(stats.max_queue_samples, len(source))
+        packets_before = self.rtp_packets_sent
         if self._rtp_clock_thread is not None:
             if self.state != 'connected':
                 self._rtp_tx_primed = False
+                self._rtp_tx_recovering = False
                 return
             if not self._rtp_tx_primed:
-                if len(source) < self._rtp_tx_buffer_samples:
+                minimum = (RTP_PACKET_SAMPLES
+                           if getattr(self, '_rtp_tx_recovering', False)
+                           else self._rtp_tx_buffer_samples)
+                if len(source) < minimum:
                     return
+                # A temporary underrun must not move the RTP sample clock.
+                # Re-anchoring on every recovery accumulates permanent delay,
+                # even when individual packet gaps look small. Send genuinely
+                # overdue queued packets using their original deadlines.
+                if not getattr(self, '_rtp_tx_recovering', False):
+                    self._next_rtp_at = now
                 self._rtp_tx_primed = True
-                self._next_rtp_at = now
+                self._rtp_tx_recovering = False
             elif now >= self._next_rtp_at and len(source) < RTP_PACKET_SAMPLES:
-                # A genuine production outage cannot be hidden with invented
-                # samples. Retain every codeword and rebuild the reserve.
+                # A producer arriving just after this deadline is not yet a
+                # sustained outage. Rebuilding the whole startup reserve here
+                # turns sub-packet scheduling jitter into a 150-ms media hole.
+                # Wait at most one packet interval, retaining the original
+                # deadline/timestamp and every queued sample. No silence or
+                # catch-up work is invented. A longer outage still re-primes.
+                if now - self._next_rtp_at < RTP_PACKET_SAMPLES / PCMU_RATE:
+                    return
                 self._rtp_tx_primed = False
+                # Startup reserve is useful before starting the call. Requiring
+                # it again after starvation adds a new 150-ms hold to a real
+                # outage. This experimental mode resumes on the first complete
+                # packet, retaining both the wall deadline and sample time.
+                self._rtp_tx_recovering = getattr(self, '_rtp_packet_recovery', False)
+                stats.rebuffered(now, len(source))
                 return
         # The analogue bridge hands us 100 ms blocks while RTP packetizes
         # 20 ms. Send every packet whose playout time has arrived, not merely
@@ -989,14 +1155,14 @@ class SipSession:
             payload = (
                 bytes(self._tx_codewords.popleft() for _ in range(RTP_PACKET_SAMPLES))
                 if self.codewords else
-                bytes(self._encode(self._tx_audio.popleft())
-                      for _ in range(RTP_PACKET_SAMPLES))
+                self._encode_rtp_audio()
             )
             header = bytes((0x80, self.payload_type))
             header += self._rtp_sequence.to_bytes(2, "big")
             header += self._rtp_timestamp.to_bytes(4, "big")
             header += self._rtp_ssrc.to_bytes(4, "big")
             self.rtp_socket.sendto(header + payload, self.remote_rtp)
+            stats.sent(time.monotonic(), self._next_rtp_at, len(source) + len(payload))
             self._rtp_sequence = (self._rtp_sequence + 1) & 0xFFFF
             self._rtp_timestamp = (
                 self._rtp_timestamp + RTP_PACKET_SAMPLES
@@ -1004,14 +1170,22 @@ class SipSession:
             self._next_rtp_at += RTP_PACKET_SAMPLES / PCMU_RATE
             self.rtp_packets_sent += 1
             self.rtp_octets_sent += len(payload)
+        stats.max_packets_per_flush = max(stats.max_packets_per_flush,
+                                           self.rtp_packets_sent - packets_before)
 
     def receive_audio(self) -> list[int]:
-        result = list(self._rx_audio)
-        self._rx_audio.clear()
-        return result
+        self._check_media_error()
+        with self._rtp_lock:
+            result = list(self._rx_audio)
+            self._rx_audio.clear()
+            return result
 
-    def status(self) -> dict[str, str | int | bool | list[str]]:
-        value: dict[str, str | int | bool | list[str]] = asdict(self.config)
+    def status(self) -> dict[str, object]:
+        with self._rtp_lock:
+            return self._status_locked()
+
+    def _status_locked(self) -> dict[str, object]:
+        value: dict[str, object] = asdict(self.config)
         value.pop("password", None)
         value.update(
             state=self.state,
@@ -1030,13 +1204,30 @@ class SipSession:
             rtp_packets_received=self.rtp_packets_received,
             rtp_octets_sent=self.rtp_octets_sent,
             rtp_octets_received=self.rtp_octets_received,
+            rtp_receive={**self._rtp_rx_stats.status(),
+                         'playout': self._rtp_playout.status()},
+            rtp_transmit=self._rtp_tx_stats.status(),
             preanswer_samples_discarded=self.preanswer_samples_discarded,
             rtp_tx_queued_samples=len(self._tx_codewords if self.codewords else self._tx_audio),
+            rtp_rx_queued_samples=len(self._rx_codewords if self.codewords else self._rx_audio),
+            rtp_rx_capacity_samples=getattr(self, '_rtp_receive_capacity', PCMU_RATE * 2),
+            rtp_rx_max_service_gap_ms=getattr(self, '_rtp_receive_max_service_gap_ms', 0.0),
+            rtp_media_error=getattr(self, '_rtp_media_error', ''),
             rtp_tx_buffer_samples=(self._rtp_tx_buffer_samples
                                    if self._rtp_clock_thread is not None else 0),
+            rtp_tx_packet_recovery=getattr(self, '_rtp_packet_recovery', False),
+            rtp_tx_recovering=getattr(self, '_rtp_tx_recovering', False),
             events=list(self.events),
         )
         return value
+
+    def _reset_receive_media(self) -> None:
+        with self._rtp_lock:
+            self._rx_audio.clear()
+            self._rx_codewords.clear()
+            self._rtp_rx_stats.reset_stream()
+            self._rtp_playout.reset_stream()
+            self._rtp_receive_last_service = None
 
     def hangup(self) -> None:
         """End the call in progress, keeping the session usable for another.
@@ -1073,8 +1264,10 @@ class SipSession:
             self._tx_audio.clear()
             self._tx_codewords.clear()
             self._rtp_tx_primed = False
-        self._rx_audio.clear()
-        self._rx_codewords.clear()
+            self._rtp_tx_recovering = False
+        self._reset_receive_media()
+        self._rtp_tx_stats.last_sent_at = None
+        self._rtp_tx_stats.last_produced_at = None
 
     def close(self) -> None:
         if self.closed:

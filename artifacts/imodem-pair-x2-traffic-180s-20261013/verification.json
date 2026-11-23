@@ -1,0 +1,51 @@
+{
+  "firmware": "Ie030002.nac",
+  "firmware_sha256": "3f9a7aa8033323c28eebfee950b53267a67b7ad9141ebf30271918d0babbe358",
+  "nvram": "../imodem-pair-x2-full-rate-routed-20261002/nvram-230400-switch2.sav",
+  "nvram_sha256": "ddd313b85f2d57c0c157a46b2bc014a814f0cff0a853af35faa839aeca87db35",
+  "settings": "S54=0S58=48&K0",
+  "instructions_per_worker": 2000000000,
+  "requested_traffic_seconds": 180,
+  "max_allowed_receive_gap_seconds": 5,
+  "traffic_verified": true,
+  "x2_verified": true,
+  "bidirectional_data_verified": true,
+  "injected_carrier_or_received_payload": false,
+  "sides": {
+    "originate": {
+      "connect_result": "CONNECT 64000/ARQ/x2/LAPM",
+      "sent_records": 340,
+      "received_records": 340,
+      "sent_bytes": 180540,
+      "received_bytes": 180540,
+      "last_receive_seconds_after_connect": 180.0,
+      "maximum_receive_gap_seconds": 4.5,
+      "active_bearer_seconds_after_connect": 375.4,
+      "corruption_events": 0,
+      "partial_bytes": 0,
+      "uart_output_dropped": 0,
+      "uart_overruns": 0,
+      "pcm_receive_underruns": 0,
+      "cpu_error": null,
+      "dsp_error": null
+    },
+    "answer": {
+      "connect_result": "CONNECT 64000/ARQ/x2/LAPM",
+      "sent_records": 340,
+      "received_records": 340,
+      "sent_bytes": 180540,
+      "received_bytes": 180540,
+      "last_receive_seconds_after_connect": 180.1,
+      "maximum_receive_gap_seconds": 4.6,
+      "active_bearer_seconds_after_connect": 375.5,
+      "corruption_events": 0,
+      "partial_bytes": 0,
+      "uart_output_dropped": 0,
+      "uart_overruns": 0,
+      "pcm_receive_underruns": 0,
+      "cpu_error": null,
+      "dsp_error": null
+    }
+  },
+  "scope": "Digital symmetric x2; one outstanding ASCII record per direction. No full-rate saturation or analogue interoperability claim. Traffic stops after 180 seconds; carrier survives the subsequent idle tail."
+}

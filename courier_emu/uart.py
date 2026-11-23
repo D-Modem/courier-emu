@@ -16,8 +16,11 @@ says on which types: 0x14 enters `cld; pushaw; mov ax, [0xff68]; call [0x26a]`
 at 0x80f23, and 0x15 enters the transmit side at 0x80f1c. Those are the
 part's fixed serial types, so they are not configuration this has to recover.
 
-Transmit is a plain store - `mov word ptr [0xff6a], ax` at 33 sites - with no
-status poll ahead of it, so a byte is taken whenever the firmware writes one.
+Transmit is a plain store - `mov word ptr [0xff6a], ax` at 33 sites. A byte
+is captured when the firmware writes it. With internal-clock asynchronous mode 1,
+the ROM harness times the double-buffered transmitter from B0CMP: TI is latched
+at the stop bit, and TXE waits for both slots to empty. Other clocking/modes
+retain the legacy synchronous completion; this is not a complete wire encoder.
 
 The format on the wire is the firmware's choice, not this module's. `S0CON`
 is written `0x21` - mode 1, eight bits on the wire - and the firmware composes
@@ -34,24 +37,28 @@ each character to the DTE format its settings EEPROM holds:
   that way - all 430 bytes of its `ATI7` match even parity - and output read
   raw then looks like high-bit garbage until masked to seven bits.
 
-Reaching 8N1 *without* a stored profile needs autobaud, which is still a gap:
-this harness feeds the first character bit by bit through the ROM's own
+Raw-pin autobaud timing is still a gap. The byte-oriented console/pty attention
+adapter now defaults to 8N1 and publishes that format to the identified active
+firmware setting when it accepts AT, after profile loading. --dte-framing stored
+leaves the firmware's format untouched; batch runs retain that default. This is
+format completion at the existing byte adapter, not a silicon timing model.
+The separate raw path feeds the first character bit by bit through the ROM's
 sampling loop (`machine.py`, the `0x9EDF9`/`0x9EE35` special case) but models
 nothing of the timing side. On the board the received data also reaches the
 CPU inverted through a 74AHC04 into `T1IN`, CPU pin 78, which is how the
 firmware measures a bit cell (see `docs/asic-pinout.md`).
 
-What is deliberately not modelled is the error side of the status word. The
-firmware reads S0STS at 13 sites and tests it at exactly one, `and al, 0x10`
-at 0x9f03e, where a set bit skips the receive; the remaining reads discard the
-value, which is the acknowledge the part needs and nothing more. So status is
-reported clean, and a run that would have to raise a framing or overrun error
-is outside what this reproduces rather than guessed at.
+Receive and transmit completion set RI and TI independently of the interrupt
+request latches. Reading status clears those flags and OE; reading S0RBUF
+consumes the data without clearing RI. An unread byte replaced by a later
+reception sets OE and retains the newer byte. CTS and TXE survive status reads.
+Framing, parity and BREAK errors still require a richer wire receiver.
 """
 from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from math import ceil
 from typing import Any
 
 B0CMP = 0xFF60
@@ -83,14 +90,16 @@ CLEAR_TO_SEND = 0x02
 # TXE, set when SxTBUF and the shift register are both empty. The transmit
 # routine at 0x81613 spins on it before every byte it writes to S0TBUF, and
 # the ISR uses it to decide whether a second byte can follow immediately.
-# Nothing here queues a byte behind another, so the transmitter is always
-# ready. Accessing S0STS does not clear TXE.
+# The timed transmitter is ready only once both slots are empty. The legacy
+# synchronous path is always ready. Accessing S0STS does not clear TXE.
 TRANSMIT_READY = 0x08
 # RI, set when a character has been placed in S0RBUF. This board's receive is
 # interrupt driven off the vector below and no firmware path polls RI, which
 # is why an earlier revision of this module could label bit 1 as receive-ready
 # without a run detecting the error.
 RECEIVE_READY = 0x40
+TRANSMIT_COMPLETE = 0x20
+OVERRUN_ERROR = 0x04
 
 # The part's fixed serial interrupt types, confirmed against the live board's
 # vector table rather than assumed.
@@ -113,17 +122,66 @@ class EbSerial:
     # A character on the wire, not yet handed to the firmware.
     holding: bool = False
     receive_ready: bool = False
+    receive_unread: bool = False
+    transmit_complete: bool = False
+    overrun: bool = False
+    overruns: int = 0
     # The CTS pin's asserted state, which a real DTE drives with RTS.
     #
     # Nothing here models the host side of the Plug and Play handshake, so
-    # this is raised with each delivered character and consumed by the status
-    # read, reproducing exactly the edge timing that the pre-correction model
-    # produced from this bit. That keeps the [0x31f] chain advancing, but it
-    # is a stand-in: the real sequence is the DTE dropping DTR on port 0x14
+    # this is raised when a character is delivered. That keeps the [0x31f]
+    # chain advancing, but it is a stand-in: the real sequence is the DTE
+    # dropping DTR on port 0x14
     # bit 0 and asserting RTS 30 to 50 ticks later, and until the terminal
     # model drives those two lines the chain is reached by the right bit for
     # the wrong reason. On the part, reading the register does not clear CTS.
     clear_to_send: bool = False
+    timed_transmit: bool = False
+    transmit_overruns: int = 0
+    _now: int = 0
+    _cycles_per_instruction: float = 1.0
+    _tx_stop: int | None = None
+    _tx_end: int | None = None
+    _tx_buffer: int | None = None
+
+    @property
+    def transmit_busy(self) -> bool:
+        return self._tx_end is not None
+
+    def transmit_quiet_until(self, instructions: int) -> int | None:
+        """Next TX state change; never elide a pending request or a due event."""
+        deadline = self._tx_stop if self._tx_stop is not None else self._tx_end
+        if self.pending or deadline is None or instructions >= deadline:
+            return None
+        return deadline
+
+    def _start_transmit(self, instructions: int) -> None:
+        # Intel 270830-003 §§10.1.1.2, 10.2.1: asynchronous baud clock
+        # is CPU / (8 * (BxCMP + 1)); TI asserts at the start of stop.
+        bit_cycles = 8 * ((self.baud_compare & 0x7fff) + 1)
+        self._tx_stop = instructions + ceil(9 * bit_cycles / self._cycles_per_instruction)
+        self._tx_end = instructions + ceil(10 * bit_cycles / self._cycles_per_instruction)
+
+    def advance(self, instructions: int, cycles_per_instruction: float) -> None:
+        self._now = instructions
+        self._cycles_per_instruction = cycles_per_instruction
+        while self._tx_end is not None:
+            if self._tx_stop is not None and instructions >= self._tx_stop:
+                self.transmit_complete = True
+                self._request(TRANSMIT_VECTOR)
+                self._tx_stop = None
+            if instructions < self._tx_end:
+                break
+            end = self._tx_end
+            self._tx_end = None
+            if self._tx_buffer is not None:
+                self._tx_buffer = None
+                self._start_transmit(end)
+
+    @property
+    def receive_available(self) -> bool:
+        """Room for the harness DTE's next byte, independent of TX requests."""
+        return not self.receive_unread and RECEIVE_VECTOR not in self.pending
 
     @property
     def receive_enabled(self) -> bool:
@@ -138,23 +196,23 @@ class EbSerial:
             # earlier revision reached the same node by treating bit 1 as
             # receive-data-available, because asserting it does advance the
             # chain - as CTS, not as data. Bit 1 is driven from the modelled
-            # DTE's handshake instead. The error bits are not modelled - see
-            # the module docstring.
-            ready = self.receive_ready
+            # DTE adapter's handshake instead. Reading status must not
+            # deassert this level-sensitive input.
+            status = ((0 if self.transmit_busy else TRANSMIT_READY)
+                      | (CLEAR_TO_SEND if self.clear_to_send else 0)
+                      | (RECEIVE_READY if self.receive_ready else 0)
+                      | (TRANSMIT_COMPLETE if self.transmit_complete else 0)
+                      | (OVERRUN_ERROR if self.overrun else 0))
             # RI and TI are read to clear, which is why the firmware reads the
             # register at sites that discard the value: those reads are the
             # acknowledge. Taking the byte out of S0RBUF does not clear it.
             # CTS and TXE are not cleared by the read.
             self.receive_ready = False
-            cts, self.clear_to_send = self.clear_to_send, False
-            # RI is deliberately not asserted. This board's receive is
-            # interrupt driven off RECEIVE_VECTOR and no firmware path polls
-            # RI, so leaving it clear keeps the model's observable behaviour
-            # identical to the revision that had the bit map wrong, rather
-            # than introducing an untested status bit alongside the fix.
-            del ready
-            return TRANSMIT_READY | (CLEAR_TO_SEND if cts else 0)
+            self.transmit_complete = False
+            self.overrun = False
+            return status
         if address == S0RBUF:
+            self.receive_unread = False
             return self.receive_holding
         if address == S0CON:
             return self.control
@@ -174,9 +232,26 @@ class EbSerial:
             self.baud_count = value
         elif address == S0TBUF:
             self.transmitted += 1
-            self._request(TRANSMIT_VECTOR)
+            if (self.timed_transmit and self.baud_compare & 0x8000
+                    and self.control & 7 == 1):
+                if not self.transmit_busy:
+                    self._start_transmit(self._now)
+                else:
+                    if self._tx_buffer is not None:
+                        self.transmit_overruns += 1
+                    self._tx_buffer = value & 0xff
+            else:
+                self.transmit_complete = True
+                self._request(TRANSMIT_VECTOR)
             return value & 0xFF
         return None
+
+    def take_interrupt(self) -> int:
+        """RX has higher relative priority than TX (Intel 270830-003 §8.1.1.2)."""
+        if RECEIVE_VECTOR in self.pending:
+            self.pending.remove(RECEIVE_VECTOR)
+            return RECEIVE_VECTOR
+        return self.pending.popleft()
 
     def _request(self, vector: int) -> None:
         """Latch an interrupt request, once.
@@ -213,7 +288,11 @@ class EbSerial:
 
     def deliver(self, byte: int) -> None:
         """Place a byte in the receive buffer and request its interrupt."""
+        if self.receive_unread:
+            self.overrun = True
+            self.overruns += 1
         self.receive_holding = byte & 0xFF
+        self.receive_unread = True
         self.receive_ready = True
         # Stand-in for the DTE's RTS; see the field's comment.
         self.clear_to_send = True
@@ -226,9 +305,60 @@ class EbSerial:
             "baud_compare": f"{self.baud_compare:#06x}",
             "receive_enabled": self.receive_enabled,
             "clear_to_send": self.clear_to_send,
+            "receive_ready": self.receive_ready,
+            "receive_unread": self.receive_unread,
+            "transmit_complete": self.transmit_complete,
+            "overruns": self.overruns,
             "received": self.received,
             "transmitted": self.transmitted,
+            "timed_transmit": self.timed_transmit,
+            "transmit_busy": self.transmit_busy,
+            "transmit_overruns": self.transmit_overruns,
         }
+
+
+class DteInputTiming:
+    """Bounded passive timing of online UART deliveries, separate from boot logs."""
+
+    def __init__(self):
+        self.count = 0
+        self.first = []
+        self.recent = deque(maxlen=16)
+        self.largest_gaps = []
+        self.previous = None
+        self.blocked_counts = {}
+        self.blocked_examples = {}
+
+    def blocked(self, reason, *, instructions, line_frame, pending, wire_started):
+        self.blocked_counts[reason] = self.blocked_counts.get(reason, 0) + 1
+        event = {'instructions': instructions, 'line_frame': line_frame,
+                 'pending': list(pending),
+                 'wire_elapsed_instructions': instructions - wire_started}
+        if (reason not in self.blocked_examples or event['wire_elapsed_instructions']
+                > self.blocked_examples[reason]['wire_elapsed_instructions']):
+            self.blocked_examples[reason] = event
+
+    def observe(self, *, instructions, line_frame, byte, queued, wire_started):
+        event = {'index': self.count, 'instructions': instructions,
+                 'line_frame': line_frame, 'byte': byte, 'queued': queued,
+                 'wire_elapsed_instructions': instructions - wire_started}
+        if self.previous is not None:
+            gap = instructions - self.previous['instructions']
+            event['gap_instructions'] = gap
+            self.largest_gaps.append(dict(event))
+            self.largest_gaps.sort(key=lambda item: (-item['gap_instructions'], item['index']))
+            del self.largest_gaps[8:]
+        if len(self.first) < 16:
+            self.first.append(dict(event))
+        self.recent.append(dict(event))
+        self.previous = event
+        self.count += 1
+
+    def status(self):
+        return {'deliveries': self.count, 'first': list(self.first),
+                'recent': list(self.recent), 'largest_gaps': list(self.largest_gaps),
+                'blocked_counts': dict(self.blocked_counts),
+                'blocked_examples': dict(self.blocked_examples)}
 
 
 class DteTransmitLine:

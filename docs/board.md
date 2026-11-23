@@ -1075,7 +1075,7 @@ The boot block copies all of the 512-byte part into RAM `0x058e..0x078d`, and
 calculates its checksum there at `0x81412`. Byte 511 holds the sum of bytes
 0..509. The routine adds byte 510 and then removes it again immediately.
 
-Because of that window, `artifacts/courier-board-21210-ram-403/` contains the
+Because of that window, `dumps/courier-board-21210-ram-403/` contains the
 part itself. `CourierNvram.idsl403_fixture()` is those 512 bytes, not
 synthesised data. Three items of evidence show that it is the store. It is
 identical across the two capture passes. Its stored byte `0xbd` agrees with the
@@ -1440,7 +1440,7 @@ in program space, and writable memory is above it.
 | 'C52 | none | 4K | 1 | excluded by the `PQ` suffix and by SARAM use |
 
 We read all of the 8K into
-`artifacts/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin`, and most of it is not
+`dumps/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin`, and most of it is not
 programmed. It contains 1920 words of boot code at `0x0000`-`0x077F`, a
 128-word mailbox block at `0x1F80`, and 6144 words of a 32-word `FFFF`/`0000`
 array pattern. Since then, we also read all of the part of the 20.16 MHz board.

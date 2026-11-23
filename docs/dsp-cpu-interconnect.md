@@ -20,7 +20,7 @@ DSP on the same bus as the SRAMs, and the serial theory is retired. Refer to
 
 ## The proven part
 
-The evidence is `artifacts/dsp-onchip-rom-01/`, and **only** that directory:
+The evidence is `dumps/dsp-onchip-rom-01/`, and **only** that directory:
 "read from the DSP of a live Courier", 20.16 MHz board, ID_SDL v4.03d,
 2026-09-07. We put a kernel in supervisor RAM with `ATGLK2W` and started it
 from the Timer 0 interrupt. The kernel ran at DSP program `0x8000`, read the
@@ -35,7 +35,7 @@ We measured this result.
 
 The ROM came off the board **in two halves**. The cause is that the watchdog
 resets the DSP before a 2048-word frame can complete. The two real captures
-are `artifacts/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`.
+are `dumps/dsp-onchip-rom-01/half0-frame.txt` and `half1-frame.txt`.
 `dsp-onchip-rom-01/manifest.json` records how we joined them.
 
 > **Make sure that you cite the correct directory.** The top-level
@@ -910,7 +910,7 @@ We measured this on the 403 plain dial that fails, with `--trace-pc` on each
 branch of the handler:
 
 ```sh
-./courier run artifacts/courier-board-21210-capture-403/courier-board.rom \
+./courier run dumps/courier-board-21210-capture-403/courier-board.rom \
     --with-dsp --exchange --exchange-number 6245=answer --tick-ms 5 \
     --board-id 7 --nvram-fixture idsdl403 --at 'ATDT6245' \
     --instructions 150000000 --summary \

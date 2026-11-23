@@ -1,6 +1,7 @@
 # Capture artifacts
 
-This directory has the primary evidence from the physical Couriers and from the offline probes. Each
+This directory has the primary evidence from the physical Couriers and from the offline probes.
+The flash, RAM and ROM images that we read from the boards are in [`dumps/`](../dumps/README.md). Each
 capture directory keeps its own `manifest.json`. That file records the acquisition details,
 the hashes and the assumptions. Use that file as the authority for what a capture is.
 
@@ -43,9 +44,6 @@ retained tracked reports and summaries are available in a new clone.
 
 | Directory | Contents |
 |---|---|
-| `courier-board-21210-capture-01/` | Full 512 KiB CPU flash window read from the 20.16 MHz board, with its audit and the check of the recovered handler |
-| `courier-board-21210-ram-01/` | Two live passes over physical `00000..0feff` |
-| `courier-board-21210-upper-ram-01/` | Two live passes over the `10000..1ffff` window |
 | `atg-monitor/` | The first two `ATGLK2=` page reads that we did manually, and their comparisons |
 | `io-port-map/` | `ATGLK2B` port-space sweeps from two units, and the output of the static IN/OUT scan |
 | `dsp-port-sample-01/` | Repeated reads of the DSP reader ports and of the `0x64`-`0x7e` block from the 20.16 MHz unit |
@@ -66,20 +64,3 @@ retained tracked reports and summaries are available in a new clone.
 | `io-latch-bit2-01/` | Port `0x14` bit 2 probe |
 | `dsp-rom-probe-v1/`, `dsp-rom-transport-v*/` | Offline probe and transport builds. No hardware was used |
 | `sdl-image-extraction-01/` | Firmware recovered from the vendor SDL packages in `docs/usrdl/`. It has the 16-byte download-record format of the loaders and the XOR 0x55 of the XMD. It also has the string comparison that shows that the Sportster Vi DSVD is a reduced Courier. The images do not have accurate flash addresses, because the record addresses are 16-bit and wrap. They are not tracked. No hardware was used |
-
-## What is not tracked
-
-`.gitignore` excludes two intermediate directories, one entry for each page:
-
-- `responses/` — one raw serial reply for each page request
-- `blocks/` — the verified 256-byte pages
-
-Together, they are about 32 MB across 8,200 files. All their contents can be
-reconstructed from the assembled images and `pages.jsonl`, which are tracked.
-
-Thus, **`audit_capture.py` cannot run from a new clone**. It
-parses `responses/` again and compares them with `blocks/`. It works only in a
-working tree that still has the original capture output. The assembled images,
-the hashes of each page in `pages.jsonl`, and the final hashes in `manifest.json` and
-`audit.json` are tracked. Thus, you can still verify the images independently
-without those directories.

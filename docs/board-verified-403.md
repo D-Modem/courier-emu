@@ -30,7 +30,7 @@ The boot block copies the whole 512-byte part into RAM `0x058e..0x078d` and
 checksums it there at `0x81412`: byte 511 holds the sum of bytes 0..509, with
 byte 510 added and taken straight back out.
 
-That window is why `artifacts/courier-board-21210-ram-403/` contains the part
+That window is why `dumps/courier-board-21210-ram-403/` contains the part
 itself, and `CourierNvram.idsl403_fixture()` is those 512 bytes rather than
 anything synthesised. Three things agree it is the store: it is identical across
 both capture passes, its stored byte `0xbd` matches the rule where the

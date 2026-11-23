@@ -18,7 +18,7 @@ p.add_argument('--instructions', type=int, default=2_500_000)
 a = p.parse_args()
 with TemporaryDirectory() as tmp:
     params = Path(tmp) / 'parameters.bin'
-    shutil.copyfile('artifacts/3453c-parameter-sector-20261003/f8000-fbfff.bin', params)
+    shutil.copyfile('dumps/3453c-parameter-sector-20261003/f8000-fbfff.bin', params)
     m = CourierMachine(XmfImage.load('2_3_33.XMF'), with_dsp=True, board_id=0,
         tick_ms=5, serial_input=(a.command+'\r').encode(),
         daa=CourierDaa('disconnected'), codec=CodecBringUp(SiliconDaa(1, revision=19)),

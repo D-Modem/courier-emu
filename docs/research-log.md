@@ -1,5 +1,51 @@
 # Research notes
 
+## Results from the upstream repository, 2026-10 and 2026-11
+
+These results come from the upstream repository (`cryan209/courier-emu`).
+
+**3453 flash boot.** The captured normal firmware and bootmodem of the 3453 B/C
+and 3453 C now boot and answer AT commands. The loader accepts split bootmodem
+transfers and private 1 MiB whole-flash images. `--power-on` runs the real
+reset loader and its CRC checks. `--firmware-mode` selects a direct entry. The
+`ATZ!!` handlers of the guest change the mode. Refer to
+[3453 flash boot](3453-flash-boot.md). This result does not show that V.92
+negotiation operates.
+
+**3453 data path.** Two unchanged B/C peers exchange different 32-byte ASCII
+payloads without errors in the two directions, over native Bell 103 PCM. The
+terminal must type with a delay. A DTR drop on one side gives a real
+`NO CARRIER` on the two peers, and the two peers go on-hook. Refer to
+[the 3453 data-path evidence](../artifacts/3453-bell103-data-path-20261015/README.md).
+
+**Apple USB Modem line.** An experimental
+[Apple USB Modem line backend](apple-usb-line.md) (macOS, Apple A1082) sends
+real hardware PCM to the codec grid of the Courier. It controls the hook and
+the ring through USB. A physical-line call into an I-modem with a SIP bearer
+exchanges 180-byte ASCII payloads without errors in the two directions, at
+9600 bit/s V.32/LAPM. Refer to
+[the advanced modem controls](../artifacts/apple-advanced-sip/README.md),
+[the hook fix](apple-firmware-hook-fix.md),
+[the sustained traffic test](apple-sustained-traffic.md) and
+[the 7910 training diagnosis](apple-7910-training.md). One call gets
+**CONNECT 19200/V34/LAPM**. Sustained reliability, V.34 at full rate and V.90
+are not yet qualified.
+
+**I-modem V.90 to a RasFinder.** A Linux I-modem call to RasFinder 6312 gets
+**CONNECT 49333/ARQ/V90/LAPM** and receives the login prompt. Refer to
+[the RasFinder call](imodem-rasfinder-v90-20261025.md),
+[the live timing fix](imodem-v90-live-timing-fix-20261025.md),
+[the UART starvation fix](imodem-v90-uart-starvation-fix-20261025.md) and
+[the faster return path](imodem-v90-faster-return-path-20261025.md). With
+`--bri-sip-tx-buffer-ms`, calls qualify at 31200/49333 (6312) and 28800/49333
+(6313), with 60-second holds and ten `ATI6` queries. The live scheduler is
+experimental, and it is off by default.
+
+**Browser console.** `./courier gui` opens a local browser console. Refer to
+[the browser GUI](gui.md).
+
+## Earlier results
+
 The AT interface of the I-modem now answers. `isdn-run` now models the receive
 side of the 386EX SIO: RBR, IIR, MSR and the IRQ3 line that its own ISR at
 `0xb2aa2` names. Thus, you can type commands at the firmware and read back its
@@ -25,7 +71,31 @@ The [I-modem/analogue Courier pair](imodem-analog-pair.md) sets up native
 Bell 103 carrier at 300 bps. It transfers terminal data in the two directions
 with the `--protocol bell103` preset of the paired probe. The six-word ASIC data
 window and the acknowledgements of the I-modem now move the payload through the
-original DSP firmware. V.34 carrier is not yet solved.
+original DSP firmware. The later
+[analog UART starvation fix](imodem-v34-uart-starvation-fix-20261026.md) passes
+these tests with zero UART overruns, BLERs, retransmissions and link timeouts:
+
+- Repeated 20-second duplex tests with a 512-byte ASCII payload, at
+  14400 and 21600 bit/s V.34/LAPM
+- One 60-second test at 14400 bit/s V.34/LAPM
+
+The fix corrects the coupling of the RX and TX requests, the order of the
+serial requests and the TX completion that took zero time.
+
+The [x2 follow-up](imodem-x2-s39-headroom-20261027.md) finds the cause of the
+upstream CRC failure: the captured profile has the incorrect transmit level
+S39=0. With `--analog-tx-level 8`, most of the upstream errors stop, and one
+20-second 52000/x2 duplex test passes. But other calls, and a 60-second run,
+still stop in the downstream direction. The
+[downstream boundary trace](imodem-x2-downstream-output-boundary-20261027.md)
+finds a frame with a correct FCS before the HDLC processing of the analog DSP.
+Three octets of this frame are missing from the host-bank output. A ceiling of
+53333 and finer service intervals also fail. One corrected call also has an
+upstream BLER. The [IRQ and lane follow-up](imodem-x2-irq-lanes-20261027.md)
+confirms a real 48000/x2 CONNECT. It also shows output loss when two correct
+input frames merge. Finer interrupt polling makes the delivery better, but the
+test still fails. 53333 is not a fixed rate limit in the code.
+**Sustained x2 and binary throughput are not yet qualified.**
 
 The captured 20.16 MHz DSP boot ROM is now integrated for the 302/403 firmware
 under `--with-dsp`. The DSP executes reset and downloads its resident through
@@ -79,13 +149,13 @@ launch the kernel is not yet verified.
 The same document describes the read-only `ATGLK2` serial collector for the
 20.16 MHz, 512 KiB modem of the user. That board now runs supervisor 7.4.16 /
 DSP 3.1.2. This is the image under
-`artifacts/courier-board-21210-capture-403/`. Before, the board reported
+`dumps/courier-board-21210-capture-403/`. Before, the board reported
 7.3.14 / DSP 3.0.13, and the older notes below describe that version:
 
 ```sh
 .venv/bin/python -m courier_emu.flash_dump \
   --device /dev/cu.usbserial-21210 --baud 115200 \
-  --output artifacts/courier-board-capture
+  --output dumps/courier-board-capture
 ```
 
 The command must have a new output directory. It checks the modem identity and

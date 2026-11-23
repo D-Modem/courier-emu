@@ -1,0 +1,94 @@
+{
+  "10.69.111.3_5012--192.168.88.122_15914--2cf888d3": {
+    "packets": 806,
+    "payload_bytes": 128960,
+    "first_time": 1792699608.523806,
+    "last_time": 1792699624.635982,
+    "gaps": [],
+    "max_interval_ms": 84.53798294067383
+  },
+  "192.168.88.122_15914--10.69.111.3_5012--0a7bcb19": {
+    "packets": 795,
+    "payload_bytes": 127200,
+    "first_time": 1792699608.528794,
+    "last_time": 1792699624.403697,
+    "gaps": [],
+    "max_interval_ms": 40.21501541137695
+  },
+  "10.69.220.8_62620--192.168.88.122_14366--a4496513": {
+    "packets": 599,
+    "payload_bytes": 95840,
+    "first_time": 1792699665.069518,
+    "last_time": 1792699677.034503,
+    "gaps": [
+      {
+        "after_sequence": 18022,
+        "next_sequence": 18025,
+        "sequence_delta": 3,
+        "timestamp_delta": 480,
+        "time": 1792699668.115993
+      },
+      {
+        "after_sequence": 18025,
+        "next_sequence": 18023,
+        "sequence_delta": 65534,
+        "timestamp_delta": 4294966976,
+        "time": 1792699668.116057
+      },
+      {
+        "after_sequence": 18024,
+        "next_sequence": 18026,
+        "sequence_delta": 2,
+        "timestamp_delta": 320,
+        "time": 1792699668.11611
+      }
+    ],
+    "max_interval_ms": 101.84311866760254
+  },
+  "10.69.111.3_5004--192.168.88.122_19638--36cb9f69": {
+    "packets": 606,
+    "payload_bytes": 96960,
+    "first_time": 1792699665.088945,
+    "last_time": 1792699677.22819,
+    "gaps": [],
+    "max_interval_ms": 58.157920837402344
+  },
+  "192.168.88.122_14366--10.69.220.8_62620--36cb9f69": {
+    "packets": 594,
+    "payload_bytes": 95040,
+    "first_time": 1792699665.195799,
+    "last_time": 1792699677.029181,
+    "gaps": [],
+    "max_interval_ms": 58.159828186035156
+  },
+  "192.168.88.122_19638--10.69.111.3_5004--a4496513": {
+    "packets": 594,
+    "payload_bytes": 95040,
+    "first_time": 1792699665.1971,
+    "last_time": 1792699677.034547,
+    "gaps": [
+      {
+        "after_sequence": 18022,
+        "next_sequence": 18025,
+        "sequence_delta": 3,
+        "timestamp_delta": 480,
+        "time": 1792699668.116026
+      },
+      {
+        "after_sequence": 18025,
+        "next_sequence": 18023,
+        "sequence_delta": 65534,
+        "timestamp_delta": 4294966976,
+        "time": 1792699668.116074
+      },
+      {
+        "after_sequence": 18024,
+        "next_sequence": 18026,
+        "sequence_delta": 2,
+        "timestamp_delta": 320,
+        "time": 1792699668.116122
+      }
+    ],
+    "max_interval_ms": 101.81283950805664
+  }
+}

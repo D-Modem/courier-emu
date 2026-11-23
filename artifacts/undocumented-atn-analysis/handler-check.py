@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_16, UC_HOOK_CODE
 from unicorn.x86_const import *
-rom = Path('artifacts/courier-board-21210-capture-403/courier-board.rom').read_bytes()
+rom = Path('dumps/courier-board-21210-capture-403/courier-board.rom').read_bytes()
 rows = []
 for suffix in ('0', '1', '7', '255', '256', 'X', 'L'):
     uc = Uc(UC_ARCH_X86, UC_MODE_16)

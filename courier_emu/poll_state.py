@@ -9,6 +9,17 @@ while a call is up, uses the same memory, so neither side ever copies.
 from __future__ import annotations
 
 import ctypes
+import time
+
+
+def native_monotonic_ns() -> int:
+    """CLOCK_MONOTONIC stamps shared with c5x_capi.cpp.
+
+    On macOS Python's time.monotonic_ns uses CLOCK_UPTIME_RAW, whose epoch
+    differs from clock_gettime(CLOCK_MONOTONIC). Elapsed-time clocks must not
+    be mixed when publishing absolute native polling/pacing anchors.
+    """
+    return time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 
 U8, U32, U64 = ctypes.c_uint8, ctypes.c_uint32, ctypes.c_uint64
 INFINITE = (1 << 64) - 1          # PitSlot.next_due: no wrap is due
@@ -52,6 +63,12 @@ class PollState(ctypes.Structure):
         ("pic_in", U64 * 4), ("pic_out", U64 * 4),
         # IRQ13 follows the DSP's timer output (IsdnMachine.poll_timers).
         ("tout_on", U8), ("tout_seen", U64),
+        # Opt-in live poll window, all clocks anchored to CLOCK_MONOTONIC.
+        ("live_ns", U64), ("live_until_ns", U64),
+        ("live_peripheral", U64), ("live_dsp", U64),
+        ("live_cpu_ns", U64), ("live_cpu_count", U64),
+        # UART-only wakeup, distinct from full socket/device service bounds.
+        ("serial_until", U64),
     ]
 
     def __init__(self) -> None:

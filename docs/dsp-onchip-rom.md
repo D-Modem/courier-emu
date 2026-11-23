@@ -1,6 +1,6 @@
 # The DSP's on-chip ROM, read off the board
 
-`artifacts/dsp-onchip-rom-01/c5x-onchip-rom.bin` is **2048 words read from the
+`dumps/dsp-onchip-rom-01/c5x-onchip-rom.bin` is **2048 words read from the
 DSP of the live 20.16 MHz Courier** on 2026-09-07, SHA-256
 `3e30fb31ac87fc9d0b8a85da245511ef3caa4e83249f56b5852d9d0829e93f67`. It is the
 object that all the arguments in [dsp-map-302.md](dsp-map-302.md) tried to find. It

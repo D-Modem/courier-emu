@@ -126,7 +126,7 @@ def scripted_pump(
         now; otherwise only the next command, once its turn comes.
         """
         channel = machine.channels[machine.command_base]
-        if len(channel.tx) > channel._sent:
+        if channel.output_pending:
             return 0
         if commands and not waiting[0]:
             return next_send[0]
@@ -179,6 +179,7 @@ def interactive_pump(
     output_stream: Any = None,
     local_echo: bool = True,
     ready_notice: Any = None,
+    binary_io: bool = False,
 ) -> Callable[[Any], None]:
     """Hand this terminal to the command port until Ctrl-] is typed.
 
@@ -192,14 +193,18 @@ def interactive_pump(
     stream instead.
 
     Raw mode is the caller's business (`raw_terminal` below); this only moves
-    bytes, so it works just as well against a pipe.  Input is left unread
+    bytes, so it works just as well against a pipe. ``binary_io`` disables
+    local echo, LF translation and the Ctrl-] escape, and writes framing-decoded
+    bytes without ASCII replacement. It requires an 8N1 firmware setting for
+    eight-bit transparency; EOF stops the machine in this mode.
+    Input is left unread
     until `after`, which is what makes a piped script behave the same as a
     person: everything typed before the command task exists is discarded by
     the firmware, and a pipe delivers its whole script in the first
     millisecond.
     """
     source = input_stream if input_stream is not None else sys.stdin
-    sink = output_stream if output_stream is not None else sys.stdout
+    sink = output_stream if output_stream is not None else (sys.stdout.buffer if binary_io else sys.stdout)
     notice = ready_notice
     announced = [False]
     detached = [False]
@@ -210,7 +215,7 @@ def interactive_pump(
         framing = machine.dte_framing()
         incoming = machine.take_serial()
         if incoming:
-            sink.write(_readable(incoming, framing))
+            sink.write(received(incoming, framing) if binary_io else _readable(incoming, framing))
             sink.flush()
         if detached[0] or machine.instructions < after:
             return
@@ -221,17 +226,28 @@ def interactive_pump(
             announced[0] = True
             notice.write("[command port ready]\n")
             notice.flush()
-        if clock_origin[0] is None:
-            clock_origin[0] = (machine.instructions, time.monotonic())
-        if machine.instructions >= next_clock_sync[0]:
-            guest_start, wall_start = clock_origin[0]
-            guest_seconds = (
-                machine.instructions - guest_start
-            ) / INSTRUCTIONS_PER_SECOND
-            delay = wall_start + guest_seconds - time.monotonic()
-            if delay > 0:
-                time.sleep(delay)
-            next_clock_sync[0] = machine.instructions + INSTRUCTIONS_PER_SECOND // 100
+        live_clock = (getattr(machine, 'with_dsp', False)
+                      and machine._live_bearer())
+        if live_clock:
+            # SIP already clocks the DSP and supervisor peripherals from
+            # monotonic time. An additional instruction-count throttle holds
+            # the CPU asleep while the DSP needs its data banks serviced.
+            # In particular the three-bit FSK word stream must not acquire
+            # host sleep gaps between otherwise correct bit patterns.
+            clock_origin[0] = None
+            next_clock_sync[0] = machine.instructions
+        else:
+            if clock_origin[0] is None:
+                clock_origin[0] = (machine.instructions, time.monotonic())
+            if machine.instructions >= next_clock_sync[0]:
+                guest_start, wall_start = clock_origin[0]
+                guest_seconds = (
+                    machine.instructions - guest_start
+                ) / INSTRUCTIONS_PER_SECOND
+                delay = wall_start + guest_seconds - time.monotonic()
+                if delay > 0:
+                    time.sleep(delay)
+                next_clock_sync[0] = machine.instructions + INSTRUCTIONS_PER_SECOND // 100
         try:
             ready, _, _ = select.select([source], [], [], 0)
         except (OSError, ValueError):  # pragma: no cover - closed stream
@@ -242,14 +258,17 @@ def interactive_pump(
         data = os.read(source.fileno(), 256)
         if not data:
             detached[0] = True
+            if binary_io:
+                machine.stop("binary terminal EOF")
             return
-        if DETACH_BYTE in data:
+        if not binary_io and DETACH_BYTE in data:
             data = data[: data.index(DETACH_BYTE)]
             detached[0] = True
         if data:
             # A terminal sends CR for Return; the parser wants exactly that.
-            data = data.replace(b"\n", b"\r")
-            if local_echo:
+            if not binary_io:
+                data = data.replace(b"\n", b"\r")
+            if local_echo and not binary_io:
                 # Show it the way a terminal would: Return moves to column one
                 # and down a line.
                 sink.write(data.decode("ascii", "replace").replace("\r", "\r\n"))

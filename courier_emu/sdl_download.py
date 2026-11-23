@@ -1,7 +1,7 @@
 """Host side of the Courier boot-block flash loader, as used by FreeLSD/SDL.EXE.
 
 This drives the downloader that lives in the top 16 KiB flash block, recovered
-from ``artifacts/courier-board-21210-capture-01/courier-board.rom``. It is a
+from ``dumps/courier-board-21210-capture-01/courier-board.rom``. It is a
 different mechanism from the application's ``AT~X!`` XMODEM updater and takes a
 raw 512 KiB flash image rather than an ``.XMD`` container.
 

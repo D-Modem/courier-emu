@@ -27,7 +27,7 @@ To capture a full program map as little-endian 16-bit words, use this command:
 
 ```
 .venv/bin/python tools/3453c_monitor.py dump program 0000 7fff --fast \
-  --output artifacts/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin
+  --output dumps/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin
 ```
 
 Before the host publishes the completed binary, it examines the opening

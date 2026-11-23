@@ -76,6 +76,7 @@ def test_transmit_retune_inside_undrained_batch_preserves_physical_tone():
 def test_audio_line_frames_are_paced_at_codec_rate():
     bridge = CourierDspBridge.__new__(CourierDspBridge)
     bridge._audio_only = True
+    bridge.line = None
     bridge.core = _Core(codec_rate=7_200)
     bridge._audio_codec_frames = 0
     bridge._audio_line_samples_due = 0.0

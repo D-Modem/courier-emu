@@ -9,7 +9,7 @@
   "mismatched": 0,
   "unreadable": 0,
   "sha256": "f1c91621fbf14aad34547056feb4425e64fcf0b38ec5d57f86c9f432ca999db6",
-  "identical_to": "artifacts/courier-board-21210-capture-403/courier-board.rom"
+  "identical_to": "dumps/courier-board-21210-capture-403/courier-board.rom"
  },
  "conclusion": "Flash is byte-identical to the earlier capture. Nothing in this session wrote it.",
  "why it could not have happened": [

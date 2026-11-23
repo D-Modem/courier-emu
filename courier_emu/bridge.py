@@ -422,6 +422,9 @@ class BridgeStatus:
     dsp_mmr_writes: dict[str, int] | None = None
     dsp_cells: dict[str, str] | None = None
     dsp_writes: list[dict[str, int]] | None = None
+    configured_scheduling_batch: int = 256
+    scheduling_batch: int = 256
+    scheduling_batch_changes: list[dict[str, Any]] = field(default_factory=list)
 
 
 class CourierDspBridge:
@@ -448,6 +451,7 @@ class CourierDspBridge:
         dsp_trace_range: tuple[int, int] | None = None,
         dsp_peek: dict[int, str] | None = None,
         dsp_write_watch: int | None = None,
+        trace_rom_link_errors: bool = False,
         rx_acquisition_assist: bool = False,
         legacy_carrier_fallback: bool = False,
         auto_answer: bool = True,
@@ -487,8 +491,15 @@ class CourierDspBridge:
         self.is3453 = resident_origin == 0x1000 and boot_rom.pmst_setting(
             _program_words(self.image), resident_origin) == 0x18b8
         self.board3453 = None
-        self.boot_rom_enabled = self.is3453 or boot_rom.maps_onchip_rom(
+        self.maps_onchip_rom = boot_rom.maps_onchip_rom(
             _program_words(self.image), resident_origin
+        )
+        # Mapping the part's interrupt ROM does not imply that the CPU uses
+        # the ROM resident-download protocol. XMF's single-window transport
+        # retains its preloaded-resident model; only the two-window ROM
+        # transport (or Board3453) drives the mask-ROM service loader.
+        self.boot_rom_enabled = self.is3453 or (
+            self.maps_onchip_rom and self.transfer is ROM_TRANSFER
         )
         self.core = NativeC5x(image, model="c52" if self.is3453 else "c51")
         self._configure_boot_rom()
@@ -500,6 +511,7 @@ class CourierDspBridge:
         self._dsp_trace_range = dsp_trace_range
         self.dsp_peek = dict(dsp_peek or {})
         self.dsp_write_watch = dsp_write_watch
+        self.trace_rom_link_errors = trace_rom_link_errors
         self._arm_core_traces()
         self._call_overlay = self._find_call_overlay()
         self._call_overlay_active = False
@@ -512,6 +524,8 @@ class CourierDspBridge:
         self._call_resume_pending = False
         self._call_resume_state: dict[str, int | bool] | None = None
         self.batch = batch
+        self._configured_batch = batch
+        self._scheduling_batch_changes: list[dict[str, Any]] = []
         self._lanes = self.transfer.lanes()
         self._windows = {
             strobe: bytearray(b"\xff" * 8) for strobe, _ in self.transfer.windows
@@ -687,6 +701,8 @@ class CourierDspBridge:
         self._exchange_codec_mark = 0
         self._exchange_codec_last = 0
         self._exchange_idle = 0
+        # Experimental SIP-only extraction batching; never batches DSP clocks.
+        self._sip_codec_batch = os.environ.get('COURIER_SIP_CODEC_BATCH') == '1'
         self._exchange_tx_index = 0
         self._exchange_rx_samples: deque[int] = deque()
         self._dial_tone_digit: str | None = None
@@ -887,15 +903,21 @@ class CourierDspBridge:
         )
         self._exchange_line_buffer.extend(converted)
 
+    def _clocked_line_input(self) -> bool:
+        """ROM line PCM stays at 8 kHz until the native codec's ADC edge."""
+        return bool(getattr(self, 'boot_rom_enabled', False)
+                    and (getattr(self, 'line', None) is not None
+                         or getattr(self, '_sip_line', None) is not None)
+                    and hasattr(self.core, 'queue_line_rx'))
+
     def _queue_line_audio(self, samples: list[int]) -> None:
-        """Feed the ADC; socket conversion happens at its actual clock edge."""
+        """Feed line PCM to the ADC at its actual codec clock edge."""
         if not samples:
             return
         self._codec_in_peak = max(
             self._codec_in_peak, _peak(samples))
         rate = self.codec_sample_rate()
-        clocked_input = (getattr(self, "boot_rom_enabled", False) and self.line is not None
-                         and hasattr(self.core, "queue_line_rx"))
+        clocked_input = self._clocked_line_input()
         converted = samples if clocked_input else self._line_to_codec.convert(samples, rate)
         if not clocked_input and converted and rate > 0 and rate != self._rx_cushion_rate:
             # The line arrives a frame at a time and the AC01 takes a sample
@@ -1340,6 +1362,10 @@ class CourierDspBridge:
         traced = os.environ.get("COURIER_DSP_TRACE_REGISTER")
         if traced and hasattr(self.core, "trace_register"):
             self.core.trace_register(int(traced, 0), 4_000_000)
+        if self.trace_rom_link_errors and hasattr(self.core, 'set_pc_capture'):
+            # The resident is downloaded later. Validate its original words
+            # when the error snapshot is taken, before interpreting any rows.
+            self.core.set_pc_capture(0x8304, [0x320, 0x322])
         if self._dsp_trace_range is not None and hasattr(self.core, "set_pc_trace_range"):
             # A third C50 trace window, for a handler the two compiled-in
             # ranges do not cover.
@@ -1364,6 +1390,10 @@ class CourierDspBridge:
             self.board3453 = Board3453(self)
             return
         if not self.boot_rom_enabled:
+            if self.maps_onchip_rom:
+                # XMF still needs the silicon's interrupt vectors, but must
+                # not erase its preloaded resident or start the ROM loader.
+                boot_rom.install(self.core)
             return
         self.core.configure_rom_codec()
         boot_rom.install(self.core)
@@ -1379,6 +1409,9 @@ class CourierDspBridge:
             window = self._windows[self.transfer.first_strobe]
             self._download_destination = window[0] | (window[1] << 8)
         if asserted and not self._reset_asserted:
+            # The physical codec/DAA keeps clocking while its DSP is reset.
+            # Tell it before core.reset(), tracing or a download can block.
+            self._sync_physical_control(resetting=True)
             self._reset_log.append({
                 "frame": self.line.frames if self.line is not None else -1,
                 "instructions": self._instructions,
@@ -1386,6 +1419,7 @@ class CourierDspBridge:
             })
             self.float_runtime_bus()
             self.core.reset()
+            self._set_scheduling_batch(self._configured_batch, 'dsp-reset')
             if getattr(self, "board3453", None) is not None:
                 self.board3453.reset()
             self._rx_cushion_rate = None
@@ -1771,7 +1805,8 @@ class CourierDspBridge:
         A leased pair has neither an exchange nor a ring, so there the role
         is the board's auto-answer strap, or the command if one named it.
         """
-        if self.exchange is None and not self.boot_rom_enabled:
+        if (self.exchange is None and not self.boot_rom_enabled
+                and not getattr(self.line, "codec_direct", False)):
             # Without a modeled line the seizure is still the stand-in's: the
             # DAA is driven from the parsed command, and following the relay
             # as well would have the two fight over the same hook.
@@ -1780,6 +1815,7 @@ class CourierDspBridge:
             return
         if not off_hook:
             self.daa.release()
+            self._sync_physical_control()
             if self.exchange is not None:
                 self.exchange.service(False, [], 1)
             return
@@ -1790,6 +1826,7 @@ class CourierDspBridge:
         else:
             answering = self.auto_answer
         self.daa.seize("answer" if answering else "originate")
+        self._sync_physical_control()
 
     def begin_dialing(self) -> None:
         if self.daa is not None:
@@ -2437,6 +2474,16 @@ class CourierDspBridge:
         self._connected_event_queued = True
         self._carrier_source = "forced-diagnostic" if diagnostic else "legacy-host-fallback"
 
+    def _set_scheduling_batch(self, batch: int, reason: str) -> None:
+        if self.batch == batch:
+            return
+        self._scheduling_batch_changes.append({
+            'instructions': self._instructions, 'old': self.batch,
+            'new': batch, 'reason': reason,
+        })
+        del self._scheduling_batch_changes[:-32]
+        self.batch = batch
+
     def _record_runtime_message(self, words: tuple[int, int], pc: int | None) -> None:
         self.runtime_words_queued += len(words)
         message = f"{words[0]:04x}:{words[1]:04x}"
@@ -2444,6 +2491,17 @@ class CourierDspBridge:
         self.runtime_message_counts[message] += 1
         self.runtime_message_first_seen.setdefault(message, self._instructions)
         self._observe_asic_command(*words)
+        if (words[0] == 0x000A and self.boot_rom_enabled
+                and self._sip_line is not None and self.batch > 1024):
+            # The resident's receive-mode command enables byte delivery to
+            # the six ASIC banks. A 4096-instruction SIP training batch can
+            # publish multiple XF edges and more than six V.90 data bytes
+            # before the CPU gets to ACK any of them. Polling IRQs every 64
+            # instructions cannot recover edges the DSP has not run yet.
+            # Bound coupling latency once streaming starts; retain the coarse
+            # training path's real-time headroom. Carry all accumulated clock
+            # credits unchanged: neither processor's clock rate is altered.
+            self._set_scheduling_batch(1024, 'sip-receive-mode')
         if pc is not None:
             self.runtime_message_first_pc.setdefault(message, f"{pc:05x}")
 
@@ -2676,6 +2734,7 @@ class CourierDspBridge:
             # operation. Recognize the program's first transfer window; port
             # 0x1c also carries ordinary handshakes and is not a reset signal
             # by itself.
+            self._sync_physical_control(resetting=True)
             self._dump_register_trace()
             self.core.close()
             self.core = NativeC5x(self.image)
@@ -2700,7 +2759,7 @@ class CourierDspBridge:
             # discarded 31 ms after it arrives, and every later frame with it.
             if self._codec_in_flight and hasattr(self.core, "queue_codec_rx"):
                 self._codec_replayed = len(self._codec_in_flight)
-                if self.boot_rom_enabled and self.line is not None:
+                if self._clocked_line_input():
                     self.core.queue_line_rx(list(self._codec_in_flight))
                 else:
                     self.core.queue_codec_rx(list(self._codec_in_flight))
@@ -3045,6 +3104,10 @@ class CourierDspBridge:
                     (self.core.state()["instructions"], self._instructions, self.core.state()["cycles"]))
             except Exception:
                 pass
+        # Control is independent of the active/launched DSP guard below.
+        # HAL callbacks provide reset silence until actual PCM resumes.
+        if getattr(self.line, "codec_direct", False):
+            self._sync_physical_control()
         if self.exchange is not None:
             # The loop and the exchange behind it exist from board reset, the
             # same as the codec and before any DSP program is downloaded. A
@@ -3225,6 +3288,42 @@ class CourierDspBridge:
         except RuntimeError as exc:
             self.error = str(exc)
 
+    def sip_clock_waiting(self, count: int) -> bool:
+        """Whether this pass ends before every SIP bridge work deadline."""
+        return not (
+            count <= 0 or getattr(self, '_sip_line', None) is None or self.line is not None
+            or self.exchange is None or not self.active or self.error
+            or (self.boot_rom_enabled and not self.launched)
+            or (self._runtime_mode and not self._runtime_ready)
+            or self._x86_ticks + count >= self.batch
+            or self._exchange_instructions + count >= self.batch
+            or (self.codec is not None
+                and self._codec_instructions + count >= LINE_FRAME_INSTRUCTIONS))
+
+    def _clock_sip_waiting(self, count: int) -> bool:
+        """Accumulate a quiet SIP pass without delaying any device deadline.
+
+        ROM XF recognition can poll every 64 CPU instructions while the DSP
+        and exchange batch is 4096. The full clock does only these counter
+        updates between batches. Do not reuse this for a physical codec, an
+        inactive/starting core, or a pending runtime-ready transition.
+        """
+        if not self.sip_clock_waiting(count):
+            return False
+        self._instructions += count
+        if self._instructions - getattr(self, '_probe_clock_last', 0) >= 200_000:
+            self._probe_clock_last = self._instructions
+            try:
+                self.__dict__.setdefault('probe_clock', []).append(
+                    (self.core.state()['instructions'], self._instructions, self.core.state()['cycles']))
+            except Exception:
+                pass
+        self._exchange_instructions += count
+        if self.codec is not None:
+            self._codec_instructions += count
+        self._x86_ticks += count
+        return True
+
     def clock_x86_fast(self, count: int) -> bool:
         """`clock_x86` for the service in which nothing moves but the DSP.
 
@@ -3236,6 +3335,8 @@ class CourierDspBridge:
         having changed nothing, when any of them says there is work; the
         caller then runs `clock_x86` itself.
         """
+        if self._clock_sip_waiting(count):
+            return True
         core = self.core
         if (
             self._x86_ticks + count < self.batch
@@ -3246,8 +3347,9 @@ class CourierDspBridge:
             return False
         # _service_line: the codec has not yet made a batch of samples.
         produced = core.line_tx_writes()
-        if not (0 < produced - self._line_codec_last < LINE_SERVICE_MIN_SAMPLES
-                and self._line_service_skipped < LINE_SERVICE_MAX_SKIP):
+        minimum, max_skip = self.line_service_limits()
+        if not (0 < produced - self._line_codec_last < minimum
+                and self._line_service_skipped < max_skip):
             return False
         # Committed: the same updates, in the same order.
         self._instructions += count
@@ -3281,6 +3383,21 @@ class CourierDspBridge:
         self.finish_fast_clock(writes, tdm_active)
         return True
 
+    def line_service_limits(self) -> tuple[int, int]:
+        """Native polling may step the DSP, but must stop for physical I/O.
+
+        Unlike a socket peer, the physical backend consumes codec samples
+        directly. Its 20 ms deadline is the only batching boundary here.
+        """
+        if getattr(self.line, "codec_direct", False):
+            rate = self.codec_sample_rate()
+            if (getattr(self, '_exchange_tx_index', 1) > 0
+                    and rate != getattr(self, '_physical_codec_rate', rate)):
+                # Do not enlarge an in-flight batch when the ADC speeds up.
+                return 1, 64
+            return max(1, int(rate * getattr(self.line, 'codec_service_seconds', .02))), 64
+        return LINE_SERVICE_MIN_SAMPLES, LINE_SERVICE_MAX_SKIP
+
     def fast_clock_static(self) -> bool:
         """The tests of `clock_x86_fast` that only the harness can change.
 
@@ -3291,7 +3408,8 @@ class CourierDspBridge:
         daa = self.daa
         core = self.core
         if (
-            self.exchange is not None or self.sip is not None or self._audio_only
+            self.exchange is not None or self.sip is not None
+            or (self._audio_only and not getattr(self.line, "codec_direct", False))
             or self.line is None or self.error or not self.active
             or (self.boot_rom_enabled and not self.launched)
             or (self._runtime_mode and not self._runtime_ready)
@@ -3307,6 +3425,11 @@ class CourierDspBridge:
             scale = 0
         if scale != self._hybrid_return_applied:
             return False
+        if getattr(self.line, "codec_direct", False):
+            # The audio-only guard makes the synthetic call engines no-ops.
+            # Physical hook/ring and ADC/DAC queues move only at the next
+            # codec exchange; native polling stops before that exchange.
+            return True
         # _maybe_start_asic_call_engine and _advance_asic_call_phase.
         registers = self.asic_registers
         if not (registers.get(0x82) != 0x00A0 or self._call_overlay is None
@@ -3375,6 +3498,8 @@ class CourierDspBridge:
             # source is the model for a line with no exchange behind it.
             present = self.exchange.ringing
             part.set_ring(present, present)
+        elif getattr(self.line, "codec_direct", False):
+            part.set_ring(self.line.peer_ringing, self.line.peer_ringing)
         elif self.ring is not None:
             # A 20 Hz ring fits both half cycles inside a 100 ms frame, so a
             # burst shows on both detectors and silence on neither. Resolving
@@ -3395,6 +3520,13 @@ class CourierDspBridge:
         exchange decodes it from the audio, so the DAA's line state follows a
         call the firmware actually placed.
         """
+        # The native Si3034's external hook/ring pins belong to the board,
+        # not to the optional Python codec bring-up model. Without this
+        # update, API callers without CodecBringUp leave the line-side hook
+        # input at its reset value even while the guest seizes the DAA.
+        if self.is3453 and self.daa is not None:
+            self.core.set_si3034_line(self.daa.line_connected, self.daa.off_hook,
+                                     self.exchange.ringing if self.exchange is not None else False)
         # The codec is the clock for both directions, so the line advances
         # when the codec has clocked a frame - not when the 80186 has executed
         # some number of instructions. Those two disagree by about fifteen
@@ -3403,7 +3535,19 @@ class CourierDspBridge:
         # datapump was hearing the line about forty seconds late, which is to
         # say it was hearing whatever was on it before the call came up.
         produced = self.core.line_tx_writes()
-        if produced == self._exchange_codec_last:
+        if (getattr(self, '_sip_codec_batch', False)
+                and self._sip_line is not None
+                and self.boot_rom_enabled
+                and produced != self._exchange_codec_last
+                and 0 < produced - self._exchange_tx_index < LINE_SERVICE_MIN_SAMPLES):
+            # The DSP has already run. Amortize PCM/resampler crossings over
+            # at most 16 codec samples (2.23 ms at this ROM's 7200 Hz minimum).
+            # _take_line_audio still handles every intervening clock event.
+            self._exchange_codec_last = produced
+            self._exchange_idle = 0
+            return
+        if (produced == self._exchange_codec_last
+                and produced <= self._exchange_tx_index):
             # No codec clock yet - before the download, or a stalled core. The
             # line still has to run, so fall back to the instruction clock at
             # the same nominal frame.
@@ -3536,6 +3680,80 @@ class CourierDspBridge:
         self.core.set_hybrid_return(scale, self.HYBRID_RETURN_DELAY)
         self._hybrid_return_applied = scale
 
+    def _sync_physical_control(self, *, resetting: bool | None = None) -> None:
+        """Propagate real board control without a codec clock or PCM batch."""
+        if (not getattr(self.line, "codec_direct", False)
+                or not self.line.connected or self.error):
+            return
+        if resetting is None:
+            # Once paused, remain paused until actual new-generation PCM is
+            # ready. Merely deasserting reset does not prime an audio FIFO.
+            resetting = (self.line.resetting or not self.active
+                         or (self.boot_rom_enabled and not self.launched))
+        off_hook = self.daa is not None and self.daa.off_hook
+        try:
+            self.line.set_control(off_hook, resetting=bool(resetting))
+        except RuntimeError as exc:
+            self.error = str(exc)
+
+    def _service_physical_codec(self) -> None:
+        """Apple hardware on the native codec grid, without the 8 kHz hop."""
+        rate = self.codec_sample_rate()
+        if rate <= 0:
+            return
+        start = self._exchange_tx_index
+        produced = self.core.line_tx_writes()
+        off_hook = self.daa is not None and self.daa.off_hook
+        if produced - start < self.line_service_limits()[0]:
+            self._line_instructions += self.batch
+            # A stopped codec still needs hook release and hardware pacing.
+            if self._line_instructions < LINE_FRAME_INSTRUCTIONS:
+                return
+        native_receive = hasattr(self.line, 'enable_native_receive')
+        if native_receive and getattr(self, '_physical_receive_core', None) is not self.core:
+            # The FIFO remains on the hardware clock even when firmware
+            # retunes the ADC. No extra receive cushion is inserted.
+            self.core.set_line_input_rate(self.line.rate, cushion=0, prepared_only=True)
+            self.line.enable_native_receive()
+            self._physical_receive_core = self.core
+        self._line_instructions = 0
+        self._line_codec_last = produced
+        self._line_service_skipped = 0
+        samples = self.core.line_tx_samples(start)
+        self._exchange_tx_index += len(samples)
+        events = (self.core.line_tx_clock_events()
+                  if hasattr(self.core, "line_tx_clock_events") else [])
+        boundaries = []
+        for index, event_rate in events:
+            if index <= start:
+                rate = event_rate
+            elif index < self._exchange_tx_index:
+                boundaries.append((index - start, event_rate))
+        offset = 0
+        incoming = []
+        for end, next_rate in boundaries + [(len(samples), self.codec_sample_rate())]:
+            chunk = samples[offset:end]
+            if chunk:
+                incoming.extend(self.line.service_codec(chunk, rate, off_hook))
+            offset, rate = end, next_rate
+        if not samples:
+            interval = getattr(self.line, 'codec_service_seconds', .02)
+            incoming = self.line.service_codec([0] * max(1, int(rate * interval)), rate, off_hook)
+        if incoming:
+            self._line_rx_peak = max(self._line_rx_peak, _peak(incoming))
+            if native_receive:
+                self.core.queue_line_rx(incoming)
+            else:
+                self.core.queue_codec_rx(incoming)
+        self._physical_codec_rate = self.codec_sample_rate()
+        if self.daa is not None:
+            self.daa.line_state = "quiet" if self.line.connected else "disconnected"
+        if (self.line_frame_budget is not None
+                and self.line.frames >= self.line_frame_budget
+                and self.on_line_frame_budget is not None):
+            self.on_line_frame_budget()
+            self.on_line_frame_budget = None
+
     def _service_line(self) -> None:
         """Hand one frame to the far end and take its frame off the line.
 
@@ -3543,6 +3761,9 @@ class CourierDspBridge:
         because a modem waiting on hook still has to keep the far end's run
         moving.
         """
+        if getattr(self.line, "codec_direct", False):
+            self._service_physical_codec()
+            return
         if self._audio_only:
             # A frame sync is an ADC/DAC conversion whether or not the DSP
             # writes DXR. Use that clock, not CPU instruction counts or TX
@@ -3920,6 +4141,9 @@ class CourierDspBridge:
             mailbox_windows=dict(self.mailbox_windows.most_common()),
             runtime_messages=list(self.runtime_messages),
             runtime_message_counts=dict(self.runtime_message_counts.most_common()),
+            configured_scheduling_batch=self._configured_batch,
+            scheduling_batch=self.batch,
+            scheduling_batch_changes=list(self._scheduling_batch_changes),
             runtime_inbound_delivered=dict(self._runtime_inbound_delivered),
             runtime_message_first_seen=dict(self.runtime_message_first_seen),
             runtime_message_first_pc=dict(self.runtime_message_first_pc),

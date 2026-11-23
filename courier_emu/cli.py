@@ -24,6 +24,7 @@ from .panel import (
     USABLE_BOARD_IDS,
 )
 from .images import load_image
+from .dte_framing import DTE_FRAMINGS
 from . import imodem_config
 from .isdn import IsdnMachine
 from .bri import (
@@ -80,6 +81,13 @@ def _number(value: str) -> int:
     return int(value, 0)
 
 
+def _rtp_receive_delay_ms(value: str) -> int:
+    milliseconds = _number(value)
+    if not 0 <= milliseconds <= 1000:
+        raise argparse.ArgumentTypeError('RTP receive delay must be 0..1000 ms')
+    return milliseconds
+
+
 def _media_buffer_ms(value: str) -> int:
     milliseconds = _number(value)
     if milliseconds < 20:
@@ -87,9 +95,16 @@ def _media_buffer_ms(value: str) -> int:
     return milliseconds
 
 
+def _bri_sip_buffer_samples(args: argparse.Namespace) -> tuple[int, int]:
+    """Keep receive latency independent of the outgoing scheduling reserve."""
+    common = args.bri_sip_buffer_ms
+    return ((common or 40) * 8,
+            (args.bri_sip_tx_buffer_ms or common or 60) * 8)
+
+
 def _board_id(value: str) -> str:
     """Validate a board identification strap code, or 'none' for floating."""
-    if value == "none":
+    if value in {"auto", "none"}:
         return value
     try:
         code = int(value, 0)
@@ -181,12 +196,19 @@ def daa_codec_wanted(args: argparse.Namespace, image: object) -> bool:
 
 
 def _worker_command(args: argparse.Namespace) -> list[str]:
+    apple = getattr(args, "apple_modem", None)
+    if apple and (args.line_link or args.exchange or args.sip_server
+                  or getattr(args, "exchange_line_peer", None)
+                  or args.force_online or args.line_audio_only
+                  or args.ring or args.ring_cadence or args.dsp_rx_pcm
+                  or args.dsp_acquisition_assist):
+        raise ValueError("--apple-modem cannot mix with another line, synthetic ring/audio, or acquisition assistance")
     if args.line_audio_only:
         if not args.line_link:
             raise ValueError("--line-audio-only requires --line-link")
         if args.exchange or args.sip_server or args.force_online:
             raise ValueError("--line-audio-only cannot use exchange, SIP, or forced online mode")
-    image = load_image(args.image)
+    image = load_image(args.image, firmware_mode=args.firmware_mode, power_on=args.power_on)
     if args.with_dsp and not hasattr(image, "dsp_program_segments"):
         raise ValueError(
             f"{Path(args.image).name} carries no separable C51 payload for the "
@@ -201,6 +223,12 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         "--instructions",
         str(instruction_limit(args)),
     ]
+    if getattr(args, 'serial_output', None):
+        command.extend(('--serial-output', str(args.serial_output)))
+    if args.power_on:
+        command.append('--power-on')
+    if args.firmware_mode:
+        command.extend(("--firmware-mode", args.firmware_mode))
     if args.cpu_engine != "interpreter":
         command.extend(("--cpu-engine", args.cpu_engine))
     for assignment in args.port:
@@ -221,8 +249,16 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         command.extend(("--dsp-write-watch", args.dsp_write_watch))
     if args.mem_watch:
         command.extend(("--mem-watch", args.mem_watch))
+    if getattr(args, 'trace_rom_link_errors', False):
+        command.append('--trace-rom-link-errors')
+    if getattr(args, 'trace_rom_lapm', False):
+        command.append('--trace-rom-lapm')
     if args.io_watch:
         command.extend(("--io-watch", args.io_watch))
+    framing = getattr(args, 'dte_framing', None)
+    if framing is None:
+        framing = '8N1' if args.console or args.serial_pty else 'stored'
+    command.extend(('--dte-framing', framing))
     if args.real_delays:
         command.append("--real-delays")
     if args.track_executed:
@@ -234,6 +270,7 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         or args.daa_line
         or args.sip_server
         or args.line_link
+        or apple
         or args.exchange
         or daa_codec
         or args.force_online
@@ -241,11 +278,11 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         command.append("--with-dsp")
     if args.force_online:
         command.append("--force-online")
-    # A live SIP call has to keep up with an external clock. The native C51
-    # runner is insensitive to a four-frame scheduling batch on the complete
-    # ROM path, and this leaves ample real-time headroom. Keep the smaller
-    # diagnostic default everywhere else so existing trace boundaries do not
-    # move.
+    # A live SIP call needs real-time training headroom. The bridge reduces
+    # this coarse quantum when the ROM selects its receive-data handler:
+    # retaining 4096 then can overflow the six ASIC banks at V.90 rates.
+    # Keep the smaller diagnostic default elsewhere so trace boundaries do
+    # not move.
     dsp_batch = 4096 if args.sip_server and args.dsp_batch == 256 else args.dsp_batch
     if dsp_batch != 256:
         command.extend(("--dsp-batch", str(dsp_batch)))
@@ -253,7 +290,17 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         command.append("--daa-codec")
         command.extend(("--daa-codec-line", str(args.daa_codec_line)))
         command.extend(("--daa-codec-rate", str(args.daa_codec_rate)))
-        command.extend(("--daa-codec-revision", str(args.daa_codec_revision)))
+        revision = args.daa_codec_revision
+        if revision is None:
+            from .firmware3453 import profile_for
+            revision = 0x13 if profile_for(image) is not None else DAA_REVISION
+        command.extend(("--daa-codec-revision", str(revision)))
+    if apple:
+        command.extend(("--apple-modem", str(Path(apple).resolve()),
+                        "--apple-rate", str(args.apple_rate),
+                        "--apple-tx-gain", str(args.apple_tx_gain)))
+        if args.line_frames is not None:
+            command.extend(("--line-frames", str(args.line_frames)))
     if args.line_link:
         command.extend(("--line-link", str(args.line_link)))
         if args.line_audio_only:
@@ -267,7 +314,9 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
     # A linked instance always needs a DAA: the link drives its line state
     # frame by frame, starting from a line with nothing on the far end.
     daa_line = args.daa_line or ("dial-tone" if args.sip_server else None)
-    if daa_line is None and args.line_link:
+    if apple:
+        daa_line = "quiet"  # real hardware supplies call progress, never a generated dial tone
+    elif daa_line is None and args.line_link:
         daa_line = "disconnected"
     # An exchange needs a DAA too, and starts it from a line with nothing on
     # it: what the loop carries is the exchange's to decide from there.
@@ -317,6 +366,14 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         command.extend(("--tick-ms", str(args.tick_ms)))
     if args.frame_hz is not None:
         command.extend(("--frame-hz", str(args.frame_hz)))
+    if getattr(args, 'frame_source', None) is not None:
+        command.extend(('--frame-source', args.frame_source))
+    if getattr(args, 'interrupt_poll_instructions', None) is not None:
+        command.extend(('--interrupt-poll-instructions', str(args.interrupt_poll_instructions)))
+    if getattr(args, 'frame_irq_poll_instructions', None) is not None:
+        command.extend(('--frame-irq-poll-instructions', str(args.frame_irq_poll_instructions)))
+    if getattr(args, 'frame_codec_samples', 0) != 0:
+        command.extend(("--frame-codec-samples", str(args.frame_codec_samples)))
     if args.tick_source:
         command.extend(("--tick-source", args.tick_source))
     command.extend(("--board-id", args.board_id))
@@ -356,6 +413,9 @@ def _worker_command(args: argparse.Namespace) -> list[str]:
         command.extend(("--serial-input-hex", serial_input.hex()))
     if getattr(args, "serial_input_on_ring", False):
         command.append("--serial-input-on-ring")
+    delay = getattr(args, 'send_after_connect_delay_ms', 0)
+    if delay:
+        command.extend(('--serial-after-connect-delay-ms', str(delay)))
     for value in getattr(args, "send_after_connect", []):
         command.extend(("--serial-after-connect-hex", value.encode("latin-1").hex()))
     return command
@@ -428,6 +488,10 @@ def _link_side(args: argparse.Namespace, commands: list[str], listen: bool) -> l
         command.extend(("--dsp-write-watch", args.dsp_write_watch))
     if getattr(args, "mem_watch", ""):
         command.extend(("--mem-watch", args.mem_watch))
+    if getattr(args, 'trace_rom_link_errors', False):
+        command.append('--trace-rom-link-errors')
+    if getattr(args, 'trace_rom_lapm', False):
+        command.append('--trace-rom-lapm')
     if getattr(args, "track_executed", False):
         command.append("--track-executed")
     if args.line_frames is not None:
@@ -460,6 +524,9 @@ def _link_side(args: argparse.Namespace, commands: list[str], listen: bool) -> l
     # correctly strapped the ends in opposite roles.
     for text in commands or ["AT&L1"]:
         command.extend(("--at", text))
+    delay = getattr(args, 'a_send_delay_ms' if listen else 'b_send_delay_ms', 0)
+    if delay:
+        command.extend(('--send-after-connect-delay-ms', str(delay)))
     for text in args.a_send if listen else args.b_send:
         command.extend(("--send-after-connect", text))
     # The answering end waits to be offered the call. Its commands are held
@@ -524,6 +591,10 @@ def _run_linked_pair(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="courier-emu")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    gui = subparsers.add_parser("gui", help="open the local browser modem console")
+    gui.add_argument("--port", type=int, default=8765)
+    gui.add_argument("--no-browser", action="store_true")
+    gui.add_argument("--directory", type=Path, default=Path.cwd())
 
     info = subparsers.add_parser("info", help="validate and describe an XMF image")
     info.add_argument("image")
@@ -803,8 +874,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     isdn_run.add_argument(
         "--bri-sip-buffer-ms", type=_media_buffer_ms, metavar="MS",
-        help="prime both RTP playout directions with this much audio "
-             "(default: 40 ms receive, 60 ms transmit)",
+        help="prime bearer receive and RTP transmit queues with this much audio "
+             "(default: 40 ms receive, 60 ms transmit); receive reserve is "
+             "additional to --bri-sip-rtp-delay-ms",
+    )
+    isdn_run.add_argument(
+        "--bri-sip-tx-buffer-ms", type=_media_buffer_ms, metavar="MS",
+        help="override only the RTP transmit reserve (at least 20 ms), without "
+             "increasing receive latency; otherwise inherit --bri-sip-buffer-ms "
+             "or the 60 ms transmit default",
+    )
+    isdn_run.add_argument(
+        "--bri-sip-rtp-delay-ms", type=_rtp_receive_delay_ms, default=60, metavar="MS",
+        help="timestamp-based RTP receive deadline delay, 0..1000 ms "
+             "(default: 60); separate from the bearer queue reserve",
     )
     isdn_run.add_argument(
         "--bri-sip-record",
@@ -949,6 +1032,11 @@ def build_parser() -> argparse.ArgumentParser:
              "and its output is printed as it arrives. Ctrl-] detaches",
     )
     isdn_run.add_argument(
+        "--terminal-binary", action="store_true",
+        help="binary --terminal pipe: preserve LF/Ctrl-]/high bytes, no local echo; "
+             "firmware must use 8N1 for eight-bit data; EOF stops the run",
+    )
+    isdn_run.add_argument(
         "--local-echo",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -979,10 +1067,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="execute the 80186 application entry")
     run.add_argument("image")
+    run.add_argument('--power-on', action='store_true',
+                     help='execute captured 3453 flash from the hardware reset vector')
+    run.add_argument('--firmware-mode', choices=('normal', 'bootmodem'),
+                     help='entry mode for a captured 3453 whole-flash image')
     run.add_argument(
         "--cpu-engine", choices=("interpreter", "unicorn"), default="interpreter",
         help="x86 execution backend (interpreter uses the 80186EB profile)",
     )
+    run.add_argument("--lamps-fd", type=int, help=argparse.SUPPRESS)
     run.add_argument(
         "--leds",
         action="store_true",
@@ -1000,6 +1093,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="talk to the modem from this terminal while it runs: type AT "
         "commands, Ctrl-] to detach. Input may also be piped in",
+    )
+    run.add_argument(
+        "--dte-framing", choices=DTE_FRAMINGS, default=None,
+        help="terminal format completed by the byte attention adapter; defaults to "
+             "8N1 for console/pty sessions, stored for batch runs",
     )
     run.add_argument(
         "--serial-pty",
@@ -1073,6 +1171,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="record every write to this C51 data cell, hex, with the program "
         "address that made it. Unfiltered the trace fills in milliseconds",
     )
+    run.add_argument('--trace-rom-lapm', action='store_true',
+                     help='bounded passive 403 LAPM header, CRC-gate and flow/timer state trace')
+    run.add_argument('--trace-rom-link-errors', action='store_true',
+                     help='passively snapshot original 403 LAPM receive rejections and BLER increments')
     run.add_argument(
         "--mem-watch",
         default="",
@@ -1085,10 +1187,22 @@ def build_parser() -> argparse.ArgumentParser:
         type=_number,
         default=None,
         metavar="HZ",
-        help="rate to raise the board's INT0 frame edge at. The board was "
-        "measured at 2401 (artifacts/coop-int0-02); the default is the 391 the "
-        "rest of the harness is consistent with, and the difference between "
-        "them is an open fault, not a preference",
+        help="fixed INT0 frame rate, overriding codec-derived cadence and DSP XF edges",
+    )
+    run.add_argument('--frame-source', choices=('periodic', 'dsp-xf'), default=None,
+                     help='INT0 source: periodic clock or actual DSP XF edges; '
+                          'ROM-backed Courier DSP calls default to XF with '
+                          '64-instruction cooperative IRQ service')
+    run.add_argument('--frame-irq-poll-instructions', type=_number, default=64, metavar='N',
+                     help='DSP XF recognition interval, independently of ordinary IRQ polling')
+    run.add_argument('--interrupt-poll-instructions', type=_number, default=None, metavar='N',
+                     help='per-machine IRQ recognition interval; defaults to 64 for XF, '
+                          'legacy polling otherwise; does not change clock ratios')
+    run.add_argument(
+        '--frame-codec-samples', type=_number, default=0, metavar='N',
+        help='derive periodic INT0 from N live ROM codec samples per edge '
+             '(e.g. 3 follows the 2400/3200 Hz cadence); 0 keeps the legacy '
+             'rate (default); --frame-hz overrides this',
     )
     run.add_argument(
         "--libunicorn",
@@ -1165,11 +1279,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--daa-codec-revision",
         type=_number,
-        default=DAA_REVISION,
+        default=None,
         metavar="WORD",
-        help="revision the codec reports at power up, which ATI7 prints as "
-        f"'DAA rev' (default {DAA_REVISION}; zero is what the firmware calls "
-        "a DAA failure)",
+        help="ASIC-reported DAA revision (default 0x13 for captured 3453, "
+        f"{DAA_REVISION} otherwise; zero models an invalid identity)",
     )
     run.add_argument("--sip-server", metavar="HOST[:PORT]", help="send ATD calls via UDP SIP")
     run.add_argument(
@@ -1204,10 +1317,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--board-id",
         type=_board_id,
-        default=str(DEFAULT_BOARD_ID),
+        default="auto",
         metavar="CODE",
-        help="drive the four board identification straps with this 0-15 code, "
-        f"or 'none' to leave them floating (default: {DEFAULT_BOARD_ID})",
+        help="board straps: auto (3453 external; legacy default otherwise), "
+        "a supported 0-15 code, or 'none' for floating inputs",
     )
     run.add_argument(
         "--tick-ms",
@@ -1335,6 +1448,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="bind the --line-link socket instead of connecting to it",
     )
+    run.add_argument("--apple-modem", nargs="?", metavar="HELPER",
+                     const=str(Path(__file__).resolve().parents[1] / ".build/apple_line"),
+                     help="use the Apple USB modem as a hardware-only codec/FXO backend")
+    run.add_argument("--apple-rate", type=int, default=10286,
+                     choices=(7200, 8000, 8229, 8400, 9000, 9600, 10286),
+                     help="fixed hardware rate; must cover every negotiated Courier rate")
+    run.add_argument("--apple-tx-gain", type=float, default=1.0,
+                     help="codec-to-Apple output gain (0..1; default 1.0 preserves firmware levels)")
     run.add_argument("--line-audio-only", action="store_true",
                      help="PCM-only socket; disable synthetic training and carrier events (both ends must use it)")
     run.add_argument("--line-record", metavar="PREFIX",
@@ -1414,6 +1535,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="send an AT command after boot (a carriage return is appended)",
     )
     run.add_argument(
+        '--serial-output', type=Path, metavar='PATH',
+        help='stream all raw DTE output bytes to a file, independently of the bounded JSON report',
+    )
+    run.add_argument(
         "--serial-input",
         action="append",
         default=[],
@@ -1430,6 +1555,8 @@ def build_parser() -> argparse.ArgumentParser:
         "as a terminal that types later than boot; repeatable, one per "
         "command, the last covering the rest",
     )
+    run.add_argument('--send-after-connect-delay-ms', type=int, default=0,
+                     help='external terminal delay before the first data chunk (default 0)')
     run.add_argument(
         "--send-after-connect",
         action="append",
@@ -1492,6 +1619,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="COMMAND",
         help="AT command for side B; repeatable (default AT&L1)",
     )
+    link.add_argument('--a-send-delay-ms', type=int, default=0,
+                      help='side A terminal delay after CONNECT (default 0)')
+    link.add_argument('--b-send-delay-ms', type=int, default=0,
+                      help='side B terminal delay after CONNECT (default 0)')
     link.add_argument(
         "--a-send",
         action="append",
@@ -1586,7 +1717,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="option switches for side B (default dedicated-line-originate: "
         "switch 5 off, so this end calls)",
     )
-    link.add_argument("--board-id", type=_board_id, default=str(DEFAULT_BOARD_ID))
+    link.add_argument("--board-id", type=_board_id, default="auto")
     link.add_argument("--tick-ms", type=_number, default=None, metavar="MS")
     link.add_argument(
         "--tick-source",
@@ -1648,6 +1779,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "gui":
+            from .gui import serve
+            return serve(args.directory, args.port, not args.no_browser)
         if args.command == "recovery-run":
             if args.instructions <= 0:
                 raise ValueError("instruction limit must be positive")
@@ -1768,18 +1902,18 @@ def main(argv: list[str] | None = None) -> int:
                                 args.bri_sip_password_env, ""),
                             local_port=args.bri_sip_local_port,
                             codec=args.bri_sip_codec,
+                            receive_delay_samples=args.bri_sip_rtp_delay_ms * 8,
                         ))
                     if args.bri_sip_register:
                         sip_session.register()
+                    receive_buffer, transmit_buffer = _bri_sip_buffer_samples(args)
                     bri.media_peer = BearerSipLine(
                         sip_session,
                         target=args.bri_sip_target or "",
                         record=(open(args.bri_sip_record, "wb")
                                 if args.bri_sip_record else None),
-                        receive_buffer_samples=(args.bri_sip_buffer_ms * 8
-                                                if args.bri_sip_buffer_ms else 320),
-                        transmit_buffer_samples=(args.bri_sip_buffer_ms * 8
-                                                 if args.bri_sip_buffer_ms else 480),
+                        receive_buffer_samples=receive_buffer,
+                        transmit_buffer_samples=transmit_buffer,
                     )
                 if args.bri_line:
                     if args.bri_sip or args.bri_v120:
@@ -1810,6 +1944,8 @@ def main(argv: list[str] | None = None) -> int:
                     bri.queue_media(Path(args.bri_rx_g711).read_bytes())
             elif args.bri_rx_g711 or args.bri_tx_g711:
                 raise ValueError("--bri-rx-g711/--bri-tx-g711 require --bri-network")
+            if args.terminal_binary and not args.terminal:
+                raise ValueError("--terminal-binary requires --terminal")
             if args.terminal and args.send:
                 raise ValueError("use --terminal or --send, not both")
             transcript: list[tuple[int, str, str]] = []
@@ -1824,6 +1960,7 @@ def main(argv: list[str] | None = None) -> int:
                     after=args.send_after,
                     local_echo=args.local_echo,
                     ready_notice=sys.stderr,
+                    binary_io=args.terminal_binary,
                 )
             machine = IsdnMachine(
                 source, port_values=ports, counter_irq=counter_irq,

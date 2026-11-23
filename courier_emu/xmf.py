@@ -38,7 +38,7 @@ ENTRY_OFFSET = 0x410
 # origins recovered from one of them silently mislocates the other, and an
 # origin is what decides whether a branch target needs bit 15 masked off.
 DSP_CALL_SITE = re.compile(rb"\xb8(..)\xe8(..)\xb8(..)\xb9(..)\xe8(..)", re.S)
-DSP_SOURCE_WINDOW = re.compile(rb"\xb8(..)\x8e\xc0", re.S)
+DSP_SOURCE_WINDOW = re.compile(rb"\xb8(..)(?:\x05\x00\x80)?\x8e\xc0", re.S)
 DSP_OVERLAY_TABLE = re.compile(rb"\xb3(.)\xf6\xe3\xbb(..)", re.S)
 DSP_OVERLAY_SEGMENT = re.compile(rb"\xb8(..)\x83\xfb(.)\x74", re.S)
 DSP_DOWNLOADER_WINDOW = 0x120
@@ -154,7 +154,14 @@ class XmfImage:
     def dsp_words(self) -> tuple[int, ...]:
         return struct.unpack(f"<{self.dsp_word_count}H", self.dsp)
 
-    def _resident_call_site(self) -> tuple[int, int, int] | None:
+    def _source_offset(self, physical: int) -> int:
+        """Translate the downloader's CPU source address into image bytes."""
+        return physical - FLASH_PHYSICAL_BASE
+
+    def _valid_source_range(self, offset: int, length: int) -> bool:
+        return HEADER_SIZE <= offset and offset + length <= len(self.data)
+
+    def _resident_call_site(self) -> tuple[int, int, int, int] | None:
         """The resident download's source segment, file offset and length.
 
         A supervisor calls the downloader from several places - these images
@@ -177,7 +184,7 @@ class XmfImage:
             if window is None:
                 continue
             segment = struct.unpack("<H", window[1])[0]
-            offset = (segment << 4) - FLASH_PHYSICAL_BASE + start
+            offset = self._source_offset((segment << 4) + start)
             length = end - start
             if offset < HEADER_SIZE or offset + length > self.supervisor_offset:
                 continue
@@ -201,7 +208,8 @@ class XmfImage:
         look like plausible ranges, so a row is kept only when the loader has a
         source segment for its index.
         """
-        cached = _SEGMENTS.get(self.digest)
+        cache_key = f'{self.digest}:{self.supervisor_offset:x}:{self.load_base:x}'
+        cached = _SEGMENTS.get(cache_key)
         if cached is not None:
             return cached
         call_site = self._resident_call_site()
@@ -231,16 +239,13 @@ class XmfImage:
                 source = sources.get(index)
                 if source is None:
                     continue
-                row_offset = (source << 4) - FLASH_PHYSICAL_BASE + start
+                row_offset = self._source_offset((source << 4) + start)
                 row_length = end - start
                 if row_length <= 0 or row_length % 2:
                     continue
                 # Loader source segments can point anywhere in application
                 # flash, including an overlay relocated beyond the supervisor.
-                if (
-                    row_offset < HEADER_SIZE
-                    or row_offset + row_length > len(self.data)
-                ):
+                if not self._valid_source_range(row_offset, row_length):
                     continue
                 found.append(
                     DspSegment(index, origin, row_offset, row_length, False)
@@ -254,12 +259,12 @@ class XmfImage:
                 if index in sources:
                     continue
                 start, end, origin = struct.unpack_from("<3H", head, row)
-                row_offset = (source_segment << 4) - FLASH_PHYSICAL_BASE + start
+                row_offset = self._source_offset((source_segment << 4) + start)
                 if (row_offset, end - start, origin) == (offset, length, entry):
                     resident = DspSegment(index, entry, offset, length, True)
                     break
         segments = (resident, *found)
-        _SEGMENTS[self.digest] = segments
+        _SEGMENTS[cache_key] = segments
         return segments
 
     def dsp_program_segments(self) -> tuple[tuple[int, bytes], ...]:

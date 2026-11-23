@@ -1,0 +1,2 @@
+
+Ready to send bootmodem, Start Xmodem-1K receiver

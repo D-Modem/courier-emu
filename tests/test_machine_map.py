@@ -23,7 +23,7 @@ def test_australian_roms_select_exact_firmware_profiles():
         ("courier-board-11430-flash-20260914-unit2-02", "061-7.6.7", "3.1.2"),
     )
     for directory, supervisor, dsp in cases:
-        image = CourierRom.load(ROOT / "artifacts" / directory / "courier-board.rom")
+        image = CourierRom.load(ROOT / "dumps" / directory / "courier-board.rom")
         profile = courier_machine_map(image).firmware
         assert profile is FIRMWARE_PROFILES[image.digest]
         assert profile.supervisor == supervisor

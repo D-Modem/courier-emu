@@ -1,0 +1,1705 @@
+{
+  "image": "Ie030002.nac",
+  "nac_sha256": "3f9a7aa8033323c28eebfee950b53267a67b7ad9141ebf30271918d0babbe358",
+  "controlled_v34_base": "21ff",
+  "s58_cases": [
+    {
+      "s58": 0,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 1,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 2,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 3,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 4,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 5,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 6,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 7,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 8,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 9,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 10,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 11,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 12,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 13,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 14,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 15,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 16,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 17,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 18,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 19,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 20,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 21,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 22,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 23,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 24,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 25,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 26,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 27,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 28,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 29,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 30,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 31,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 32,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 33,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 34,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 35,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 36,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 37,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 38,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 39,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 40,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 41,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 42,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 43,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 44,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 45,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 46,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 47,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 48,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 49,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 50,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 51,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 52,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 53,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 54,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 55,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 56,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 57,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 58,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 59,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 60,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 61,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 62,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 63,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 64,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 65,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 66,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 67,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 68,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 69,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 70,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 71,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 72,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 73,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 74,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 75,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 76,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 77,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 78,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 79,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 80,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 81,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 82,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 83,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 84,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 85,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 86,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 87,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 88,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 89,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 90,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 91,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 92,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 93,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 94,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 95,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 96,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 97,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 98,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 99,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 100,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 101,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 102,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 103,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 104,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 105,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 106,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 107,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 108,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 109,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 110,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 111,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 112,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 113,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 114,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 115,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 116,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 117,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 118,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 119,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 120,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 121,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 122,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 123,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 124,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 125,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 126,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 127,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 128,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 129,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 130,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 131,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 132,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 133,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 134,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 135,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 136,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 137,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 138,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 139,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 140,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 141,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 142,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 143,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 144,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 145,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 146,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 147,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 148,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 149,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 150,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 151,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 152,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 153,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 154,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 155,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 156,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 157,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 158,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 159,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 160,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 161,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 162,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 163,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 164,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 165,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 166,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 167,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 168,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 169,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 170,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 171,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 172,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 173,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 174,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 175,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 176,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 177,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 178,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 179,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 180,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 181,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 182,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 183,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 184,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 185,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 186,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 187,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 188,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 189,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 190,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 191,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 192,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 193,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 194,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 195,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 196,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 197,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 198,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 199,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 200,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 201,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 202,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 203,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 204,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 205,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 206,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 207,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 208,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 209,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 210,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 211,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 212,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 213,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 214,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 215,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 216,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 217,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 218,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 219,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 220,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 221,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 222,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 223,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 224,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 225,
+      "tag70": "39ff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 226,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 227,
+      "tag70": "29ff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 228,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 229,
+      "tag70": "3bff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 230,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 231,
+      "tag70": "2bff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 232,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 233,
+      "tag70": "31ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 234,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 235,
+      "tag70": "21ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 236,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 237,
+      "tag70": "33ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 238,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 239,
+      "tag70": "23ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 240,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 241,
+      "tag70": "3dff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 242,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 243,
+      "tag70": "2dff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 244,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 245,
+      "tag70": "3fff",
+      "server_capability": true,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 246,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 247,
+      "tag70": "2fff",
+      "server_capability": false,
+      "symmetric_capability": true
+    },
+    {
+      "s58": 248,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 249,
+      "tag70": "35ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 250,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 251,
+      "tag70": "25ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 252,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 253,
+      "tag70": "37ff",
+      "server_capability": true,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 254,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    },
+    {
+      "s58": 255,
+      "tag70": "27ff",
+      "server_capability": false,
+      "symmetric_capability": false
+    }
+  ],
+  "dispatch_table_base": "88d5",
+  "host_dispatch": {
+    "70": "926d",
+    "71": "9299",
+    "72": "9283"
+  },
+  "info0_cases": [
+    {
+      "context": "client/server",
+      "answer_role": 0,
+      "local_info0": "12ff",
+      "remote_info0": "18fe",
+      "pc": "95ca",
+      "branch": "asymmetric receiver setup",
+      "ffde": "003f"
+    },
+    {
+      "context": "client/server",
+      "answer_role": 1,
+      "local_info0": "12ff",
+      "remote_info0": "18fe",
+      "pc": "95ca",
+      "branch": "asymmetric receiver setup",
+      "ffde": "003f"
+    },
+    {
+      "context": "server/client",
+      "answer_role": 0,
+      "local_info0": "1afe",
+      "remote_info0": "10ff",
+      "pc": "95ca",
+      "branch": "asymmetric receiver setup",
+      "ffde": "003f"
+    },
+    {
+      "context": "server/client",
+      "answer_role": 1,
+      "local_info0": "1afe",
+      "remote_info0": "10ff",
+      "pc": "95ca",
+      "branch": "asymmetric receiver setup",
+      "ffde": "003f"
+    },
+    {
+      "context": "server/server",
+      "answer_role": 0,
+      "local_info0": "1afe",
+      "remote_info0": "18fe",
+      "pc": "965c",
+      "branch": "drop x2",
+      "ffde": "000f"
+    },
+    {
+      "context": "server/server",
+      "answer_role": 1,
+      "local_info0": "1afe",
+      "remote_info0": "18fe",
+      "pc": "965c",
+      "branch": "drop x2",
+      "ffde": "000f"
+    },
+    {
+      "context": "both symmetric",
+      "answer_role": 0,
+      "local_info0": "1efe",
+      "remote_info0": "1eff",
+      "pc": "958f",
+      "branch": "symmetric setup",
+      "ffde": "000f"
+    },
+    {
+      "context": "both symmetric",
+      "answer_role": 1,
+      "local_info0": "1efe",
+      "remote_info0": "1eff",
+      "pc": "958f",
+      "branch": "symmetric setup",
+      "ffde": "000f"
+    }
+  ],
+  "asymmetric_setup_cases": [
+    {
+      "context": "client/server",
+      "answer_role": 0,
+      "initial_callback": "95dd",
+      "initial_delay": 96,
+      "wait_callback": "95ed",
+      "receiver_bits": 7,
+      "receiver_buffer": "f6a8",
+      "tone_callback": "9e9e",
+      "transmit_script_before": "55aa",
+      "transmit_script_after": "55aa",
+      "classifier": "8462"
+    },
+    {
+      "context": "client/server",
+      "answer_role": 1,
+      "initial_callback": "95dd",
+      "initial_delay": 0,
+      "wait_callback": "95ed",
+      "receiver_bits": 7,
+      "receiver_buffer": "f6a8",
+      "tone_callback": "9e9e",
+      "transmit_script_before": "55aa",
+      "transmit_script_after": "55aa",
+      "classifier": "8462"
+    },
+    {
+      "context": "server/client",
+      "answer_role": 0,
+      "initial_callback": "95dd",
+      "initial_delay": 96,
+      "wait_callback": "95ed",
+      "receiver_bits": 7,
+      "receiver_buffer": "f6a8",
+      "tone_callback": "9e9e",
+      "transmit_script_before": "55aa",
+      "transmit_script_after": "55aa",
+      "classifier": "8462"
+    },
+    {
+      "context": "server/client",
+      "answer_role": 1,
+      "initial_callback": "95dd",
+      "initial_delay": 0,
+      "wait_callback": "95ed",
+      "receiver_bits": 7,
+      "receiver_buffer": "f6a8",
+      "tone_callback": "9e9e",
+      "transmit_script_before": "55aa",
+      "transmit_script_after": "55aa",
+      "classifier": "8462"
+    }
+  ],
+  "asymmetric_wait_cases": [
+    {
+      "counter": 0,
+      "pc": "95f1",
+      "action": "receive marker"
+    },
+    {
+      "counter": 4544,
+      "pc": "95f1",
+      "action": "receive marker"
+    },
+    {
+      "counter": 48000,
+      "pc": "95f1",
+      "action": "receive marker"
+    },
+    {
+      "counter": 48001,
+      "pc": "95ef",
+      "action": "fallback"
+    },
+    {
+      "counter": 65535,
+      "pc": "95ef",
+      "action": "fallback"
+    }
+  ],
+  "scope": "S58 packing, INFO0 gate and scheduled receiver setup; no full client-mode claim."
+}

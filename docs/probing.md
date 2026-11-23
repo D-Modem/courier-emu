@@ -346,7 +346,7 @@ before the reset landed.
 | flash | physical `80000..fffff` | 524,288 bytes, `f3a8b013…`, 2,048 pages read twice, zero retries, 1,107.8 s |
 | RAM | `0000..feff` | two passes, 65,280 bytes, 139.44 s, differing at 44 addresses |
 | upper window | `10000..1ffff` | two passes, 65,536 bytes, 144.79 s, differing at 17 bytes |
-| DSP on-chip ROM | program `0000..07ff` | 2048 words, in two halves, `artifacts/dsp-onchip-rom-01/` - **possibly only a quarter of it, see below** |
+| DSP on-chip ROM | program `0000..07ff` | 2048 words, in two halves, `dumps/dsp-onchip-rom-01/` - **possibly only a quarter of it, see below** |
 
 All read-only: `AT`, `ATI7` and `ATGLK2=` only. Each has an offline audit
 re-parsing the saved responses against the stored blocks and hashes.
@@ -385,11 +385,11 @@ serial-output enable condition traced in the firmware.
 | 'C52 | none | 4K | 1 | **PJ** | excluded on the package suffix |
 
 (SPRU056D Table 1-1.) The full 8K is now read:
-`artifacts/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin`, and it is mostly
+`dumps/dsp-onchip-rom-2806/c5x-onchip-rom-8k.bin`, and it is mostly
 unprogrammed - 1920 words of boot code at `0x0000`-`0x077F`, a 128-word mailbox
 block at `0x1F80`, and 6144 words of a 32-word `FFFF`/`0000` array pattern.
 Both boards have now been read in full
-([20.16 MHz](../artifacts/dsp-onchip-rom-20mhz-8k/README.md)) and the programmed
+([20.16 MHz](../dumps/dsp-onchip-rom-20mhz-8k/README.md)) and the programmed
 ROM is byte-identical on the two parts. The 25 MHz part additionally answers with
 a copy of the `0x1F80` block from `0x0F80`, in both read paths, where the
 20.16 MHz part returns pattern - a difference between the parts, unexplained,
@@ -424,7 +424,7 @@ address, so a region returning a constant cannot pass by coincidence.
 ```sh
 .venv/bin/python -m courier_emu.probe_transport --reference IDSDL302.ROM \
     --memory-test --output artifacts/dsp-memory-test-2806/run-a
-.venv/bin/python artifacts/dsp-onchip-rom-2806/run-board.py \
+.venv/bin/python dumps/dsp-onchip-rom-2806/run-board.py \
     artifacts/dsp-memory-test-2806/run-a /dev/cu.usbserial-FT4TQOFT
 ```
 

@@ -9,7 +9,7 @@ from .xmf import XmfFormatError, XmfImage
 from .xmp import XmpFormatError, XmpImage
 
 
-def load_image(path: str | Path) -> XmfImage | CourierRom | XmpImage | XmdImage | NacImage:
+def load_image(path: str | Path, *, firmware_mode: str | None = None, power_on: bool = False) -> XmfImage | CourierRom | XmpImage | XmdImage | NacImage:
     """Load an XMF payload, a flash ROM, a whole-flash XMD, or an ISDN XMP or NAC.
 
     They are told apart by their own contents rather than by extension: an XMF
@@ -18,6 +18,13 @@ def load_image(path: str | Path) -> XmfImage | CourierRom | XmpImage | XmdImage 
     0x80080 bytes and decodes to an image ending in the 80186 reset stub, and a
     NAC declares its record-stream length in its header.
     """
+    if Path(path).stat().st_size in (0x44000, 0x100000):
+        from .flash_image import CourierFlashImage
+        return CourierFlashImage.load(path, firmware_mode, power_on=power_on)
+    if power_on:
+        raise XmfFormatError('--power-on requires a captured bootmodem or complete 3453 flash')
+    if firmware_mode is not None:
+        raise XmfFormatError('--firmware-mode requires a captured bootmodem or complete 3453 flash')
     try:
         return XmfImage.load(path)
     except XmfFormatError as xmf_error:

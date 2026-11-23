@@ -1,0 +1,43 @@
+{
+  "before": {
+    "worker_exit": 1,
+    "serial": "",
+    "active_output_gaps": 130,
+    "error": "Apple audio helper closed (see its stderr)"
+  },
+  "after": {
+    "worker_exit": 0,
+    "serial": "\r\nNO CARRIER\r\n",
+    "error": null,
+    "helper_counters": {
+      "active output gaps": 0,
+      "input overflow": 0,
+      "reset silence": 1536,
+      "reset RX discarded": 1536
+    },
+    "native_worker_polls": 97362,
+    "live_filter_misses": [],
+    "prepared_rate_count": 26,
+    "preparation_ms": 698.4751670388505,
+    "hook_released": true,
+    "cdr": {
+      "source": "6004",
+      "destination": "6313",
+      "channel": "PJSIP/6004-0000056d",
+      "destination_channel": "PJSIP/6313-0000056e",
+      "start_utc": "2026-10-22 00:02:50",
+      "answer_utc": "2026-10-22 00:02:51",
+      "end_utc": "2026-10-22 00:03:17",
+      "billsec": "25",
+      "disposition": "ANSWERED",
+      "uniqueid": "1792627370.2120"
+    }
+  },
+  "retune_benchmark": {
+    "cold_ms": 44.47195678949356,
+    "preflighted_ms": 2.653082017786801,
+    "live_kernel_builds": 0
+  },
+  "fifo_size_or_error_policy_changed": false,
+  "regression_tests_passed": 98
+}

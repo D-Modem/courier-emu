@@ -1,5 +1,9 @@
 # Analog Courier to I-modem x2, 2026-10-03
 
+The [2026-10-18 native wallclock audit](imodem-analog-native-wallclock-20261018.md)
+extends this instruction-clocked result through the live-call path from
+`dbcb0a0`, with a bounded DSP catch-up fix and repeated 53333 data delivery.
+
 The original analog Courier firmware now reports **53333/x2/LAPM/V42BIS**
 when it is connected to the I-modem. The two different terminal markers arrive correctly.
 The I-modem reports 33333 at its own terminal. These are separate endpoint

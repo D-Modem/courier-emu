@@ -52,7 +52,9 @@ def run_console(
 
     keep_open: int | None = None
     lamps_read: int | None = None
-    lamps_write: int | None = None
+    lamps_write: int | None = getattr(args, "lamps_fd", None)
+    if lamps_write is not None and not args.console:
+        raise ValueError("--lamps-fd requires --console")
     if args.serial_pty:
         worker_end, keep_open, device = _pty_channel()
         terminal: socket.socket | None = None
@@ -61,7 +63,7 @@ def run_console(
         worker_end, terminal, device = right.fileno(), left, ""
         # The lamps get the terminal's bottom line, which only means something
         # when stdout is a terminal; a redirected session stays byte-exact.
-        if sys.stdout.isatty():
+        if lamps_write is None and sys.stdout.isatty():
             lamps_read, lamps_write = os.pipe()
 
     extra = ["--serial-fd", str(worker_end)]
@@ -73,7 +75,9 @@ def run_console(
         command + extra,
         pass_fds=tuple(passed),
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        # Physical-line helpers report live safety diagnostics and final
+        # on-hook readback here. Do not buffer (or discard) them until exit.
+        stderr=None if getattr(args, "apple_modem", None) else subprocess.PIPE,
         text=True,
         env=environment,
     )

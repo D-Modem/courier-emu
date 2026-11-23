@@ -1,0 +1,16 @@
+{
+  "extension": "6311",
+  "decoded_codec_tx_dtmf": "6311",
+  "serial": "\r\nNO CARRIER\r\n",
+  "exit_code": 0,
+  "native_worker_polls": 96791,
+  "control_updates": 7,
+  "helper_counters": {
+    "active output gaps": 0,
+    "input overflow": 0,
+    "reset silence": 1536,
+    "reset RX discarded": 1536
+  },
+  "verified_hook_clear": true,
+  "transport_error": null
+}

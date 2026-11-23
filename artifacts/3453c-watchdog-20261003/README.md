@@ -127,14 +127,14 @@ Run these commands from the root of the repository:
 
 ```sh
 .venv/bin/python artifacts/3453c-watchdog-20261003/probe.py \
-  --parameters artifacts/3453c-parameter-sector-20261003/f8000-fbfff.bin \
+  --parameters dumps/3453c-parameter-sector-20261003/f8000-fbfff.bin \
   --output /tmp/3453c-watchdog.json
 
 .venv/bin/python artifacts/3453c-watchdog-20261003/codec_read_probe.py
 
 .venv/bin/python -m tools.probe_imodem_analog_pair \
   --analog-board 3453c \
-  --analog-parameter-flash artifacts/3453c-parameter-sector-20261003/f8000-fbfff.bin \
+  --analog-parameter-flash dumps/3453c-parameter-sector-20261003/f8000-fbfff.bin \
   --protocol v90 --instructions 400000000 --analog-instructions 150000000 \
   --analog-send '3453C-TO-IMODEM-12345' --imodem-send 'IMODEM-TO-3453C-67890' \
   --output /tmp/3453c-watchdog-pair

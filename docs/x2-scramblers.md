@@ -1,7 +1,7 @@
 # x2 scramblers recovered and executed
 
 Date: 2026-09-10. Sources: the depacketized `firmware/legacy-usrobotics/sdl6-x2.exe`
-and the captured 4.03 `artifacts/courier-board-21210-capture-403/courier-board.rom`.
+and the captured 4.03 `dumps/courier-board-21210-capture-403/courier-board.rom`.
 
 **The x2-only build contains the same two V.34 scrambler recurrences and the
 same selector behavior as 4.03. A fixed-GPC generator in the training path that is related to PCM

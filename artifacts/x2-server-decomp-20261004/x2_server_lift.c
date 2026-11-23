@@ -6,6 +6,202 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* e2b1/e2d4/e2db/e438: bounded semantic model of the symmetric startup
+ * receiver.  The firmware stores these fields in the DP=7 work page and
+ * uses delayed calls through the callbacks at e43a/e460.  Keeping the
+ * protocol state explicit makes the qualification rules testable without
+ * pretending that the callback ABI is fully lifted yet. */
+typedef struct {
+    uint16_t state;       /* 0: run-in, 1: separator, 2: probe pairs */
+    uint16_t run_count;
+    uint16_t zero_count;
+    uint16_t pair_index;
+    uint16_t bitmap;
+} server_training_rx;
+
+/* Accept the receiver's documented low-bit tolerance. */
+static bool server_training_match(uint16_t actual, uint16_t expected)
+{
+    return actual == expected || ((actual ^ expected) == 1u);
+}
+
+/* Consume one startup word. Returns 0 while acquiring, 1 on a complete
+ * probe-pair step, 2 when all 128 pairs have qualified, and 0xffff when the
+ * word forces a restart. The bitmap records the six-position phase for
+ * tolerated low-bit errors; it is deliberately separate from pair_index. */
+uint16_t server_training_receiver_step(server_training_rx *rx,
+                                       uint16_t word)
+{
+    if (rx->state == 0) {
+        if (!server_training_match(word, 0x7e)) {
+            rx->run_count = 0;
+            rx->zero_count = 0;
+            rx->pair_index = 0;
+            rx->bitmap = 0;
+            return 0xffffu;
+        }
+        if (++rx->run_count == 7) {
+            rx->state = 1;
+            rx->zero_count = 0;
+        }
+        return 0;
+    }
+    if (rx->state == 1) {
+        if (word > 1) {
+            rx->state = 0;
+            rx->run_count = server_training_match(word, 0x7e) ? 1 : 0;
+            rx->zero_count = 0;
+            rx->pair_index = 0;
+            rx->bitmap = 0;
+            return 0xffffu;
+        }
+        if (++rx->zero_count == 7) rx->state = 2;
+        return 0;
+    }
+    uint16_t expected = rx->pair_index;
+    uint16_t complement = (uint16_t)(0xffu - expected);
+    if (!server_training_match(word, expected)) {
+        rx->state = 0;
+        rx->run_count = 0;
+        rx->zero_count = 0;
+        rx->pair_index = 0;
+        rx->bitmap = 0;
+        return 0xffffu;
+    }
+    /* The delayed callback consumes the complement separately; retain the
+     * first word's low-bit phase until server_training_receiver_pair(). */
+    rx->bitmap |= (uint16_t)(((word ^ expected) & 1u) << (expected % 6));
+    rx->state = 3;
+    (void)complement;
+    return 1;
+}
+
+/* Complete the second half of a pair. Kept separate because the original
+ * e438 state machine returns through a delayed callback between words. */
+uint16_t server_training_receiver_pair(server_training_rx *rx, uint16_t word)
+{
+    if (rx->state != 3) return 0xffffu;
+    uint16_t expected = (uint16_t)(0xffu - rx->pair_index);
+    if (!server_training_match(word, expected)) {
+        rx->state = 0; rx->run_count = rx->zero_count = rx->pair_index = 0;
+        rx->bitmap = 0;
+        return 0xffffu;
+    }
+    /* Record the complement's phase as well. This is diagnostic state only;
+     * pair_index remains the protocol position and is not derived from it. */
+    rx->bitmap |= (uint16_t)(((word ^ expected) & 1u)
+                             << ((rx->pair_index * 2u + 1u) % 6u));
+    if (++rx->pair_index == 128) {
+        rx->state = 0; rx->run_count = 0; rx->zero_count = 0;
+        rx->pair_index = 0;
+        return 2;
+    }
+    rx->state = 2;
+    return 1;
+}
+
+void server_lane_source(uint16_t d[65536], uint16_t io[65536], uint16_t page);
+void server_lane_sink(uint16_t d[65536], uint16_t io[65536],
+                      uint16_t output[65536], uint16_t page);
+
+/* e6fe..e731: source selected by 039f bit 15. Normal DP=7 falls back
+ * to PA6 after setting the empty sentinel. Other pages patch the IN operand
+ * at e71c from [0987]. Data address 0057 aliases board status port 57;
+ * successful transfers acknowledge its shifted mask in the RETD delay slot.
+ * Scratch ST0 saves and self-modified program words are not modeled. */
+void server_stream_source(uint16_t d[65536], uint16_t io[65536], uint16_t page)
+{
+    d[page] = 0xff00;
+    if (page == 0x380) {
+        server_lane_source(d, io, page);
+        return;
+    }
+    uint16_t cursor = d[0x987];
+    uint16_t mask = (uint16_t)(d[0x9fb] << (cursor & 15));
+    if (io[0x57] & mask) {
+        d[0x980] = io[cursor];
+        d[0x987] = (cursor == 0x67) ? 0x62 : (uint16_t)(cursor + 1);
+        io[0x57] &= (uint16_t)~mask;
+    } else if (d[0x39f] & 0x4000u) {
+        d[0x987] = 0x62;
+    }
+}
+
+/* e732..e767: bit 1 at page+71 suppresses repeated ff00 ONLY. The
+ * last word updates even on a full sink. Normal DP=6 falls back to PA6;
+ * other pages patch the OUT operand at e75b from [09a7], but output the
+ * word from [09a0]. Data [0057] again aliases the board acknowledgement. */
+void server_stream_sink(uint16_t d[65536], uint16_t io[65536],
+                       uint16_t output[65536], uint16_t page)
+{
+    if ((d[page+0x71] & 2u) && d[page+0x72] == 0xff00u &&
+        d[page+0x20] == 0xff00u)
+        return;
+    d[page+0x72] = d[page+0x20];
+    if (page == 0x300) {
+        server_lane_sink(d, io, output, page);
+        return;
+    }
+    uint16_t cursor = d[0x9a7];
+    uint16_t mask = (uint16_t)(d[0x9fb] << ((cursor + 8) & 15));
+    if (io[0x57] & mask) {
+        output[cursor] = d[0x9a0];
+        d[0x9a7] = (cursor == 0x67) ? 0x62 : (uint16_t)(cursor + 1);
+        io[0x57] &= (uint16_t)~mask;
+    }
+}
+
+/* 843e..8456: PA6 source. Empty lanes preserve the caller's sentinel;
+ * flag 14 resets the cursor only on an empty read. PA6 is write-one-clear. */
+void server_lane_source(uint16_t d[65536], uint16_t io[65536], uint16_t page)
+{
+    uint16_t cursor = d[page+7];
+    uint16_t mask = (uint16_t)(d[page+0x7b] << (cursor & 7));
+    if (io[0x56] & mask) {
+        d[page] = io[cursor];
+        d[page+7] = cursor + 1;
+        io[0x56] &= (uint16_t)~mask;
+    } else if (d[0x39f] & 0x4000u) d[page+7] = 0x58;
+}
+
+/* 84a0..84ae: local PA6 sink. High-byte PA6 bits mean host room; outgoing
+ * lane storage is separate from incoming io[], as on the emulated board.
+ * A full lane drops the word, leaves the cursor, and does not acknowledge.
+ */
+void server_lane_sink(uint16_t d[65536], uint16_t io[65536],
+                      uint16_t output[65536], uint16_t page)
+{
+    uint16_t cursor = d[page+0x27];
+    uint16_t mask = (uint16_t)(d[page+0x7b] << (cursor & 15));
+    if (io[0x56] & mask) {
+        output[cursor] = d[page+0x20];
+        d[page+0x27] = cursor + 1;
+        io[0x56] &= (uint16_t)~mask;
+    }
+}
+
+/* 8483..8499: LSB-first width conversion into octets, local sink only.
+ * Count starts 0..7; width 1..9. Firmware consumes every assembled octet
+ * even when the sink is full. It does not retry or restore the reservoir.
+ */
+void server_receive_octets(uint16_t d[65536], uint16_t io[65536],
+                           uint16_t output[65536], uint16_t page)
+{
+    uint32_t reservoir = d[page+0x24] |
+        ((uint32_t)d[page+0x20] << d[page+0x25]);
+    unsigned count = d[page+0x25] + d[page+0x22];
+    d[page+0x24] = (uint16_t)reservoir;
+    while (count >= 8) {
+        count -= 8;
+        d[page+0x25] = count;
+        d[page+0x20] = reservoir & 0xffu;
+        server_lane_sink(d, io, output, page);
+        reservoir >>= 8;
+        d[page+0x24] = (uint16_t)reservoir;
+    }
+    d[page+0x25] = count;
+}
+
 void server_tag70(uint16_t d[65536], uint16_t value) /* 91a1..91ad */
 {
     d[0xffdb] = value & 0x3fffu;

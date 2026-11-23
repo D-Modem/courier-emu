@@ -1,5 +1,21 @@
 # Current boundary
 
+**Live hardware status (10 November 2026):** the analog 403 firmware can
+negotiate V.34/LAPM and real V.90/LAPM over SIP, and it carries PPP payloads
+without errors. Sustained reliability is not yet solved. In the most recent V.90
+series, only one 60-second call passed. No attempt with a 600-second target got
+V.90. V.34 LAN tests show changes of the sample clock on the sender side,
+with zero loss of RTP sequence numbers. The first task is to make the samples
+at the correct time, and to do a 600-second V.34 qualification. Do not make the
+buffers or the PPP checks less strict. Refer to
+[the disconnect investigation](analog-disconnect-investigation.md),
+[the V.90 repeated tests](v90-7930-repeated-tests.md) and
+[the TX timing plan](tx-timing-investigation.md).
+
+The 2.1.x limits below and the [minimal SIP dial-out](sip-dial-out.md) page
+tell about the earlier bring-up. They do not tell the current SIP features of
+the 403. They do not show that all firmware versions have the same blockers.
+
 The 80186 and the C51 run in lock-step at their recovered 20/25 MHz ratio. The
 harness reconstructs the DSP bootstrap of the supervisor from ports
 `0x40..0x4e`. It verifies it byte for byte against the XMF C51 boot segment. It
@@ -27,10 +43,20 @@ load to model.
 
 ### Quad CPU AT terminal
 
-For the current server answer attempt, see
-[Quad server bring-up](quad-server-bringup.md). The probe can now boot from
-the QF archive. It records the `NO CARRIER` path that the watchdog causes.
-CPU/DSP call control is not yet complete. It is not yet a negotiation peer.
+The Quad now connects to the original I-modem with **V.34/LAPM and symmetric
+x2/LAPM**, and it sends ASCII data in the two directions. In the symmetric
+test, the two modems report **64000/x2/LAPM**, with zero PCM underruns and
+zero UART drops. Refer to [Quad server bring-up](quad-server-bringup.md) for
+the commands, the feature provisioning of the chassis and the evidence.
+
+Asymmetric **server** x2 also passes against an analog Courier client at
+52000/33333. The two payloads arrive without errors, and the carrier stays
+on to a 60-second media boundary. Run
+`tools/probe_quad_analog_pair.py --check-x2` with an `--output` folder. A
+**three-minute V.34 traffic test passes at 9600**. The default **31.2/33.6k**
+pair also passes 60 connected seconds. Throughput at full rate, long x2 tests
+and binary DTE data are not yet verified. The vendor documents tell that Quad
+client mode is not supported.
 
 The QF060003 modem now executes `AT` → `OK` with an explicit byte-terminal
 adapter. Run `PYTHONPATH=. .venv/bin/python tools/probe_quad_at.py` to boot the
@@ -62,8 +88,9 @@ artifacts/quad-identify-20260910/ram.bin --output /tmp/qf-dtmf`.
 The captured resident also contains the G.711 expander and compressor of QF
 itself. The component runner executes its DTMF generator, the two compressor
 branches and its byte serial ISR. These make raw 8 kHz `.g711` streams without a
-host codec. The chassis call-control request that arms this path is not yet
-complete. See `docs/quad-dsp-pcm-path.md`.
+host codec. Chassis arming and answer now run through the original mailbox.
+Refer to [Quad server bring-up](quad-server-bringup.md) for the paired call
+and to `docs/quad-dsp-pcm-path.md` for the component measurements.
 
 Its stock answer-signal family also executes:
 

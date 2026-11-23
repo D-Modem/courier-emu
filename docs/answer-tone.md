@@ -57,7 +57,7 @@ does not synthesize anything.
 
 ```sh
 .venv/bin/python -m courier_emu.answer_tone \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/answer-tone --variant ans-reversals --seconds 2
 ```
 

@@ -1,0 +1,1178 @@
+{
+  "settings": "S54=0S58=43&M5&K0",
+  "imodem_connect": null,
+  "imodem_error": null,
+  "imodem_serial": "\r\nOK\r\n\r\nOK\r\n\r\nNO CARRIER\r\n",
+  "imodem_peer": {
+    "error": "the far I-modem closed the B channel",
+    "frames": 154,
+    "listen": true,
+    "octets_received": 123200,
+    "octets_sent": 123200,
+    "pending": 0,
+    "received_non_ff": 123181,
+    "sent_non_ff": 92091
+  },
+  "quad_counts": {
+    "receive_async_init": 2,
+    "receive_callback_reset_call": 2,
+    "receive_callback_reset_clear": 2,
+    "window_poll": 2448,
+    "session_watchdog": 2448,
+    "line_personality_probe": 1,
+    "window_copy": 74,
+    "dispatch": 12,
+    "type1": 5,
+    "allowlist": 5,
+    "parameter_lookup": 5,
+    "session_arm": 1,
+    "line_setting": 1,
+    "bearer_setting": 1,
+    "chassis_answer": 1,
+    "answer": 1,
+    "answer_overlay_poll": 1,
+    "overlay_request": 1
+  },
+  "quad_peek": {
+    "9d1e": "01",
+    "9d1c": "cf",
+    "a895": "06",
+    "a897": "01",
+    "9c2e": "88",
+    "9c50": "44",
+    "9c72": "00",
+    "9c40": "80",
+    "8b3e": "0f",
+    "b4b0": "72",
+    "81f8": "00",
+    "9cb3": "00",
+    "9ca6": "03",
+    "8311": "00",
+    "82f7": "00",
+    "878a": "00",
+    "b4b5": "02",
+    "a863": "00"
+  },
+  "quad_endpoint": {
+    "steps": 537572909,
+    "cycles": 626145485,
+    "pulls": 3624,
+    "bursts": 18187,
+    "resets": 4,
+    "acks": 2547,
+    "core_log_resets": 0,
+    "reboots": 1,
+    "window_open": false,
+    "program_words": 10188,
+    "completion": true,
+    "digital_call": true,
+    "boot_pending": false,
+    "pcm_active": true,
+    "g711_tx": 123524,
+    "runtime_active": true,
+    "overlay_ready": true,
+    "window_read_mask": 15,
+    "data_words_sent": 6459,
+    "data_words_received": 6294,
+    "runtime_bursts": 2547,
+    "runtime_acks": 2547,
+    "commands_sent": 47,
+    "commands_acked": 47,
+    "replies_posted": 128,
+    "replies_acked": 128,
+    "xf_edges": 37044,
+    "media_peer": {
+      "listen": false,
+      "frames": 154,
+      "octets_sent": 123200,
+      "octets_received": 123200,
+      "sent_non_ff": 123181,
+      "received_non_ff": 92091,
+      "pending": 774,
+      "error": null
+    },
+    "pcm_rx_underruns": 0,
+    "exchanges": [
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 319409,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 360600,
+        "command": 1,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 370050,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 380744,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 415202,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 426964,
+        "command": 22,
+        "argument": 22
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 473845,
+        "command": 1,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 481990,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 494781,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 2814494,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2829564,
+        "command": 1,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 2840784,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2850009,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2873264,
+        "command": 45,
+        "argument": 1
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 2874759,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2884714,
+        "command": 1,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 2895835,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2905192,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2928459,
+        "command": 45,
+        "argument": 1
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 2929832,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 2939921,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 9683595,
+        "command": 17,
+        "argument": 255
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 84217091,
+        "command": 1,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 84226281,
+        "command": 85,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 84238022,
+        "command": 107,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184503109,
+        "command": 26,
+        "argument": 13014
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184572820,
+        "command": 67,
+        "argument": 63
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184585202,
+        "command": 72,
+        "argument": 32763
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184596955,
+        "command": 81,
+        "argument": 8701
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184608681,
+        "command": 82,
+        "argument": 7864
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184632148,
+        "command": 28,
+        "argument": 8
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184643773,
+        "command": 29,
+        "argument": 20
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184667225,
+        "command": 42,
+        "argument": 6
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184678965,
+        "command": 26,
+        "argument": 13014
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184690743,
+        "command": 66,
+        "argument": 4095
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184714182,
+        "command": 73,
+        "argument": 65525
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184725783,
+        "command": 80,
+        "argument": 193
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184737559,
+        "command": 80,
+        "argument": 325
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184760996,
+        "command": 80,
+        "argument": 531
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184772746,
+        "command": 80,
+        "argument": 784
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184796211,
+        "command": 80,
+        "argument": 1165
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184807961,
+        "command": 80,
+        "argument": 1280
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184819559,
+        "command": 83,
+        "argument": 16382
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184843024,
+        "command": 113,
+        "argument": 32767
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184854776,
+        "command": 86,
+        "argument": 16382
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184866482,
+        "command": 124,
+        "argument": 63
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184889994,
+        "command": 123,
+        "argument": 65535
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184900836,
+        "command": 77,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184924426,
+        "command": 4,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 184936809,
+        "command": 20,
+        "argument": 20831
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 185639432,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 186326923,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 187014457,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 187702688,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 188390909,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 189078544,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 189765112,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 190451697,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 191138245,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 191824903,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 192512306,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 193199707,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 193886755,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 194573301,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 195259867,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 195946452,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 196633144,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 197320542,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 198007954,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 198694809,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 198848315,
+        "command": 17,
+        "argument": 255
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 199380094,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 200065309,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 200750557,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 201435940,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 202122018,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 202808039,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 203493706,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 204178949,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 204864200,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 205549417,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 206234744,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 206920816,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 207606882,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 208292613,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 208977863,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 209663028,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 210348238,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 211033659,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 211719741,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 212405784,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 213091433,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 213776677,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 214461914,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 215147125,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 215832508,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 216518579,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 217204209,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 217889392,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 218573864,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 219258328,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 219942637,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 220627086,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 221312296,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 221997524,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 222682708,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 223367904,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 224053110,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 224738310,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 225423615,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 226109612,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 226795638,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 227481253,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 228166429,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 228851633,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 229536844,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 230222104,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 230908108,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 231594133,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 232279802,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 232965017,
+        "command": 22,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 233650876,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 234337477,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 235024071,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 235711315,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 236398553,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 237085364,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 237771767,
+        "command": 22,
+        "argument": 264
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 238458076,
+        "command": 22,
+        "argument": 264
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 239144459,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 239830879,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 240517994,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 241205161,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 241892234,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 242578848,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 243265421,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 243951875,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 244638350,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 245325410,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 246012621,
+        "command": 22,
+        "argument": 264
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 246699331,
+        "command": 22,
+        "argument": 1032
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 247385788,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 248072173,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 248758571,
+        "command": 22,
+        "argument": 264
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 249445075,
+        "command": 22,
+        "argument": 8
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250132573,
+        "command": 22,
+        "argument": 24
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250210259,
+        "command": 72,
+        "argument": 193
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250226288,
+        "command": 72,
+        "argument": 325
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250235491,
+        "command": 72,
+        "argument": 531
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250259045,
+        "command": 72,
+        "argument": 784
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250268333,
+        "command": 72,
+        "argument": 1165
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 250282265,
+        "command": 72,
+        "argument": 1280
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 287229445,
+        "command": 110,
+        "argument": 6
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 287237103,
+        "command": 71,
+        "argument": 6
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 287253771,
+        "command": 2,
+        "argument": 41344
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 288103881,
+        "command": 17,
+        "argument": 255
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 288435559,
+        "command": 2,
+        "argument": 49920
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 307033274,
+        "command": 17,
+        "argument": 255
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 369053944,
+        "command": 17,
+        "argument": 255
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 407306081,
+        "command": 4,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 424551893,
+        "command": 61,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 484947054,
+        "command": 55,
+        "argument": 76
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 489259616,
+        "command": 48,
+        "argument": 3341
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 489274400,
+        "command": 3,
+        "argument": 0
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 489276848,
+        "command": 53,
+        "argument": 16380
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 489293039,
+        "command": 10,
+        "argument": 2
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 489294472,
+        "command": 54,
+        "argument": 28
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 490491894,
+        "command": 110,
+        "argument": 6
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 490503001,
+        "command": 2,
+        "argument": 0
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 490535950,
+        "command": 88,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 511037104,
+        "command": 32,
+        "argument": 14
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 512772568,
+        "command": 69,
+        "argument": 63
+      },
+      {
+        "direction": "dsp-to-cpu",
+        "steps": 532807310,
+        "command": 32,
+        "argument": 14
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 535167621,
+        "command": 87,
+        "argument": 63
+      },
+      {
+        "direction": "cpu-to-dsp",
+        "steps": 537565009,
+        "command": 0,
+        "argument": 0
+      }
+    ]
+  },
+  "quad_error": null,
+  "quad_v42_inspection": {
+    "captured_events": 4096,
+    "receive_words": 1966,
+    "transmit_words": 2130,
+    "transmit_common_words": [
+      {
+        "word": "40ff",
+        "count": 2130
+      }
+    ],
+    "receive_detection_runs": {
+      "ODP": {
+        "characters": 235,
+        "start_bit": 11271,
+        "end_bit": 15727,
+        "first_character": 17,
+        "mark_bits_min": 9,
+        "mark_bits_max": 9
+      },
+      "ADP": {
+        "characters": 0,
+        "start_bit": null,
+        "end_bit": null,
+        "first_character": null,
+        "mark_bits_min": null,
+        "mark_bits_max": null
+      }
+    }
+  }
+}

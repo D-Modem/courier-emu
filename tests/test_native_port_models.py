@@ -2,6 +2,8 @@
 import ctypes
 import struct
 
+import pytest
+
 from courier_emu.dsp import ImodemHostIo, ImodemShared, LaneHostIo, NativeC5x
 
 
@@ -18,6 +20,110 @@ def access(model, direction, port, value=0, now=0, size=1):
 
 def core():
     return NativeC5x.from_program(0, b"\x00\x00")
+
+
+def test_wallclock_catchup_gives_cpu_a_turn_without_discarding_target():
+    shared = ImodemShared()
+    # A full target must take several CPU turns even without PCM or mailbox
+    # events forcing the DSP to yield. Multi-cycle instructions may overshoot
+    # a cycle budget; these single-cycle NOPs make the boundary exact.
+    dsp = NativeC5x.from_program(0, struct.pack('<20000H', *([0x8b00] * 20000)))
+    model = ImodemHostIo(shared, cycles_per_instruction=8.064, read_quantum=32)
+    try:
+        model.configure(dsp.handle, True, wallclock=True)
+        model.set_wall_target(15120)
+        for turn, expected in enumerate((4128, 8256, 12384, 15120), 1):
+            model.advance_serve(turn * 512, 0)
+            assert dsp.state()['cycles'] == expected
+            assert shared.dsp_instructions == turn * 512
+        # Reaching the wall clock does not step ahead of it.
+        model.advance_serve(2560, 0)
+        assert dsp.state()['cycles'] == 15120
+        assert model.clock_stats() == {
+            'peak_lag_cycles': 15120, 'bounded_advances': 3, 'advances': 4,
+            'data_posts': 0, 'data_acks': 0, 'data_byte_reads': 0,
+            'data_torn_words': 0,
+            **{f'bank_{bank}_busy_writes': 0 for bank in range(6)}}
+    finally:
+        model.close()
+        dsp.close()
+
+
+def test_wallclock_status_access_is_not_an_extra_cpu_scheduling_turn():
+    shared = ImodemShared()
+    dsp = NativeC5x.from_program(0, struct.pack('<20000H', *([0x8b00] * 20000)))
+    model = ImodemHostIo(shared, cycles_per_instruction=8.064, read_quantum=0)
+    try:
+        model.configure(dsp.handle, True, wallclock=True)
+        model.set_wall_target(20000)
+        model.advance_serve(512, 0)
+        before = dsp.state()['cycles']
+        for port in (0x18, 0x1a, 0x18):
+            assert access(model, 1, port, now=512)[0] == 1
+        assert dsp.state()['cycles'] == before
+        # Two retired CPU instructions allow 16 DSP cycles, not 5040.
+        assert access(model, 1, 0x18, now=514)[0] == 1
+        assert dsp.state()['cycles'] - before == 16
+        # The wall target was not shortened; a later CPU turn carries on.
+        model.advance_serve(1024, 0)
+        assert dsp.state()['cycles'] > before + 16
+    finally:
+        model.close()
+        dsp.close()
+
+
+def test_data_lane_busy_write_counter_distinguishes_acknowledged_bank():
+    shared = ImodemShared()
+    words = (0xbf80, 0x1234, 0x885d, 0xbf80, 0x5678, 0x885d)
+    dsp = NativeC5x.from_program(0, struct.pack('<6H', *words))
+    model = ImodemHostIo(shared, cycles_per_instruction=8.064, read_quantum=32)
+    try:
+        dsp.configure_host_mailbox()
+        model.configure(dsp.handle, True)
+        dsp.set_io(0x56, 0)  # bank 5 is not free
+        dsp.step(3)
+        assert model.clock_stats()['bank_5_busy_writes'] == 1
+        assert access(model, 2, 0x1a, 0x20)[0] == 1
+        dsp.step(3)
+        stats = model.clock_stats()
+        assert stats['bank_5_busy_writes'] == 1
+        assert stats['data_acks'] == 1
+        dsp.reset()
+        assert model.clock_stats()['bank_5_busy_writes'] == 0
+    finally:
+        model.close()
+        dsp.close()
+
+
+@pytest.mark.parametrize('paced', [False, True])
+def test_wallclock_holding_word_reads_do_not_run_owed_dsp_between_bytes(paced):
+    shared = ImodemShared()
+    # Send 1234, pause, then send ABCD. A large wall-clock deficit must not
+    # execute the second send as a side effect of reading the first word.
+    words = [0xbf80, 0x1234, 0x8858] + [0x8b00] * 6000 + [0xbf80, 0xabcd, 0x8858]
+    dsp = NativeC5x.from_program(0, struct.pack(f'<{len(words)}H', *words))
+    model = ImodemHostIo(shared, cycles_per_instruction=8.064, read_quantum=32)
+    try:
+        if paced:
+            from courier_emu.poll_state import PollState, native_monotonic_ns
+            state = PollState()
+            state.live_cpu_ns = native_monotonic_ns()
+            model.set_poll_state(state)
+        dsp.configure_host_mailbox()
+        model.configure(dsp.handle, True, wallclock=True)
+        dsp.step(3)
+        before = dsp.state()['cycles']
+        model.set_wall_target(before + 10000)
+        assert access(model, 1, 0x40, now=100)[1] == 0x34
+        assert access(model, 1, 0x42, now=102)[1] == 0x12
+        assert dsp.state()['cycles'] == before
+        # The ordinary native scheduler still advances toward the same target.
+        model.advance_serve(512, 0, supervisor_turn=paced)
+        model.advance_serve(1024, 0, supervisor_turn=paced)
+        assert dsp.io_output(0x58) == 0xabcd
+    finally:
+        model.close()
+        dsp.close()
 
 
 def test_analog_lanes_read_the_dsp_cells_and_commit_window_bytes():

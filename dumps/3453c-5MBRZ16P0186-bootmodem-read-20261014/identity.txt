@@ -1,0 +1,24 @@
+
+ATI7
+USRobotics Courier V.Everything Configuration Profile...
+
+Product type           US/Canada External
+Product ID             00345303
+Options                HST,V32bis,Terbo,V34+,V90
+Clock Freq             25 MHz
+Flash ROM              1024k
+Ram                    256k
+
+Supervisor date        09/24/08
+DSP date               06/04/08
+
+Supervisor rev         2.3.31
+DSP rev                2.1.41
+DAA rev                0000 : DAA Failure (zero is Invalid)
+
+Serial Number          5MBRZ16P0186
+
+
+.bootmodem.
+
+OK

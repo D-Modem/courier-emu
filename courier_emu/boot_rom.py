@@ -25,10 +25,10 @@ from pathlib import Path
 # 0x0000-0x07ff to the 25 MHz 2806 board's dump - which is what mask ROM looks
 # like and downloaded code does not.
 MASK_ROM = (Path(__file__).resolve().parent.parent /
-            "artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin")
+            "dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin")
 MASK_ROM_SHA256 = "d57bc46e1bcd6d4dc8872b97bba2d98ba8fb6b8661440c566b534f0b3f82fac9"
 ROM_WORDS = 0x2000
-MASK_ROM_3453C = Path(__file__).resolve().parent.parent / "artifacts/3453c-dsp-mask-rom-read-20261003/dsp-mask-rom-0000-0fff.bin"
+MASK_ROM_3453C = Path(__file__).resolve().parent.parent / "dumps/3453c-dsp-mask-rom-read-20261003/dsp-mask-rom-0000-0fff.bin"
 MASK_ROM_3453C_SHA256 = "262e4baa49590bb6ca4a473dffb8a8aee67c9fae020ce92ac3f59e077314f1d6"
 
 def mask_rom_3453c() -> bytes:

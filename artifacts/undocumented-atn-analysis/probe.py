@@ -62,7 +62,7 @@ class ScriptConsole:
 
 
 COMMANDS = ['AT', 'ATN0', 'ATN1', 'ATN7', 'ATNL', 'ATNX', 'AT']
-rom='artifacts/courier-board-21210-capture-403/courier-board.rom'
+rom='dumps/courier-board-21210-capture-403/courier-board.rom'
 console=ScriptConsole()
 m=CourierMachine(load_image(rom),nvram=CourierNvram.idsl302_fixture(),tick_ms=5,board_id=7,console=console)
 console.machine=m

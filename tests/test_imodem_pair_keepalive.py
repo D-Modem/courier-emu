@@ -25,6 +25,15 @@ def test_keepalive_accepts_final_strobe_and_peer_closing_at_instruction_limit():
     check_keepalive(active_pair_side())
 
 
+def test_keepalive_uses_bearer_duration_not_frame_count_with_smaller_exchanges():
+    result = active_pair_side()
+    result['g711_peer'].update(frames=1000, frame_octets=160)
+    with pytest.raises(AssertionError, match='clearing window'):
+        check_keepalive(result)
+    result['g711_peer']['frames'] = 1250
+    check_keepalive(result)
+
+
 @pytest.mark.parametrize('serial', ['DISCONNECT\r\n', '\r\nCONNECT 64000/ARQ/x2\r',
                                   'ATCONNECT\r\n'])
 def test_connect_result_rejects_incomplete_or_embedded_results(serial):
