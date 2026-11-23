@@ -1,6 +1,6 @@
 {
   "firmware_sha256": "8c1c5d050777f598cde1046014062bfbe9b441a8067708ae4dec5c2455135ca8",
-  "capture": "/Users/scottcryan/courier-emu/artifacts/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin",
+  "capture": "/Users/scottcryan/courier-emu/dumps/3453c-dsp-memory-read-20261003/dsp-program-fast-0000-7fff.bin",
   "capture_sha256": "a76f8c82a497a087af58741c395199e69f7923cd84ca9b0a73bab8ab7e1b329c",
   "bytes": 65536,
   "elapsed_seconds": 69.581,

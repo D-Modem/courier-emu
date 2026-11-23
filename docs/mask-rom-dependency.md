@@ -1,6 +1,6 @@
 # The 3453B needs the C51 mask ROM; the 3453C unmaps it
 
-We measured this against `artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin`,
+We measured this against `dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin`,
 the 8K ROM recovered from the 20.16 MHz board, on 2026-09-15. The addresses
 are C5x program words. Background: [the download architecture](c51-cpu-loader.md) and
 [the origin correction](hardware-timebase-and-audio-path.md#3-corrected-the-xmf-payload-loads-at-8000-not-0000).

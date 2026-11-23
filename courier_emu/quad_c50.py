@@ -178,6 +178,7 @@ class QuadC50Endpoint:
     reboots: int = 0
     program: list[int] = field(default_factory=list)
     steps: int = 0
+    cycles: int = 0
     pulls: int = 0
     bursts: int = 0
     resets: int = 0
@@ -188,6 +189,9 @@ class QuadC50Endpoint:
     _event_cursor: int = 0
     resets_seen: int = 0
     digital_call: bool = False
+    media_peer: object | None = None
+    _media_started: bool = False
+    _tx_cursor: int = 0
     g711_idle: int = 0xff
     _g711_rx: bytearray = field(default_factory=bytearray)
     _boot_pending: bool = False
@@ -196,6 +200,8 @@ class QuadC50Endpoint:
     runtime_bursts: int = 0
     runtime_acks: int = 0
     _runtime_waiting: bool = False
+    _overlay_ready: bool = False
+    _window_read_mask: int = 0
     _cpu_status: int = 0
     _reply: dict[int, int] = field(default_factory=dict)
     _xf_cursor: int = 0
@@ -205,9 +211,47 @@ class QuadC50Endpoint:
     replies_posted: int = 0
     replies_acked: int = 0
     exchanges: list[dict[str, object]] = field(default_factory=list)
+    trace_data_lanes: bool = False
+    data_lane_events: list[dict[str, int | str]] = field(default_factory=list)
+    data_lane_limit: int = 4096
+    service_slice_cycles: int = 64
+    data_words_sent: int = 0
+    data_words_received: int = 0
+
+    def __post_init__(self):
+        if self.service_slice_cycles <= 0:
+            raise ValueError("DSP service slice must be positive")
+
+    def _record_data_lane(self, direction: str, bank: int, word: int) -> None:
+        if direction == "cpu-to-dsp":
+            self.data_words_sent += 1
+        else:
+            self.data_words_received += 1
+        if self.trace_data_lanes and len(self.data_lane_events) < self.data_lane_limit:
+            self.data_lane_events.append({"direction": direction, "bank": bank,
+                                         "word": word, "cycles": self.cycles})
 
     # -- CPU side ---------------------------------------------------------
+    def _lanes_live(self) -> bool:
+        return (self.core is not None and not self._in_reset
+                and not self._boot_pending and self._completion)
+
     def read(self, port: int, size: int) -> int | None:
+        # Six bidirectional data banks share the boot download latches, just
+        # as on the analog ASIC. PA6 low bits are host-to-DSP pending; its
+        # upper bits are DSP-to-host FREE. Ports 98/9a expose their inverse.
+        if self._lanes_live() and size == 1:
+            if port in (0x98, 0x9a):
+                status = self.core.io(0x56)
+                if port == 0x9a:
+                    status >>= 8
+                return 0xc0 | (~status & 0x3f)
+            if 0xc0 <= port <= 0xd6 and port % 4 in (0, 2):
+                bank = (port - 0xc0) // 4
+                word = self.core.io_output(0x58 + bank)
+                if not port & 2 and not self.core.io(0x56) & (0x100 << bank):
+                    self._record_data_lane("dsp-to-cpu", bank, word)
+                return (word >> (8 if port & 2 else 0)) & 0xff
         # Runtime reads see DSP reply latches, independent of CPU writes.
         if port in (0xD8, 0xDA, 0xDC, 0xDE) and not self._in_reset:
             word = self._reply.get(0x5E if port < 0xDC else 0x5F, 0)
@@ -219,7 +263,8 @@ class QuadC50Endpoint:
             # waits for bit 1 after every four-word burst.  Keep bit 2 raised
             # as the link-present indication while the burst acknowledgement
             # follows the resident's actual 0x57 write.
-            return 0x04 | (0x00 if self._runtime_waiting else 0x02)
+            return (0x04 | (0x00 if self._runtime_waiting else 0x02)
+                    if self._overlay_ready else 0)
         if port == STATUS_PORT:
             if self._in_reset:
                 # 0xcec72 writes 0xffff to 0x98/0x9a and 0x9c/0x9e and polls
@@ -233,6 +278,19 @@ class QuadC50Endpoint:
         return None
 
     def write(self, port: int, size: int, value: int) -> bool:
+        if (self._lanes_live() and size == 1 and port in (0x98, 0x9a)
+                and not (port == 0x98 and value & 0xff == 0xff)):
+            bits = value & 0x3f
+            if port == 0x98:
+                for bank in range(6):
+                    if bits & (1 << bank):
+                        word = self.lanes.get(0xc0 + 4 * bank, 0)
+                        self.core.set_io(0x58 + bank, word)
+                        self._record_data_lane("cpu-to-dsp", bank, word)
+            else:
+                bits <<= 8
+            self.core.set_io(0x56, self.core.io(0x56) | bits)
+            return False
         if port in LANE_PORTS:
             self.lanes[port] = (self.lanes.get(port, 0) & 0xFF00) | (value & 0xFF)
             return False
@@ -250,6 +308,10 @@ class QuadC50Endpoint:
             if value & 1 and self._cpu_status & 1:
                 self.core.set_io(0x5E, self.lanes.get(0xD8, 0))
                 self.core.set_io(0x5F, self.lanes.get(0xDC, 0))
+                if self.lanes.get(0xD8, 0) == 2:
+                    # The CPU must wait for the DSP's download-arm ack before
+                    # exposing the first burst, not just for a present link.
+                    self._overlay_ready = False
                 self.commands_sent += 1
                 if len(self.exchanges) < 256:
                     self.exchanges.append({"direction": "cpu-to-dsp", "steps": self.steps,
@@ -267,7 +329,11 @@ class QuadC50Endpoint:
     def _runtime_strobe(self, value: int) -> None:
         """Handle the overlay stream emitted by the CPU routine at 0xcee5f."""
         if value == 4:
+            # ceede starts the transaction BEFORE queuing command 2. An arm
+            # acknowledgement from an earlier reset/overlay is not readiness
+            # for this transfer; wait for its new 0700 DSP acknowledgement.
             self.runtime_active = True
+            self._overlay_ready = False
             self._runtime_waiting = False
             return
         if value != 2 or not self.runtime_active or self.core is None:
@@ -282,12 +348,14 @@ class QuadC50Endpoint:
         )
         self.window_group = LANE_BASE
         self._runtime_waiting = True
+        self._window_read_mask = 0
         self.core.set_io(DSP_STATUS_MMR, self.core.io(DSP_STATUS_MMR) | 0x0200)
 
     def _strobe(self, value: int) -> None:
         if value == 0xFF:
             self.resets += 1
             self._in_reset = True
+            self._completion = False
             self.lanes.clear()
             self.window = None
             self.window_group = None
@@ -306,6 +374,7 @@ class QuadC50Endpoint:
             self.program = []
             self._boot_pending = False
             self._pcm_active = False
+            self._tx_cursor = 0
             self._event_cursor = 0
             self._xf_cursor = 0
             self.irq_pending = False
@@ -313,6 +382,8 @@ class QuadC50Endpoint:
             self._reply.clear()
             self.runtime_active = False
             self._runtime_waiting = False
+            self._overlay_ready = False
+            self._window_read_mask = 0
             return
         self._in_reset = False
         if value == 4:
@@ -334,6 +405,7 @@ class QuadC50Endpoint:
         self.bursts += 1
         self.window = tuple(self.lanes.pop(group + LANE_STRIDE * i, 0) for i in range(4))
         self.window_group = group
+        self._window_read_mask = 0
 
     def _collect(self, value: int) -> None:
         group = LANE_BASE if value & 1 else (LANE_BASE + 0x10 if value & 2 else None)
@@ -367,12 +439,18 @@ class QuadC50Endpoint:
         from .dsp import NativeC5x
 
         rom = (Path(__file__).resolve().parent.parent /
-               "artifacts/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin").read_bytes()
+               "dumps/dsp-onchip-rom-20mhz-8k/c5x-onchip-rom-8k.bin").read_bytes()
         if sha256(rom).hexdigest() != ROM_SHA256:
             raise ValueError("recovered DSP boot ROM checksum mismatch")
         words = self.program[:RESIDENT_WORDS]
         core = NativeC5x.from_program(RESIDENT_ORIGIN, bytes(RESIDENT_WORDS * 2))
         core.configure_host_mailbox()
+        if self.trace_data_lanes:
+            # Keep a bounded trace of the V.42 accumulator and control cells;
+            # these are reads as well as writes, so the native fixed watch set
+            # is used rather than a write-only address filter.
+            core.trace_data_writes(True)
+            core.set_data_event_limit(200_000)
         core.set_io(0x57, 0)
         core.load_rom(rom)
         core.set_mpmc_pin(0)
@@ -410,7 +488,16 @@ class QuadC50Endpoint:
             self._activate_pcm()
 
     def _activate_pcm(self) -> None:
-        if self.digital_call:
+        if self.digital_call and not self._pcm_active:
+            if self.media_peer is not None and not self._media_started:
+                self.media_peer.start()
+                self._media_started = True
+            if self.media_peer is not None:
+                # A framed synchronous peer exchanges complete wire blocks.
+                # The physical highway is idle during its initial transit
+                # reserve, not an empty receive FIFO.
+                self._g711_rx.extend(bytes((self.g711_idle,)) *
+                                     getattr(self.media_peer, "frame_octets", 800))
             self.core.configure_digital_pcm(
                 idle_codeword=self.g711_idle, clock_hz=ASIC_DSP_CLOCK_HZ)
             self.core.configure_line_frame_interrupt(ROM_FRAME_IRQ, 0xFFFF)
@@ -450,19 +537,31 @@ class QuadC50Endpoint:
         if self.core is None:
             return
         self._debt += cpu_instructions * DSP_CYCLES_PER_X86
-        budget = int(self._debt)
-        if budget <= 0:
-            return
-        self._debt -= budget
-        while budget > 0:
+        while self._debt >= 1:
             # All four words are present at once, so the stub's consecutive
             # reads see a coherent window and the core need not be single
             # stepped for it.
             if self.window is not None:
                 for port, word in zip(DSP_WINDOW, self.window, strict=True):
                     self.core.set_io(port, word)
-            slice_size = min(budget, 64)
-            self.core.step(slice_size)
+            # Charge actual C51 cycles, including multi-cycle instructions
+            # and delay slots, as on the analogue and I-modem endpoints.
+            # Keep boot/download window pacing unchanged. Larger optional
+            # runtime slices reduce Python/native crossings; advance_imodem
+            # still yields at every PCM sample before another can be consumed.
+            budget = 64 if self._boot_pending or self.window is not None else self.service_slice_cycles
+            slice_size = min(int(self._debt), budget)
+            octets = b""
+            if self._pcm_active and self.media_peer is not None:
+                # Reuse the I-modem's yield-on-frame primitive. Refill before
+                # another serial frame, not after an entire CPU service batch.
+                ran, elapsed, _, _, _, _, octets = self.core.advance_imodem(
+                    slice_size, self._tx_cursor)
+            else:
+                ran, elapsed = self.core.step_cycles(slice_size)
+            self._debt -= elapsed
+            self.steps += ran
+            self.cycles += elapsed
             if (self._boot_pending
                     and self.core.codec_state()["codec_rx_size"] == 0
                     and self.core.state()["pc"] >= RESIDENT_ORIGIN):
@@ -470,29 +569,35 @@ class QuadC50Endpoint:
                 self._cpu_status = 1
                 self.core.set_io(0x57, self.core.io(0x57) | 2)
                 self._activate_pcm()
-            self.steps += slice_size
-            budget -= slice_size
             self._drain_pulls()
             edges = self.core.xf_falling_edges()
             if edges > self._xf_cursor:
                 self.irq_pending = True
             self._xf_cursor = edges
+            if octets:
+                self._tx_cursor += len(octets)
+                incoming = self.media_peer.exchange(octets)
+                if incoming:
+                    self.receive_g711(incoming)
 
     def _drain_pulls(self) -> None:
         library = self.core.library
         handle = self.core.handle
         count = int(library.courier_c5x_get_io_event_count(handle))
-        if count < self._event_cursor:
-            # C5xCore::reset() clears the event log. Without this the cursor
-            # stays past the end and the drain silently stops for good, which
-            # is what made an earlier run report acknowledgements with no reads.
+        total = self.core.io_event_total()
+        if total < self._event_cursor:
+            # A native reset restarts the sequence, unlike ring eviction.
             self._event_cursor = 0
             self.resets_seen += 1
+        available = total - self._event_cursor
+        if available > count:
+            raise RuntimeError(f"Quad DSP I/O drain overrun; handshake history lost "
+                               f"({available} new events, {count} retained, "
+                               f"DSP pc={self.core.state()['pc']:04x})")
         import ctypes as _ctypes
-        while self._event_cursor < count:
-            values = (_ctypes.c_uint64 * 5)()
-            library.courier_c5x_get_io_event(handle, self._event_cursor, values, 5)
-            self._event_cursor += 1
+        values = (_ctypes.c_uint64 * 5)()
+        for index in range(count - available, count):
+            library.courier_c5x_get_io_event(handle, index, values, 5)
             write, port = int(values[0]), int(values[1])
             value = int(values[2])
             if write and port in (0x5E, 0x5F):
@@ -507,9 +612,16 @@ class QuadC50Endpoint:
                     if len(self.exchanges) < 256:
                         self.exchanges.append({"direction": "dsp-to-cpu", "steps": self.steps,
                             "command": self._reply.get(0x5E, 0), "argument": self._reply.get(0x5F, 0)})
+            if not write and self.window is not None and port in DSP_WINDOW:
+                self._window_read_mask |= 1 << DSP_WINDOW.index(port)
+            if (write and port == DSP_STATUS_MMR and value != 0xffff
+                    and value & 0x0400):
+                self._overlay_ready = True
             if not write and port == DSP_FETCH_MMR:
                 self.pulls += 1
-            elif write and port == DSP_STATUS_MMR and self.window is not None:
+            elif (write and port == DSP_STATUS_MMR and value != 0xffff
+                  and value & 0x0200 and self.window is not None
+                  and self._window_read_mask == 0xf):
                 # 0x8313's write is the acknowledge: the window has been taken.
                 self.program.extend(self.window)
                 self.window = None
@@ -518,10 +630,12 @@ class QuadC50Endpoint:
                 if self._runtime_waiting:
                     self._runtime_waiting = False
                     self.runtime_acks += 1
+        self._event_cursor = total
 
     def status(self) -> dict[str, object]:
         return {
-            "steps": self.steps, "pulls": self.pulls, "bursts": self.bursts,
+            "steps": self.steps, "cycles": self.cycles,
+            "pulls": self.pulls, "bursts": self.bursts,
             "resets": self.resets, "acks": self.acks,
             "core_log_resets": self.resets_seen, "reboots": self.reboots,
             "window_open": self.window is not None,
@@ -530,10 +644,17 @@ class QuadC50Endpoint:
             "boot_pending": self._boot_pending, "pcm_active": self._pcm_active,
             "g711_tx": 0 if self.core is None else len(self.core.g711_tx()),
             "runtime_active": self.runtime_active,
+            "overlay_ready": self._overlay_ready,
+            "window_read_mask": self._window_read_mask,
+            "data_words_sent": self.data_words_sent,
+            "data_words_received": self.data_words_received,
             "runtime_bursts": self.runtime_bursts,
             "runtime_acks": self.runtime_acks,
             "commands_sent": self.commands_sent, "commands_acked": self.commands_acked,
             "replies_posted": self.replies_posted, "replies_acked": self.replies_acked,
             "xf_edges": self._xf_cursor,
+            "media_peer": self.media_peer.status() if self.media_peer is not None else None,
+            "service_slice_cycles": self.service_slice_cycles,
+            "pcm_rx_underruns": self.core.g711_rx_underruns() if self._pcm_active else 0,
             "exchanges": list(self.exchanges),
         }

@@ -1,0 +1,179 @@
+{
+  "passed": false,
+  "errors": [
+    "analog: traffic stalled",
+    "imodem: insufficient verified traffic"
+  ],
+  "integrity": {
+    "analog": {
+      "matches_saved_bytes": true,
+      "checked_bytes": 7553,
+      "complete_records": 14,
+      "partial_bytes": 119,
+      "complete_record_sha256": "e17304e1283f4a425270b9d586f0528b4c593e986483a8f5d5b04b5f54c98710"
+    },
+    "imodem": {
+      "matches_saved_bytes": true,
+      "checked_bytes": 1390,
+      "complete_records": 2,
+      "partial_bytes": 328,
+      "complete_record_sha256": "b4249f63dfb9deede21d372e004614ae35d9106da84d4169c8ac49db9106d4b5"
+    }
+  },
+  "carrier_at_window_end": true,
+  "host_transport_clean": true,
+  "windows": {
+    "analog": {
+      "elapsed_frames": 600,
+      "errors": [],
+      "largest_receive_gaps": [
+        {
+          "end_frame": 15,
+          "gap_frames": 8,
+          "sequence": 1,
+          "start_frame": 7
+        },
+        {
+          "end_frame": 23,
+          "gap_frames": 8,
+          "sequence": 2,
+          "start_frame": 15
+        },
+        {
+          "end_frame": 31,
+          "gap_frames": 8,
+          "sequence": 3,
+          "start_frame": 23
+        },
+        {
+          "end_frame": 39,
+          "gap_frames": 8,
+          "sequence": 4,
+          "start_frame": 31
+        },
+        {
+          "end_frame": 47,
+          "gap_frames": 8,
+          "sequence": 5,
+          "start_frame": 39
+        },
+        {
+          "end_frame": 55,
+          "gap_frames": 8,
+          "sequence": 6,
+          "start_frame": 47
+        },
+        {
+          "end_frame": 63,
+          "gap_frames": 8,
+          "sequence": 7,
+          "start_frame": 55
+        },
+        {
+          "end_frame": 71,
+          "gap_frames": 8,
+          "sequence": 8,
+          "start_frame": 63
+        },
+        {
+          "end_frame": 79,
+          "gap_frames": 8,
+          "sequence": 9,
+          "start_frame": 71
+        },
+        {
+          "end_frame": 87,
+          "gap_frames": 8,
+          "sequence": 10,
+          "start_frame": 79
+        }
+      ],
+      "last_rx_frame": 110,
+      "max_gap_frames": 8,
+      "mean_receive_gap_frames": 7.857142857142857,
+      "pending_bytes": 119,
+      "received_bytes": 7434,
+      "received_records": 14,
+      "received_sha256": "e17304e1283f4a425270b9d586f0528b4c593e986483a8f5d5b04b5f54c98710",
+      "record_size": 512,
+      "sent_bytes": 1593,
+      "sent_records": 3,
+      "sent_sha256": "761598c66d045d018ef64f5a04a7a9ba0d9edbb38fbd167170aaa9b42bc03125",
+      "started": true,
+      "target_frames": 600,
+      "target_receive_bytes_per_second": 123.9,
+      "target_received_bytes": 7434
+    },
+    "imodem": {
+      "elapsed_frames": 600,
+      "errors": [],
+      "largest_receive_gaps": [
+        {
+          "end_frame": 274,
+          "gap_frames": 274,
+          "sequence": 0,
+          "start_frame": 0
+        },
+        {
+          "end_frame": 357,
+          "gap_frames": 83,
+          "sequence": 1,
+          "start_frame": 274
+        }
+      ],
+      "last_rx_frame": 357,
+      "max_gap_frames": 274,
+      "mean_receive_gap_frames": 178.5,
+      "pending_bytes": 328,
+      "received_bytes": 1062,
+      "received_records": 2,
+      "received_sha256": "b4249f63dfb9deede21d372e004614ae35d9106da84d4169c8ac49db9106d4b5",
+      "record_size": 512,
+      "sent_bytes": 7965,
+      "sent_records": 15,
+      "sent_sha256": "ba9daf1d8310b6cd1f8fcd5d970ce37b6f4cb11811428c6399e75bba22a3c140",
+      "started": true,
+      "target_frames": 600,
+      "target_receive_bytes_per_second": 17.7,
+      "target_received_bytes": 1062
+    }
+  },
+  "throughput": {
+    "analog": {
+      "payload_bytes_per_second": 119.46666666666667,
+      "record_bytes_per_second": 123.9
+    },
+    "imodem": {
+      "payload_bytes_per_second": 17.066666666666666,
+      "record_bytes_per_second": 17.7
+    }
+  },
+  "clock": {
+    "active_idle_samples": 0,
+    "native": {
+      "advances": 1191781,
+      "bank_0_busy_writes": 0,
+      "bank_1_busy_writes": 0,
+      "bank_2_busy_writes": 0,
+      "bank_3_busy_writes": 0,
+      "bank_4_busy_writes": 0,
+      "bank_5_busy_writes": 0,
+      "bounded_advances": 45122,
+      "data_acks": 218940,
+      "data_byte_reads": 438178,
+      "data_posts": 382567,
+      "data_torn_words": 0,
+      "peak_lag_cycles": 1937348
+    },
+    "native_io_live": true,
+    "native_io_wallclock": true,
+    "pcm_frame_service": false,
+    "realtime_cycles": 3062304472,
+    "wall_seconds": 84.65703866700642
+  },
+  "connect": {
+    "analog": "\r\nCONNECT 52000/ARQ/x2/LAPM/V42BIS\r\n",
+    "imodem": "\r\nOK\r\n\r\nCONNECT 33333/ARQ/x2/LAPM/V42BIS\r\n"
+  },
+  "ati6": "\r\n\r\nChars sent                 6144      Chars Received                0\r\nChars lost                    0\r\nOctets sent                5007      Octets Received            1217\r\nBlocks sent                 152      Blocks Received             180\r\nBlocks resent                63\r\n\r\nRetrains Requested            0      Retrains Granted              0\r\nLine Reversals                0      Blers                       623\r\nLink Timeouts                10      Link Naks                     0\r\n\r\nData Compression       V42BIS 2048/32\r\nEqualization           Long\r\nFallback               Disabled\r\nProtocol               LAPM\r\nSpeed                  28800/54666\r\nCurrent Call           00:00:33\r\n\r\nOnline\r\nOK\r\n"
+}

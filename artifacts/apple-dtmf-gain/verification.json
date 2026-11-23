@@ -1,0 +1,78 @@
+{
+  "baseline": {
+    "gain": 0.25,
+    "commanded_number": "6312",
+    "observed_sip_target": "6",
+    "sip_final_response": "484 Address Incomplete",
+    "evidence": "../apple-asterisk-check/README.md"
+  },
+  "gain_change_db": 12.041199826559248,
+  "pbx_or_gateway_config_changed": false,
+  "digit_timing_changed": false,
+  "results": [
+    {
+      "extension": "6312",
+      "gain": 1.0,
+      "sip_invites": [
+        "2026-10-22 12:21:34.638820 eth0  In  IP 10.69.111.3.34826 > 192.168.88.122.5060: SIP: INVITE sip:6312@192.168.88.122 SIP/2.0",
+        "2026-10-22 12:21:34.708806 eth0  In  IP 10.69.111.3.34826 > 192.168.88.122.5060: SIP: INVITE sip:6312@192.168.88.122 SIP/2.0",
+        "2026-10-22 12:21:34.723313 eth0  Out IP 192.168.88.122.5060 > 10.69.70.221.5060: SIP: INVITE sip:6312@10.69.70.221:5060 SIP/2.0",
+        "2026-10-22 12:21:35.222894 eth0  Out IP 192.168.88.122.5060 > 10.69.70.221.5060: SIP: INVITE sip:6312@10.69.70.221:5060 SIP/2.0"
+      ],
+      "cdr": {
+        "source": "6004",
+        "destination": "6312",
+        "channel": "PJSIP/6004-00000569",
+        "destination_channel": "PJSIP/6312-0000056a",
+        "start_utc": "2026-10-21 23:21:34",
+        "answer_utc": "2026-10-21 23:21:37",
+        "end_utc": "2026-10-21 23:22:01",
+        "duration": "26",
+        "billsec": "24",
+        "disposition": "ANSWERED",
+        "uniqueid": "1792624894.2114"
+      },
+      "worker_exit": 0,
+      "serial": "\r\nNO CARRIER\r\n",
+      "transport_error": null,
+      "helper_counters": {
+        "active output gaps": 0,
+        "input overflow": 0,
+        "reset silence": 2048,
+        "reset RX discarded": 2048
+      },
+      "hook_released": true
+    },
+    {
+      "extension": "6313",
+      "gain": 1.0,
+      "sip_invites": [
+        "2026-10-22 12:26:33.603480 eth0  In  IP 10.69.111.3.34826 > 192.168.88.122.5060: SIP: INVITE sip:6313@192.168.88.122 SIP/2.0",
+        "2026-10-22 12:26:33.671780 eth0  In  IP 10.69.111.3.34826 > 192.168.88.122.5060: SIP: INVITE sip:6313@192.168.88.122 SIP/2.0",
+        "2026-10-22 12:26:33.675225 eth0  Out IP 192.168.88.122.5060 > 10.69.70.221.5060: SIP: INVITE sip:6313@10.69.70.221:5060 SIP/2.0"
+      ],
+      "cdr": {
+        "source": "6004",
+        "destination": "6313",
+        "channel": "PJSIP/6004-0000056b",
+        "destination_channel": "PJSIP/6313-0000056c",
+        "start_utc": "2026-10-21 23:26:33",
+        "answer_utc": "2026-10-21 23:26:35",
+        "end_utc": "2026-10-21 23:26:42",
+        "billsec": "7",
+        "disposition": "ANSWERED",
+        "uniqueid": "1792625193.2117"
+      },
+      "worker_exit": 1,
+      "serial": "",
+      "transport_error": "Apple audio helper closed (see its stderr)",
+      "helper_counters": {
+        "active output gaps": 130,
+        "input overflow": 0,
+        "reset silence": 512,
+        "reset RX discarded": 512
+      },
+      "hook_released": true
+    }
+  ]
+}

@@ -24,14 +24,19 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault('COURIER_LINE_FRAME_MS', '20')
-from courier_emu.line import LineLink, LineFrame, CALL_ANSWERED, CALL_RINGING, CALL_CLEARED
+from courier_emu.line import (
+    LineLink, LineFrame, CALL_ANSWERED, CALL_RINGING, CALL_CLEARED,
+    LINE_FRAME_SAMPLES, LINE_FRAME_INSTRUCTIONS,
+)
 from courier_emu.bearer_line import BearerLineLink
 from courier_emu.sip import linear_to_ulaw, ulaw_to_linear
 
 
 class EnginePeer:
-    def __init__(self, output, engine, fast=False):
+    def __init__(self, output, engine, fast=False, frame_timeout=30.0, mode='x2'):
         self.output, self.engine, self.fast = output, engine, fast
+        self.frame_timeout = frame_timeout
+        self.mode = mode
         self.process = None
         self.samples = 0
         self.frames = 0
@@ -44,7 +49,14 @@ class EnginePeer:
         self.log = (self.output/'engine.log').open('wb')
         self.rx = (self.output/'engine-rx.g711').open('wb')
         self.tx = (self.output/'engine-tx.g711').open('wb')
-        env = os.environ.copy(); env['ME_MODE'] = 'x2'
+        env = os.environ.copy(); env['ME_MODE'] = self.mode
+        if self.mode == 'v90':
+            # V.90 (09/98) 9.3.1.6: repeat DIL until the analogue modem's
+            # completion signal, then finish the current segment. Courier
+            # 403 requests completion in cycle two; the engine's one-cycle
+            # interop fallback sends Ri before it is ready. Scope this
+            # profile to our analog V.90 probe, not other hardware peers.
+            env.setdefault('ME_V90_DIL_AUTOTERMINATE_CYCLES', '0')
         self.environment = {k:v for k,v in env.items() if k.startswith('ME_')}
         self.engine_sha256 = hashlib.sha256(self.engine.read_bytes()).hexdigest()
         self.process = subprocess.Popen([str(self.engine), str(Path(tempfile.gettempdir())/(self.output.name+'-pty'))],
@@ -54,7 +66,8 @@ class EnginePeer:
     def exchange(self, octets):
         self.start()
         if not octets: return b''
-        assert len(octets) <= 4096
+        if len(octets) > 4096:
+            raise ValueError('engine frame exceeds 4096 octets')
         if not self.fast:
             delay = self.origin + self.samples/8000 - time.monotonic()
             if delay > 0: time.sleep(delay)
@@ -62,12 +75,22 @@ class EnginePeer:
         self.process.stdin.write(struct.pack('<H',len(octets))+octets)
         self.process.stdin.flush()
         reply = bytearray()
-        while len(reply) < len(octets):
-            if not select.select([self.process.stdout],[],[],30)[0]:
-                raise TimeoutError('engine frame')
-            chunk = self.process.stdout.read(len(octets)-len(reply))
-            if not chunk: raise EOFError('engine closed')
-            reply.extend(chunk)
+        deadline = time.monotonic() + self.frame_timeout
+        # Read the descriptor, not BufferedReader.read(n): after select marks
+        # even one byte ready, read(n) can still block forever waiting for n.
+        # Use one deadline for the entire frame, including fragmented replies.
+        try:
+            while len(reply) < len(octets):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not select.select([self.process.stdout], [], [], remaining)[0]:
+                    raise TimeoutError(f'engine frame: {len(reply)}/{len(octets)} octets')
+                chunk = os.read(self.process.stdout.fileno(), len(octets) - len(reply))
+                if not chunk:
+                    raise EOFError(f'engine closed: {len(reply)}/{len(octets)} octets')
+                reply.extend(chunk)
+        except (TimeoutError, EOFError) as exc:
+            self.error = str(exc)
+            raise
         self.tx.write(reply)
         self.samples += len(octets); self.frames += 1
         self.sent_non_ff += sum(x!=255 for x in octets)
@@ -80,6 +103,7 @@ class EnginePeer:
             try: self.process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 self.process.kill(); self.process.wait()
+            self.process.stdout.close()
             for f in (self.log,self.rx,self.tx): f.close()
 
     def status(self):
@@ -96,14 +120,17 @@ class EnginePeer:
 
 
 def analog(args):
-    out=args.output; peer=EnginePeer(out,args.engine,args.fast)
+    out=args.output
+    mode = getattr(args, 'modulation', 'x2')
+    peer=EnginePeer(out,args.engine,args.fast,mode=mode)
+    settings = 'S27=1S54=0S58=48' if mode == 'x2' else 'S39=8S54=0S58=1'
     with tempfile.TemporaryDirectory(prefix='x2-loop-') as temp:
         socket=str(Path(temp)/'line.sock')
         command=[sys.executable,'-m','courier_emu','run',
-            os.environ.get('COURIER_ROM',str(ROOT/'artifacts/courier-board-21210-capture-403/courier-board.rom')),
+            os.environ.get('COURIER_ROM',str(ROOT/'dumps/courier-board-21210-capture-403/courier-board.rom')),
             '--instructions',str(args.instructions),'--line-link',socket,'--line-listen',
             '--with-dsp',*(['--nvram',os.environ['COURIER_NVRAM']] if os.environ.get('COURIER_NVRAM') else ['--nvram-fixture','idsdl403']),'--board-id','7','--dip-preset','default',
-            '--tick-ms','5','--at',os.environ.get('COURIER_AT','ATX1S27=1S54=0S58=48&A3&B1Q0&U26&N39DT5551234'),
+            '--tick-ms','5','--at',os.environ.get('COURIER_AT',f'ATX1{settings}&A3&B1Q0&U26&N39DT5551234'),
             '--serial-input-after','5000000','--summary','--line-record',str(out/'analog'),
             '--dsp-trace-range','b1a1:b1c2','--dsp-write-watch','039f']
         command += os.environ.get('COURIER_EXTRA_ARGS','').split()  # local test hack
@@ -113,15 +140,15 @@ def analog(args):
         log=(out/'analog-stderr.log').open('wb')
         proc=subprocess.Popen(command,cwd=ROOT,stdout=(out/'analog-result.json').open('wb'),stderr=log,env=env)
         line=LineLink(socket,digital=True); codec=BearerLineLink(line)
-        tx=bytes([255])*160;answered=False
+        tx=bytes([255])*LINE_FRAME_SAMPLES;answered=False
         try:
             line.open()
             while line.connected and proc.poll() is None:
                 if not answered and line.peer_call_state>=CALL_RINGING:
                     answered=True;peer.start()
                 through=answered and line.peer_call_state<CALL_CLEARED
-                samples=[codec._clip(ulaw_to_linear(v)*codec.into_courier*_bl._DOWN_G+(_bl._IMP_RNG.gauss(0,_bl._DOWN_N) if _bl._DOWN_N else 0)) for v in tx] if through else [0]*160
-                line.exchange(LineFrame(line.frames*160*2500,answered,False,samples,
+                samples=[codec._clip(ulaw_to_linear(v)*codec.into_courier*_bl._DOWN_G+(_bl._IMP_RNG.gauss(0,_bl._DOWN_N) if _bl._DOWN_N else 0)) for v in tx] if through else [0]*LINE_FRAME_SAMPLES
+                line.exchange(LineFrame(line.frames*LINE_FRAME_INSTRUCTIONS,answered,False,samples,
                                         CALL_ANSWERED if through else line.peer_call_state))
                 incoming=line.receive_audio()
                 if through:
@@ -130,7 +157,10 @@ def analog(args):
                 if line.peer_call_state==CALL_CLEARED: break
         finally:
             line.close();peer.stop()
-            try:proc.wait(timeout=10)
+            # A cleared bearer can precede the guest instruction bound.
+            # Allow the CPU-only tail to finish and publish its summary,
+            # rather than killing longer continuity probes after ten seconds.
+            try:proc.wait(timeout=60)
             except subprocess.TimeoutExpired:proc.terminate();proc.wait()
             log.close()
         result={'type':'analog403','command':command,'analog_exit':proc.returncode,
@@ -198,6 +228,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('type',choices=['analog','imodem']);p.add_argument('--output',type=Path,required=True)
     p.add_argument('--engine',type=Path,default=ROOT.parent/'v90modem/v90_engine_peer')
+    p.add_argument('--modulation',choices=['x2','v90'],default='x2',
+                   help='analog peer modulation; v90 disables Courier x2 via S58=1')
     p.add_argument('--nvram',type=Path,default=ROOT/'artifacts/imodem-pair-x2-full-rate-routed-20261002/nvram-230400-switch2.sav')
     p.add_argument('--instructions',type=int,default=300_000_000);p.add_argument('--fast',action='store_true')
     p.add_argument('--classifier',action='store_true',help='trace the native PCM classifier instead of the INFO0 gate')
@@ -205,6 +237,8 @@ def main():
                    help='disable I-modem server (2), symmetric (8), and V.90 (32); retain constellation option 16')
     p.add_argument('--require-marker',action='store_true',help='fail unless the live engine accepts the supported 4d x2 marker')
     args=p.parse_args();args.output=args.output.resolve()
+    if args.type == 'imodem' and args.modulation != 'x2':
+        p.error('--modulation v90 is currently supported only for analog')
     args.output.mkdir(parents=True,exist_ok=False)
     (analog if args.type=='analog' else imodem)(args)
     if args.require_marker:

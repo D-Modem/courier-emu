@@ -11,6 +11,7 @@ here, not the Python attributes, are the live ones.
 from __future__ import annotations
 
 import ctypes
+from functools import lru_cache
 
 from .dsp import load_library
 
@@ -21,6 +22,21 @@ LINE_BUFFER_SLOTS = 512
 RECORD_SLOTS = 4096
 
 
+@lru_cache(maxsize=64)
+def first_instruction_at_tick(tick: int, ratio: float) -> int:
+    """Invert the timer's exact float-to-integer mapping, not an approximate ceil.
+
+    The same absolute deadline is queried at many native-poll arms. Include
+    the ratio in the key because board-clock discovery can change it at boot.
+    """
+    at = max(0, int(tick / ratio))
+    while at > 0 and int((at - 1) * ratio) >= tick:
+        at -= 1
+    while int(at * ratio) < tick:
+        at += 1
+    return at
+
+
 class WorkerPollState(ctypes.Structure):
     _fields_ = [
         ("core", ctypes.c_void_p),
@@ -28,8 +44,8 @@ class WorkerPollState(ctypes.Structure):
         ("instruction_base", I64),
         ("elide_until", U64), ("last_service", U64),
         ("timer_poll_owed", I64), ("timer_poll_period", U64),
-        ("last_frame", I64),
-        ("frame_instructions", U64), ("int0_ok", U64), ("int0_in_service", U64),
+        ("last_frame", F64),
+        ("frame_instructions", F64), ("int0_ok", U64), ("int0_in_service", U64),
         ("stack_depth", U64), ("stack", ctypes.c_uint8 * STACK_SLOTS),
         ("bridge_instructions", I64), ("probe_last", I64),
         ("codec_present", U64),
@@ -72,6 +88,14 @@ class WorkerPollState(ctypes.Structure):
         ("rx_record", ctypes.c_int16 * RECORD_SLOTS),
         ("rx_log", ctypes.c_int16 * RECORD_SLOTS),
         ("error", ctypes.c_char * 512),
+        ("physical_codec_rate", U64),
+        ("diagnostic_trace", ctypes.c_void_p),
+        ("frame_auto", U64), ("frame_codec_samples", U64),
+        ("frame_fallback", F64), ("frame_codec_active", U64),
+        ("frame_xf", U64), ("frame_xf_seen", U64), ("frame_xf_sample", U64),
+        ("frame_xf_generation", U64), ("frame_xf_delivered", U64),
+        ("frame_xf_coalesced", U64),
+        ("quiet_sip", U64), ("quiet_laneio", ctypes.c_void_p),
         ("int0_tout", U64), ("tout_seen", U64), ("int0_request", U64),
     ]
 
@@ -87,6 +111,25 @@ class WorkerPoll:
                     WorkerPollState.frame_ok.offset, WorkerPollState.error.offset)
         if tuple(layout) != expected:
             raise RuntimeError(f"WorkerPollState layout {tuple(layout)} != {expected}")
+        library.courier_worker_frame_cadence.argtypes = [ctypes.c_void_p, I64]
+        library.courier_worker_frame_cadence.restype = ctypes.c_int
+        library.courier_worker_consume_frame.argtypes = [ctypes.c_void_p, I64]
+        library.courier_worker_consume_frame.restype = None
+        self.library = library
         self.state = WorkerPollState()
         self.function = ctypes.cast(library.courier_worker_poll, ctypes.c_void_p).value
         self.context = ctypes.addressof(self.state)
+        gate = getattr(library, 'courier_worker_after_run_gate', None)
+        self.after_run_gate = (ctypes.cast(gate, ctypes.c_void_p).value, self.context) if gate else None
+
+    def refresh_frame_cadence(self, instructions: int) -> bool:
+        """Sample the native frame source without advancing either processor.
+
+        The caller must own the state (not concurrently execute the worker).
+        Returns whether a frame is due; does not consume its pending request.
+        """
+        return bool(self.library.courier_worker_frame_cadence(self.context, instructions))
+
+    def consume_frame(self, instructions: int) -> None:
+        """Consume one observed request; does not execute CPU/DSP instructions."""
+        self.library.courier_worker_consume_frame(self.context, instructions)

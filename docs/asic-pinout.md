@@ -9,7 +9,7 @@ from the continuity readings of the owner.
 
 > **These readings are from the 25 MHz Courier 2806.** This is the AC03 board,
 > supervisor 7.3.14 / DSP 3.0.13, dumped in
-> `artifacts/courier-2806-25mhz-flash-20260912`.
+> `dumps/courier-2806-25mhz-flash-20260912`.
 >
 > The marking above is **not** from that board. We read it from a photo of the
 > **20.16 MHz** unit that runs ID_SDL 4.03d, which

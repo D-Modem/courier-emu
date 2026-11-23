@@ -27,7 +27,7 @@ def test_live_timer_poll_and_pit_io_share_wall_clock(monkeypatch):
     machine.bri = SimpleNamespace(
         media_peer=SimpleNamespace(realtime_clock=True), call_state='active',
         service=lambda *args: None)
-    machine._advance_dsp = lambda: None
+    machine._advance_dsp = lambda *, supervisor_turn: None
     # Counter 1 is the firmware's 100 Hz clock; load it through normal I/O.
     machine.write_port(0xf043, 0x74)
     machine.write_port(0xf041, 8928 & 255)

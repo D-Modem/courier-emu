@@ -17,6 +17,44 @@
 
 namespace courier {
 
+// Passive, opt-in board timeline shared by the CPU lane model and DSP core.
+// DSP rows have no CPU timestamp: execution order is exact, but a catch-up
+// batch can represent earlier CPU work. Adjacent CPU stamps are observations,
+// not physical-time bounds, and must never be interpolated.
+struct BoardLaneTrace {
+    using Row = std::array<uint64_t, 8>;
+    bool enabled = true, armed = false;
+    uint64_t full_reads = 0, epoch = 0;
+    uint16_t trigger_pc = 0, trigger_return = 0, trigger_data = 0, idle_word = 0;
+    std::size_t post_remaining = 0, trigger_index = 0;
+    std::deque<Row> recent, snapshot;
+
+    void arm()
+    {
+        armed = true;
+        ++epoch;
+        full_reads = 0;
+        post_remaining = trigger_index = 0;
+        recent.clear();
+        snapshot.clear();
+    }
+    void record(const Row &row, bool full = false, bool eligible = true)
+    {
+        if (!enabled || !armed) return;
+        if (recent.size() >= 2048) recent.pop_front();
+        recent.push_back(row);
+        if (full) ++full_reads;
+        if (snapshot.empty() && full && eligible) {
+            snapshot = recent;
+            trigger_index = snapshot.size() - 1;
+            post_remaining = 256;
+        } else if (post_remaining) {
+            snapshot.push_back(row);
+            --post_remaining;
+        }
+    }
+};
+
 // Default Courier TMS320C51 on-chip memory: 1056 words of DARAM, 1K of SARAM and 8K of ROM.
 // The map is confirmed by the board probes in artifacts/dsp-memory-test-2806.
 // Model::C53 instead selects 16K ROM and 3K SARAM at program 4000/data 0800.
@@ -50,7 +88,7 @@ namespace courier {
 // The part is a 'C51, measured on both boards: 8K of on-chip ROM at
 // 0x0000-0x1FFF and 1K of SARAM. See artifacts/dsp-memory-test-2806. MP/MC
 // reads 0, so this window is mapped on the real board and is not the fixture
-// it used to be - artifacts/dsp-onchip-rom-20mhz-8k has its contents.
+// it used to be - dumps/dsp-onchip-rom-20mhz-8k has its contents.
 constexpr uint16_t C5X_B2_FIRST = 0x0060, C5X_B2_WORDS = 0x0020;
 constexpr uint16_t C5X_B0_FIRST = 0x0100, C5X_B0_WORDS = 0x0200;
 constexpr uint16_t C5X_B1_FIRST = 0x0300, C5X_B1_WORDS = 0x0200;
@@ -243,10 +281,13 @@ public:
     void queue_io_rx(uint16_t port, const uint16_t *words, std::size_t count);
     void configure_host_mailbox(bool enabled) { m_host_mailbox = enabled; }
     uint64_t xf_falling_edges() const { return m_xf_falling_edges; }
+    uint64_t reset_generation() const { return m_reset_generation; }
     void host_write(uint16_t address, uint16_t value);
     void queue_serial_rx(const uint16_t *samples, std::size_t count);
     void queue_codec_rx(const uint16_t *samples, std::size_t count);
     void queue_line_rx(const uint16_t *samples, std::size_t count);
+    static void prepare_line_input(double source_rate, double codec_rate);
+    void set_line_input_rate(double rate, unsigned cushion, bool prepared_only);
     // `return_scale` is 1/256ths of the transmit sample; `delay` is in codec
     // frames. Zero scale opens the loop and drops the delay line.
     void set_hybrid_return(uint32_t return_scale, uint32_t delay);
@@ -287,6 +328,9 @@ public:
     uint16_t line_dac_slot() const { return m_line_dac_slot; }
     uint16_t io(uint16_t port) const;
     uint16_t io_output(uint16_t port) const;
+    uint16_t data_channel_status() const;
+    void post_data_channels(uint16_t mask);
+    void ack_data_channels(uint16_t mask);
     uint16_t program(uint16_t address) const;
     uint16_t data(uint16_t address) const;
     // Inspection only. data() returns the raw backing store, so for an address
@@ -313,6 +357,10 @@ public:
     uint16_t codec_register(unsigned index) const { return m_codec.registers[index & 31]; }
     void set_codec_mclk(uint32_t hz);
     CodecState codec_state() const;
+    std::array<uint64_t, 3> line_input_counts() const
+    {
+        return {m_codec_line_queued_total, m_codec_line_consumed_total, m_codec_line_rx.size()};
+    }
     // Conversion rate in milli-hertz, so 7578.947 Hz survives the trip.
     uint64_t codec_sample_rate_millihz() const { return m_codec.sample_rate_millihz; }
     void schedule_line_frame_entry(uint16_t address) { m_line_frame_entry = address; m_ff.entry = true; }
@@ -332,7 +380,7 @@ public:
     }
     void set_call_tdm_active(bool active) { m_call_tdm_active = active; }
     bool call_tdm_active() const { return m_call_tdm_active; }
-    void set_pc(uint16_t address) { m_pc = address; m_ff.idle = false; }
+    void set_pc(uint16_t address) { m_pc = address; m_ff.idle = false; m_ff.idle2 = false; }
     void step();
     void run(uint64_t instruction_limit);
     void run_cycles(uint64_t cycle_limit, bool yield_on_pcm_frame = false);
@@ -353,6 +401,7 @@ public:
         return {m_delay_move_ignored, m_delay_move_last_pc, m_delay_move_last_address};
     }
     void set_data_trace(bool enabled) { m_trace_data_writes = enabled; }
+    void set_data_trace_reads(bool enabled) { m_trace_selected_reads = enabled; }
     // Restrict the write trace to one cell. Unfiltered it records every
     // write and the 4096-event buffer covers a few milliseconds of a run,
     // which is no use for watching one cell across a whole dial.
@@ -375,12 +424,20 @@ public:
     }
     void clear_data_events() { m_data_events.clear(); }
     // How many write events the data trace keeps (oldest dropped first); 4096 by default.
-    void set_data_event_limit(std::size_t limit) { m_data_event_limit = limit ? limit : 4096; }
+    void set_data_event_limit(std::size_t limit) {
+        m_data_event_limit = limit ? limit : 4096;
+        while (m_data_events.size() > m_data_event_limit) m_data_events.pop_front();
+    }
     State state() const;
     uint16_t program_counter() const { return m_pc; }
     std::size_t line_tx_count() const { return m_line_tx.size(); }
     SerialState serial_state() const;
+    void set_board_lane_trace(std::shared_ptr<BoardLaneTrace> trace)
+    {
+        m_board_lane_trace = std::move(trace);
+    }
     const std::deque<IoEvent> &io_events() const { return m_io_events; }
+    uint64_t io_event_total() const { return m_io_event_total; }
     // The mailbox ports on their own. `m_io_events` cannot answer what the
     // DSP sent: it is unfiltered and capped, and the datapump's transmit
     // writes to 0x50 run to hundreds of thousands per call, so it holds
@@ -389,9 +446,10 @@ public:
     // it pairs one message's tag with another's word. Record the writes
     // where they happen.
     const std::deque<IoEvent> &mailbox_events() const { return m_mailbox_events; }
-    const std::vector<DataEvent> &data_events() const { return m_data_events; }
+    const std::deque<DataEvent> &data_events() const { return m_data_events; }
     uint64_t data_write_count(uint16_t address) const { return m_data_write_counts[address]; }
     const PortStat &io_port_stat(uint16_t port) const { return m_io_port_stats[port]; }
+    uint64_t data_busy_writes(unsigned bank) const { return bank < 6 ? m_data_busy_writes[bank] : 0; }
     // Each entry: pc << 48 | opcode << 32 | ACC before the instruction.
     const std::deque<uint64_t> &pc_trace() const { return m_pc_trace; }
     // Empty it, so a harness draining it between runs sees each entry once.
@@ -470,6 +528,7 @@ private:
     // CPU-facing ASIC inputs and DSP-facing outputs are separate holding
     // registers even where they share a C51 port number.
     std::array<uint16_t, 16> m_asic_output{};
+    std::array<uint64_t, 6> m_data_busy_writes{};
     std::array<uint16_t, 0x4000> m_rom{};
     const uint16_t m_rom_words, m_saram_program_first, m_saram_words;
     std::array<uint16_t, 0x0c00> m_saram{};
@@ -494,12 +553,16 @@ private:
     uint16_t m_io_rx_port = 0xffff;
     std::deque<uint16_t> m_io_rx;
     std::deque<IoEvent> m_io_events;
+    uint64_t m_io_event_total = 0;
     std::deque<IoEvent> m_mailbox_events;
-    std::vector<DataEvent> m_data_events;
+    // Long Quad traces retain 200k events. Dropping the oldest must not
+    // move the entire capture on every DSP memory access.
+    std::deque<DataEvent> m_data_events;
     std::size_t m_data_event_limit = 4096;
     std::array<uint64_t, 65536> m_data_write_counts{};
     std::array<PortStat, 65536> m_io_port_stats{};
     std::deque<uint64_t> m_pc_trace;
+    std::shared_ptr<BoardLaneTrace> m_board_lane_trace;
     uint16_t m_capture_pc = 0;
     std::vector<uint16_t> m_capture_addresses;
     std::deque<std::vector<uint64_t>> m_pc_captures;
@@ -510,6 +573,7 @@ private:
     uint64_t m_delay_move_ignored = 0;
     uint16_t m_delay_move_last_pc = 0, m_delay_move_last_address = 0;
     bool m_trace_data_writes = false;
+    bool m_trace_selected_reads = false;
     bool m_trace_changes_only = true;
     uint16_t m_trace_filter = 0;
     uint16_t m_trace_filter_last = 0;
@@ -657,6 +721,7 @@ private:
     bool m_si_line_connected = false, m_si_off_hook = false, m_si_ringing = false;
     bool m_host_mailbox = false;
     uint64_t m_xf_falling_edges = 0;
+    uint64_t m_reset_generation = 0;
     bool m_digital_pcm = false;
     uint16_t m_g711_idle = 0x00ff;
     unsigned m_line_frame_period = TDM_FRAME_PERIOD_CYCLES;
@@ -678,9 +743,9 @@ private:
     int m_line_frame_entry = -1;
     // Bytes that step() tests as one word: see front_is_rare().
     struct FrontFlags {
-        bool nmi_pending = false, idle = false, aux = false, entry = false;
+        bool nmi_pending = false, idle = false, idle2 = false, aux = false, entry = false;
     } m_ff;
-    static_assert(sizeof(FrontFlags) == 4, "FrontFlags is read as a word");
+    static_assert(sizeof(FrontFlags) == 5, "FrontFlags are byte flags");
     uint16_t m_pending_overlay_origin = 0;
     std::vector<uint16_t> m_pending_overlay;
     std::array<uint16_t, 7> m_pending_call_registers{};
@@ -745,9 +810,13 @@ private:
     // duration when firmware retunes the ADC while that frame is queued.
     bool m_codec_line_input = false;
     std::deque<uint16_t> m_codec_line_rx;
+    uint64_t m_codec_line_queued_total = 0, m_codec_line_consumed_total = 0;
     std::array<double, 128> m_codec_line_history{};
-    std::vector<std::array<double, 128>> m_codec_line_kernel;
+    const std::vector<std::array<double, 128>> *m_codec_line_kernel = nullptr;
     double m_codec_line_position = 0, m_codec_line_cutoff = 0;
+    double m_codec_line_rate = 8000;
+    unsigned m_codec_line_cushion = 32;
+    bool m_codec_line_prepared_only = false;
     bool codec_line_sample(int32_t &sample);
     // Trans-hybrid return. The codec's analog output reaches its own analog
     // input through the hybrid, attenuated by how well the hybrid is
@@ -845,6 +914,7 @@ private:
     void save_interrupt_context();
     void restore_interrupt_context();
     void delay_slot(uint16_t startpc);
+    uint16_t delayed_call_return_pc() const;
     // SPRU056D 4.9: a delayed branch and its delay slots complete as a
     // unit; no interrupt is serviced between them.
     bool m_in_delay_slot = false;

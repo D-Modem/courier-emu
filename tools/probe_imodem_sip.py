@@ -17,7 +17,15 @@ def main():
                         help='Escape to local command mode and query ATI6 after connecting')
     parser.add_argument('--fixed-dte', action='store_true',
                         help='Use &B1 rather than the original variable-rate &B0 configuration')
+    parser.add_argument('--buffer-ms', type=int, default=None,
+                        help='bearer receive/transmit queue reserve in milliseconds')
+    parser.add_argument('--rtp-delay-ms', type=int, default=60,
+                        help='timestamp-based RTP receive deadline in milliseconds')
     args = parser.parse_args()
+    if not 0 <= args.rtp_delay_ms <= 1000:
+        parser.error('--rtp-delay-ms must be 0..1000')
+    if args.buffer_ms is not None and args.buffer_ms < 20:
+        parser.error('--buffer-ms must be at least 20')
     root = Path(__file__).resolve().parents[1]
     # Capture only this account's auth stanza; never print or save its secret.
     auth = subprocess.check_output([
@@ -47,7 +55,10 @@ def main():
                    '--send', 'AT*V2=3', '--send', 'AT&W',
                    '--send', 'AT&M5&K0S58=0&B' + ('1' if args.fixed_dte else '0'), '--send', 'ATDT' + target,
                    '--send-after', '30000000', '--send-every', '0',
-                   '--instructions', str(args.instructions)]
+                   '--instructions', str(args.instructions),
+                   '--bri-sip-rtp-delay-ms', str(args.rtp_delay_ms)]
+        if args.buffer_ms is not None:
+            command.extend(['--bri-sip-buffer-ms', str(args.buffer_ms)])
         print(f'Dialling {target}', flush=True)
         with (out / 'result.json').open('w') as stdout, (out / 'stderr.log').open('w') as stderr:
             process = subprocess.run(command, cwd=root, env=environment,

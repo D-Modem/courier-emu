@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Courier Emu</title>
+<style>
+:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#11161d;color:#e0e6ed}body{max-width:1120px;margin:40px auto;padding:0 24px}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:30px}h1{font-size:26px;margin:0}header p,.muted{color:#99a8b9;font-size:14px}section{background:#1a222d;border:1px solid #303d4e;border-radius:12px;padding:22px;margin-bottom:20px}.controls{display:flex;gap:14px;align-items:center;flex-wrap:wrap}label{font-size:14px;color:#acbacb}select,button,input{font:inherit;border:1px solid #43546a;border-radius:6px;padding:10px;background:#111923;color:#e0e6ed}button{cursor:pointer;background:#28496b}button:hover{filter:brightness(1.2)}button:disabled{opacity:.4;cursor:default}#stop{background:#61363c}#status{font-size:14px;color:#b9c6d5}#dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#6e7c8d;margin-right:8px}#dot.on{background:#56d791;box-shadow:0 0 10px #56d79166}pre{white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;font:14px/1.5 ui-monospace,monospace;background:#0c1117;padding:18px;border-radius:6px;margin:15px 0;color:#b8e5cb;height:340px}form{display:flex;gap:10px}form input{flex:1;min-width:0;font-family:monospace}h2{font-size:16px;margin:0}#error{color:#ffa5a5;min-height:22px;font-size:14px}details pre{height:150px;color:#b4c0cf}a{color:#9ac8ff}fieldset{border:1px solid #354356;border-radius:8px;margin:18px 0;padding:16px}legend{color:#b9c6d5;font-size:14px}.fields{display:flex;gap:16px;flex-wrap:wrap;align-items:end}.fields label{display:flex;flex-direction:column;gap:6px}.fields input{min-width:0;max-width:100%;box-sizing:border-box}.fields .check{display:block;max-width:650px}.wide{width:330px}.small{width:105px}.warning{color:#e9c78c;font-size:14px}[hidden]{display:none!important}details{margin-top:16px}#call-note{min-height:20px}@media(max-width:600px){body{margin:20px auto;padding:0 12px}section{padding:15px}header{align-items:start;gap:15px}pre{height:300px}.wide{width:100%}}
+.panel{display:flex;gap:24px;flex-wrap:wrap;margin-top:20px;padding:20px;background:#10151c;border:1px solid #344153;border-radius:8px}.lamp{display:flex;align-items:center;flex-direction:column;gap:9px;font:12px ui-monospace,monospace;color:#aab7c6}.bulb{width:14px;height:14px;border-radius:50%;background:#361b20;border:1px solid #69343b;box-shadow:inset 0 1px 3px #000}.lamp.on .bulb{background:#ff493f;border-color:#ff8a78;box-shadow:0 0 12px #ff493f99,inset 0 1px 2px #ffccc0}.lamp.on{color:#ffd0c7}.lamp.unknown .bulb{background:#28303b;border-color:#526071;box-shadow:none}.lamp.unknown .bulb:after{content:'?';display:block;text-align:center;font:11px/14px monospace;color:#aab7c6}
+</style>
+<header><div><h1>Courier Emu</h1><p>USRobotics firmware · local modem console</p></div><span id="status"><i id="dot"></i><span id="state">Disconnected</span></span></header>
+<section>
+<div id="settings">
+<div class="controls">
+<label>Firmware<br><select id="image" aria-label="Firmware"></select></label>
+<label>Connection<br><select id="mode"><option value="simulated">Simulated analog line</option><option value="sip">SIP / PBX</option><option value="peer">Another emulator (UNIX socket)</option><option value="physical">Physical line (Apple USB modem)</option></select></label>
+<label><input id="dsp" type="checkbox"> Enable DSP</label>
+</div>
+<fieldset id="simulated-fields"><legend>Simulated line — no external calls</legend>
+<label>Analog line <select id="line"><option value="disconnected">Disconnected</option><option value="quiet">Quiet</option><option value="dial-tone">Dial tone</option><option value="ringing">Ringing</option></select></label>
+</fieldset>
+<fieldset id="sip-fields" hidden><legend>SIP / PBX · UDP / IPv4 · G.711</legend>
+<div class="fields">
+<label>Server (host[:port])<input id="sip-server" placeholder="pbx.example.net:5060" maxlength="255"></label>
+<label>Username<input id="sip-username" value="courier" maxlength="255" autocomplete="off"></label>
+<label>Password (this start only)<input id="sip-password" type="password" maxlength="1024" autocomplete="off" placeholder="Leave blank for environment fallback"></label>
+<label>Fallback password environment variable<input id="sip-password-env" value="COURIER_SIP_PASSWORD" maxlength="128" autocomplete="off" spellcheck="false"></label>
+<label>Destination URI template (optional)<input id="sip-target" class="wide" placeholder="sip:{number}@{server}" maxlength="1024" spellcheck="false"></label>
+<label>Codec<select id="sip-codec"><option value="pcmu">PCMU (G.711 μ-law)</option><option value="pcma">PCMA (G.711 A-law)</option></select></label>
+<label>Local SIP port (0 = auto)<input id="sip-port" class="small" type="number" min="0" max="65535" value="0"></label>
+<label>Local RTP port (0 = auto)<input id="rtp-port" class="small" type="number" min="0" max="65535" value="0"></label>
+</div>
+<p class="muted">Enter the password here, or leave it blank to use the environment variable. The entered password is sent to this localhost server for this start, passed through the worker's environment (not command-line arguments), and cleared from the field after a successful start. It is not saved by the app or returned in session state or diagnostics. The minimal SIP backend does not REGISTER; use a PBX that permits direct INVITEs (with optional Digest authentication). Dial creates the outgoing call; incoming SIP calling is not exposed here.</p>
+</fieldset>
+<fieldset id="peer-fields" hidden><legend>Emulator peer · local UNIX socket</legend>
+<div class="fields">
+<label>Socket path (same on both ends)<input id="peer-socket" class="wide" value="/tmp/courier-gui-line.sock" maxlength="100" spellcheck="false"></label>
+<label>Socket role<select id="peer-role"><option value="listen">Listen (start first)</option><option value="connect">Connect</option></select></label>
+<label class="check"><input id="peer-audio-only" type="checkbox" checked> PCM only: no modeled carrier/training events (must match both ends)</label>
+</div>
+<p class="muted">Open a second GUI server on another port, not just another tab: ./courier gui --port 8766. Choose the same socket, one Listen and one Connect; start both within 30 seconds. Socket role is not call direction. Dial on the caller and Answer on the other end; PCM-only mode has no generated dial tone, so ATX0 may be needed before dialing. Remove a stale socket only after both workers are stopped.</p>
+<p class="warning">Unchecking PCM only uses the existing modeled call/carrier helpers. A resulting CONNECT is not proof of DSP-only training. Even in PCM-only mode, firmware support is not fully qualified; main211 has known call-training limitations.</p>
+</fieldset>
+<fieldset id="physical-fields" hidden><legend>Experimental physical FXO bridge · macOS only</legend>
+<div class="fields">
+<label>Apple line helper (blank = repository default)<input id="physical-helper" class="wide" placeholder=".build/apple_line" maxlength="1024" spellcheck="false"></label>
+<label>Hardware sample rate<select id="physical-rate"><option>7200</option><option>8000</option><option>8229</option><option>8400</option><option>9000</option><option>9600</option><option selected>10286</option></select></label>
+<label>Transmit gain (0–1)<input id="physical-gain" class="small" type="number" min="0" max="1" step="0.05" value="1"></label>
+<label class="check"><input id="physical-confirmed" type="checkbox"> I have an Apple A1082 USB modem attached to a powered FXS/PBX analog line and understand that Dial can place a real, potentially billable call.</label>
+</div>
+<p class="warning">Not a general USB/serial modem driver. Requires macOS audio permission, libusb, the Apple A1082, and the built hardware-only helper (tools/build_apple_line.py). An FXO must not be connected directly to another unpowered modem. Use the qualified firmware/board settings; main211 call training is not qualified.</p>
+<p class="muted">Stop normally requests worker cleanup and hook release. Verify the helper's on-hook readback in Worker diagnostics; if it fails or the process crashes, check the line and unplug the modem if necessary. No software can guarantee hook release after a host crash.</p>
+</fieldset>
+<details id="board-settings"><summary>Analog board settings (firmware-dependent)</summary>
+<div class="fields">
+<label>Board ID<select id="board-id"><option value="auto">Auto</option><option value="none">Floating inputs</option></select></label>
+<label>EEPROM fixture<select id="nvram-fixture"><option value="">None (default)</option><option>idsdl302</option><option>idsdl403</option></select></label>
+<label>DTE format<select id="dte-framing"><option value="8N1" selected>8N1 (default)</option><option value="stored">Preserve stored framing</option><option>7E1</option><option>7O1</option><option>7M1</option></select></label>
+<label>Tick source<select id="tick-source"><option value="">Default timer</option><option value="dsp">DSP frame</option></select></label>
+</div>
+<p class="muted">Do not apply a fixture blindly. The documented captured 4.03 physical-line setup uses board 7, idsdl403, and the default timer. Select its directory with --directory to use the captured ROM. DTE format defaults to 8N1 at the byte attention adapter; it changes the modem's active serial format, not just its display. Preserve stored framing leaves that setting untouched. These options do not load or persist your hardware EEPROM.</p>
+</details>
+</div>
+<p id="mode-note" class="muted">XMF / ROM: analog console · NAC: ISDN terminal. External line controls apply to analog only.</p>
+<div class="controls"><button id="start">Start modem</button><button id="stop" disabled>Stop</button></div>
+<div class="panel" id="panel" role="group" aria-label="Front-panel LEDs"></div><p class="muted" id="panel-note">Waiting for panel telemetry. Grey ? = unknown; dark red = off; bright red = on.</p><div id="error" role="alert"></div>
+</section>
+<section>
+<h2>Call controls · analog only</h2>
+<div class="controls" style="margin-top:14px"><label>Number <input id="number" placeholder="5551234" maxlength="64" inputmode="tel" disabled></label><button id="dial" disabled>Dial · ATDT</button><button id="answer" disabled>Answer · ATA</button><button id="escape" disabled>Escape · +++</button><button id="hangup" disabled>Hang up · ATH</button><label>Escape guard (s) <input id="guard" class="small" type="number" min="1" max="30" step="0.5" value="1.5"></label></div>
+<p class="muted" id="call-note" aria-live="polite">Wait for firmware startup before dialing. In data mode, use Escape, wait for the firmware's OK, then Hang up. Escape pauses terminal input on both sides of +++ (no Enter); increase its guard if you changed S12. ATH is a command, not an out-of-band disconnect.</p>
+</section>
+<section><div class="controls"><h2>Serial terminal</h2><label>Text display <select id="framing"><option value="8bit" selected>8-bit text (Latin-1)</option><option value="7bit">7-bit text (strip parity, opt-in)</option></select></label><button id="clear">Clear view</button><button id="download">Save transcript</button></div><pre id="terminal" aria-label="Modem output"></pre><form id="command"><input id="text" aria-label="AT command" placeholder="Type an AT command, e.g. ATI3" maxlength="4096" autocomplete="off" spellcheck="false" disabled><button id="send" disabled>Send ↵</button></form><p class="muted">Commands are sent with a carriage return. Output and carrier lamps are from the emulator; “Running” is not a connected call. Boot may take a moment. 8-bit text is the default and preserves all eight bits. Optional 7-bit text strips parity for display and transcript export only; it does not fix UART framing. The original console bytes are retained in the session, and transmitted input is unchanged. This is a command console, not a binary terminal. No connection mode guarantees successful modem negotiation.</p><details><summary>Worker diagnostics</summary><pre id="log"></pre></details></section>
+<script>
+const $=id=>document.getElementById(id);
+let output='',hidden=0,lastImage='',running=false,guarding=false,escapeGeneration=0,starting=false,stopping=false;
+const lampNames=['HS','AA','CD','OH','RD','SD','MR','CS','SYN','ARQ'];
+for(let i=0;i<16;i++){const option=document.createElement('option');option.value=option.textContent=String(i);$('board-id').append(option)}
+for(const name of lampNames){const lamp=document.createElement('div');lamp.id='lamp-'+name;lamp.className='lamp unknown';const bulb=document.createElement('span');bulb.className='bulb';bulb.setAttribute('aria-hidden','true');const label=document.createElement('span');label.textContent=name==='ARQ'?'ARQ/FAX':name;lamp.append(bulb,label);$('panel').append(lamp)}
+function showLamps(s){for(const name of lampNames){const value=s.running?s.lamps?.[name]:null;const state=value===true?'on':value===false?'off':'unknown';const lamp=$('lamp-'+name);lamp.className='lamp '+state;lamp.title=name+': '+state;lamp.setAttribute('aria-label',name+': '+state)}$('panel-note').textContent=!s.running?'Panel idle. Start a modem to receive live lamp states.':s.image.toLowerCase().endsWith('.nac')?'Panel telemetry is not available for the ISDN terminal.':'Live panel · grey ? = unknown; dark red = off; bright red = on. HS, RD and SD are not mapped by the current panel model.';}
+async function api(path,body){const r=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:{'X-Courier-Token':'__TOKEN__','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data}
+function error(e){$('error').textContent=e.message}
+async function action(path,body){$('error').textContent='';try{await api(path,body);return true}catch(e){error(e);return false}}
+function updateControls(){
+ const nac=$('image').value.toLowerCase().endsWith('.nac'),mode=$('mode').value;
+ const needsDSP=!nac&&(mode!=='simulated'||$('line').value!=='disconnected');
+ for(const id of ['simulated','sip','peer','physical'])$(id+'-fields').hidden=nac||mode!==id;
+ $('board-settings').hidden=nac;
+ for(const input of $('settings').querySelectorAll('input,select'))input.disabled=running||starting;
+ $('mode').disabled=running||starting||nac;
+ $('dsp').disabled=running||starting||needsDSP;
+ if(needsDSP)$('dsp').checked=true;
+ $('start').disabled=running||starting||stopping||guarding||!$('image').value;
+ $('stop').disabled=!running||stopping;
+ for(const id of ['send','text'])$(id).disabled=!running||guarding||stopping;
+ for(const id of ['number','dial','answer','escape','hangup','guard'])$(id).disabled=!running||guarding||stopping||nac;
+ $('mode-note').textContent=nac?'NAC: ISDN terminal. Analog external-line backends and call buttons are unavailable.':'XMF / ROM: analog console. Choose one backend before starting; external backends and non-disconnected simulated lines enable DSP automatically.';
+}
+$('mode').onchange=updateControls;$('image').onchange=updateControls;$('line').onchange=updateControls;
+function connection(){
+ const mode=$('image').value.toLowerCase().endsWith('.nac')?'simulated':$('mode').value;
+ if(mode==='sip')return {mode,server:$('sip-server').value,username:$('sip-username').value,...($('sip-password').value?{password:$('sip-password').value}:{}),password_env:$('sip-password-env').value,target:$('sip-target').value,codec:$('sip-codec').value,sip_port:Number($('sip-port').value),rtp_port:Number($('rtp-port').value)};
+ if(mode==='peer')return {mode,socket:$('peer-socket').value,role:$('peer-role').value,audio_only:$('peer-audio-only').checked};
+ if(mode==='physical')return {mode,helper:$('physical-helper').value,rate:Number($('physical-rate').value),gain:Number($('physical-gain').value),confirmed:$('physical-confirmed').checked};
+ return {mode};
+}
+$('start').onclick=async()=>{
+ starting=true;updateControls();
+ try{const nac=$('image').value.toLowerCase().endsWith('.nac');if(await action('start',{image:$('image').value,dsp:$('dsp').checked,line:$('line').value,connection:connection(),board:nac?{}:{id:$('board-id').value,nvram_fixture:$('nvram-fixture').value,tick_source:$('tick-source').value,dte_framing:$('dte-framing').value}})){hidden=0;output='';lastImage='';running=true;$('sip-password').value='';$('physical-confirmed').checked=false}}
+ finally{starting=false;updateControls()}
+};
+$('stop').onclick=async()=>{escapeGeneration++;guarding=false;stopping=true;updateControls();try{if(await action('stop',{})){running=false;$('call-note').textContent='Session stopped. Check Worker diagnostics for cleanup and physical on-hook readback, if applicable.'}}finally{stopping=false;updateControls()}};
+$('command').onsubmit=async e=>{e.preventDefault();if(!guarding&&await action('send',{text:$('text').value})){$('text').value='';$('text').focus()}};
+$('dial').onclick=()=>action('call',{action:'dial',number:$('number').value});
+$('answer').onclick=()=>action('call',{action:'answer'});
+$('hangup').onclick=()=>action('call',{action:'hangup'});
+const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+$('escape').onclick=async()=>{
+ const seconds=Number($('guard').value);if(!Number.isFinite(seconds)||seconds<1||seconds>30)return error(Error('Escape guard must be 1–30 seconds'));
+ const generation=++escapeGeneration;guarding=true;updateControls();$('call-note').textContent='Pausing terminal input for the escape guard…';
+ try{await delay(seconds*1000);if(generation!==escapeGeneration||!running)return;
+  if(await action('call',{action:'escape'})){await delay(seconds*1000);if(generation===escapeGeneration)$('call-note').textContent='Escape bytes sent. Wait for the firmware’s OK before Hang up; guard timing and command mode are firmware-owned.';}}
+ finally{if(generation===escapeGeneration){guarding=false;updateControls()}}
+};
+function terminalText(text,framing=$('framing').value){return framing==='7bit'?text.replace(/[\u0080-\u00ff]/g,c=>String.fromCharCode(c.charCodeAt(0)&0x7f)):text}
+$('framing').onchange=()=>{$('terminal').textContent=terminalText(output.slice(hidden))};
+$('clear').onclick=()=>{hidden=output.length;$('terminal').textContent=''};
+$('download').onclick=()=>{const url=URL.createObjectURL(new Blob([terminalText(output)],{type:'text/plain;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='courier-session.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+async function poll(){try{const s=await api('state');running=s.running;if(s.running&&Array.from($('image').options).some(o=>o.value===s.image))$('image').value=s.image;showLamps(s);$('dot').classList.toggle('on',s.running);const backend=s.connection?.mode||'simulated';$('state').textContent=s.running?'Running · '+s.image+' · '+backend:s.exit_code===null?'Stopped':'Stopped · exit '+s.exit_code;updateControls();if(s.image!==lastImage||s.output.length<output.length)hidden=0;lastImage=s.image;output=s.output;const t=$('terminal'),bottom=t.scrollHeight-t.scrollTop-t.clientHeight<40;t.textContent=terminalText(output.slice(hidden));if(bottom)t.scrollTop=t.scrollHeight;$('log').textContent=s.log}catch(e){error(e)}finally{setTimeout(poll,300)}}
+api('images').then(images=>{for(const name of images){const option=document.createElement('option');option.value=option.textContent=name;$('image').append(option)}if(images.includes('main211.xmf'))$('image').value='main211.xmf';if(!images.length)error(Error('No XMF, ROM or NAC images found in the selected directory.'));updateControls()}).catch(error);poll();
+</script></html>

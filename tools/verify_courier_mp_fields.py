@@ -31,7 +31,7 @@ def invoke(core, entry, stop=0x7008, callback=None):
 
 def main():
     OUT.mkdir(exist_ok=True)
-    image = CourierRom.load(ROOT / 'artifacts/courier-board-21210-capture-403/courier-board.rom')
+    image = CourierRom.load(ROOT / 'dumps/courier-board-21210-capture-403/courier-board.rom')
     segments = image.dsp_program_segments()
     origin, resident = segments[0]
     org, pcm = segments[3]

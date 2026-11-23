@@ -246,6 +246,11 @@ class Uc:
         # what it changed before any Python handler runs.
         self.native_before_run: Callable[[], None] | None = None
         self.native_after_run: Callable[[], None] | None = None
+        # Optional (callback identity, native gate function, context). A zero
+        # gate result means native code already performed the callback's work.
+        self.native_after_run_gate: tuple[object, int, int] | None = None
+        # Trusted worker-only rejection gate; extensions without it ignore it.
+        self.native_before_run_gate = None
         self.native_after_io: Callable[[], None] | None = None
         self.native_host_base = 0
         # Optional filter for native_after_io: a 64 KiB table of ports.
@@ -887,6 +892,10 @@ class Uc:
             native = self._native
         else:
             native = None
+        # After a clock callback, unchanged control flow can resume in the
+        # guarded native engine instead of decoding one instruction in Python.
+        # Keep an explicit comparison switch for timing/state parity controls.
+        native_service_reentry = os.environ.get('COURIER_X86_SERVICE_REENTRY', '1') != '0'
         retired = 0
         while self.running and (not count or retired < count):
             if native is not None:
@@ -923,6 +932,23 @@ class Uc:
                 self._clock_next = clock_next
                 if not self.running:
                     break
+                if (native is not None and native_service_reentry
+                        and self._after_instruction is None
+                        and not self.redirect_is_free
+                        and ((cpu_regs[UC_X86_REG_CS] * 16 + cpu_regs[REG_IP]) & address_mask) == physical
+                        # Keep boundary port I/O on its original path: native
+                        # lamp batching has intentionally approximate event
+                        # stamps and boot counters identify native strobes.
+                        # A prefix can conceal port I/O, so leave it alone too.
+                        and not _IS_PREFIX[cpu_memory[physical]]
+                        and cpu_memory[physical] not in (
+                            0x6C, 0x6D, 0x6E, 0x6F, 0xE4, 0xE5, 0xE6, 0xE7,
+                            0xEC, 0xED, 0xEE, 0xEF)):
+                    # No instruction has retired yet. The engine sees the new
+                    # clock deadline and still honors code/memory/I/O guards.
+                    # Unsupported instructions simply return for Python to
+                    # execute, without re-running this clock callback.
+                    continue
             if single_hook is not None:
                 single_hook(self, physical, 1, single_user)
             else:

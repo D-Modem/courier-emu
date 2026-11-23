@@ -7,7 +7,7 @@ from courier_emu.mailbox_compare import program
 from courier_emu.dsp_mailbox import MailboxPort,Session
 from tools.c5x_disasm import disassemble
 out=Path('artifacts/courier-2806-mailbox-20260913')
-w=program(CourierRom.load('artifacts/courier-2806-25mhz-flash-20260912/courier-board.rom'))
+w=program(CourierRom.load('dumps/courier-2806-25mhz-flash-20260912/courier-board.rom'))
 assert w[0x8408]==0x84cb and w[0x842e]==0x8222 and w[0x8222]==0xef00
 assert w[0x84cb:0x84d3]==[0x7e80,0x83c8,0xbf80,0x8031,0x7d80,0x83c8,0xbc10,0x1018]
 (out/'dsp-disassembly.txt').write_text('\n'.join(f'{i.pc:04x} '+ ' '.join(f'{x:04x}' for x in i.words)+'  '+i.text for a,b in [(0x839b,0x8401),(0x83c8,0x839b),(0x84cb,0x84d3),(0x8222,0x8223)] for i in disassemble(w,a,b))+'\n')

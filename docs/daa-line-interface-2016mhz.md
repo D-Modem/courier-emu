@@ -7,7 +7,7 @@ a model that puts all line signals behind the event channel makes the ring path
 wrong.
 
 The addresses below are file offsets in the board image of the user,
-`artifacts/courier-board-21210-capture-403/courier-board.rom` (supervisor
+`dumps/courier-board-21210-capture-403/courier-board.rom` (supervisor
 7.4.16). `IDSDL302.ROM` also contains the two structures. Where its addresses are different,
 we give them.
 

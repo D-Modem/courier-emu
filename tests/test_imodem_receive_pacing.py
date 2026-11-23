@@ -6,6 +6,7 @@ import pytest
 from courier_emu.am79c30 import Am79C30
 from courier_emu.imodem_dsp import ImodemDsp
 from courier_emu.isdn import IsdnMachine
+from courier_emu.poll_state import PollState
 from courier_emu.dsp import NativeC5x
 
 
@@ -153,7 +154,9 @@ def test_timer_pass_delivers_network_octets_before_dsp_clock():
     machine.bri = Peer()
     machine.dsc = Chip()
     machine.instructions = 512
-    machine._advance_dsp = lambda: calls.append('dsp')
+    machine._ps = PollState()
+    machine._advance_dsp = lambda *, supervisor_turn: calls.append(
+        'dsp' if supervisor_turn else 'port')
     machine._peripheral_instructions = lambda: machine.instructions
     machine.rtos_service = False
     machine.serial_pump = None

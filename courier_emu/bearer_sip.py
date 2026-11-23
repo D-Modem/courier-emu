@@ -77,6 +77,9 @@ class BearerSipLine:
         self.octets_out = 0
         self.octets_from_rtp = 0
         self.underrun = 0
+        self.startup_underrun = 0
+        self.active_underrun = 0
+        self._receive_ever_started = False
         self.events: list[str] = []
         # Two 20 ms packets establish a small playout reserve. Consuming the
         # first packet immediately lets ordinary arrival jitter insert silence
@@ -170,6 +173,7 @@ class BearerSipLine:
         self.session.hangup()
         self._receive_octets.clear()
         self._receive_started = False
+        self._receive_ever_started = False
         self._lead = 0
         self.events.append("the ISDN call cleared: hanging up the SIP leg")
 
@@ -207,6 +211,8 @@ class BearerSipLine:
                           for _ in range(min(len(octets), len(self._receive_octets))))
                     if self._receive_started else b"")
         self.octets_from_rtp += len(received)
+        if received:
+            self._receive_ever_started = True
         if self.record is not None and received:
             self.record.write(received)
         if len(received) < len(octets):
@@ -215,13 +221,19 @@ class BearerSipLine:
             self._receive_started = False
             # The far end has not sent this much yet. Silence is the honest
             # filler: it is what an idle timeslot carries, and it is counted.
-            self.underrun += len(octets) - len(received)
-            received += bytes((self.silence,)) * (len(octets) - len(received))
+            missing = len(octets) - len(received)
+            self.underrun += missing
+            if self._receive_ever_started:
+                self.active_underrun += missing
+            else:
+                self.startup_underrun += missing
+            received += bytes((self.silence,)) * missing
         if self._receive_started and self._lead < self.receive_lead:
             extra = min(self.receive_lead - self._lead, len(self._receive_octets))
             if extra:
                 ahead = bytes(self._receive_octets.popleft() for _ in range(extra))
                 self._lead += extra
+                self._receive_ever_started = True
                 self.octets_from_rtp += extra
                 if self.record is not None:
                     self.record.write(ahead)
@@ -239,6 +251,8 @@ class BearerSipLine:
             "octets": {"to_rtp": self.octets_in, "from_rtp": self.octets_out,
                        "received_from_rtp": self.octets_from_rtp,
                        "silence_filled": self.underrun,
+                       "startup_silence_filled": self.startup_underrun,
+                       "active_silence_filled": self.active_underrun,
                        "receive_buffered": len(self._receive_octets),
                        "preanswer_octets": self.preanswer_octets,
                        "answer_pending": self._answer_pending,

@@ -23,9 +23,13 @@ from __future__ import annotations
 import ctypes
 import math
 import os
+import sys
 from array import array
 from bisect import bisect_left, bisect_right
 from operator import mul
+from types import BuiltinFunctionType
+
+from . import resample_native
 
 # Input samples each side of the output instant. 64 narrows the transition
 # band enough that 8 kHz <-> 9600 Hz stays at 62-75 dB SNR for tones from
@@ -44,7 +48,18 @@ PHASES = 1024
 
 # C-implemented dot product where the interpreter has one (3.12+); the FIR
 # below runs it once per output sample.
-_dot = getattr(math, "sumprod", None) or (lambda a, b: sum(map(mul, a, b)))
+_fallback_dot = lambda a, b: sum(map(mul, a, b))
+_dot = getattr(math, "sumprod", None) or _fallback_dot
+_REFERENCE_SUM, _REFERENCE_MUL = sum, mul
+_FIXED_DOT_MODE = int(_dot is not _fallback_dot)
+# Only accelerate known stdlib arithmetic, never an import-time replacement.
+# Python 3.12+ sum is compensated even if math.sumprod has been removed.
+_REFERENCE_DOT = _dot if (
+    (type(_dot) is BuiltinFunctionType and _dot.__module__ == 'math'
+     and _dot.__name__ == 'sumprod') or
+    (_dot is _fallback_dot and sys.version_info < (3, 12)
+     and type(sum) is BuiltinFunctionType and sum.__module__ == 'builtins' and sum.__name__ == 'sum'
+     and type(mul) is BuiltinFunctionType and mul.__module__ == '_operator' and mul.__name__ == 'mul')) else None
 
 
 def _bessel_i0(x: float) -> float:
@@ -68,6 +83,10 @@ def _windows() -> list[tuple[float, ...]]:
     """
     global _WINDOWS
     if _WINDOWS is None:
+        table = _native_windows()
+        if table is not None:
+            _WINDOWS = table
+            return table
         table = []
         for phase in range(PHASES):
             fraction = phase / PHASES
@@ -151,6 +170,28 @@ def _native_retuned():
     return _NATIVE
 
 
+def _native_windows() -> list[tuple[float, ...]] | None:
+    """Accelerate cold table construction; older libraries retain Python's loop."""
+    if os.environ.get('COURIER_NATIVE_RESAMPLE', '1') == '0':
+        return None
+    # Fixed-rate Python-only users should not compile/load the DSP library
+    # merely to construct a table. Modem paths already own a loaded core.
+    from .dsp import loaded_library
+    library = loaded_library()
+    if library is None:
+        return None
+    try:
+        function = library.courier_resample_windows
+    except AttributeError:
+        return None
+    function.restype = ctypes.c_size_t
+    function.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_double]
+    values = array('d', [0.0]) * (PHASES * TAPS)
+    if function(values.buffer_info()[0], len(values), _NORM) != len(values):
+        raise RuntimeError('native resampler window construction failed')
+    return [tuple(values[first:first + TAPS]) for first in range(0, len(values), TAPS)]
+
+
 class _NativeTimed:
     """BandLimitedResampler's retuned state, kept in native memory.
 
@@ -218,6 +259,38 @@ def _native_timed_library():
     return _TIMED_LIBRARY
 
 
+def prepare_resampling(input_rate: float, output_rate: float, *, retuned: bool = False) -> None:
+    """Prepare exact conversion tables without advancing any stream state.
+
+    Real-time callers should do this before opening their audio transport.
+    Retuned input clocks also need the flat native table and lazy ctypes/library
+    setup; output-clock-only changes continue using the regular FIR table.
+    """
+    if not (math.isfinite(input_rate) and math.isfinite(output_rate)
+            and input_rate > 0 and output_rate > 0):
+        raise ValueError("resampler rates must be finite and positive")
+    cutoff = CUTOFF * min(input_rate, output_rate) / 2 / input_rate
+    _kernel_for(cutoff)
+    if retuned:
+        _native_timed_library()
+        if _native_retuned():
+            _flat_kernel_for(cutoff)
+
+
+def resampling_prepared(input_rate: float, output_rate: float, *, retuned: bool = False) -> bool:
+    """Check readiness without allocating a table or loading native code."""
+    if not (math.isfinite(input_rate) and math.isfinite(output_rate)
+            and input_rate > 0 and output_rate > 0):
+        return False
+    key = round(CUTOFF * min(input_rate, output_rate) / 2 / input_rate, 9)
+    if key not in _KERNELS:
+        return False
+    if not retuned:
+        return True
+    return (_NATIVE is not None and
+            (not _NATIVE or (_TIMED_LIBRARY is not None and key in _FLAT_KERNELS)))
+
+
 class BandLimitedResampler:
     """Streaming arbitrary-ratio conversion through a band-limiting kernel.
 
@@ -234,6 +307,7 @@ class BandLimitedResampler:
         # Output instant, in input samples, relative to _history[HALF_TAPS-1].
         self._position = 0.0
         self._kernel: list[tuple[float, ...]] | None = None
+        self._fixed_kernel_key = None
         # Keep extra input history for a clock change: its old sample spacing
         # must survive until the FIR window has crossed the boundary.
         self._recent_input: list[float] = [0.0] * (2 * TAPS)
@@ -358,8 +432,9 @@ class BandLimitedResampler:
         if output_rate != self.output_rate or input_rate != self.input_rate:
             input_changed = input_rate != self.input_rate
             self.input_rate, self.output_rate = input_rate, output_rate
-            self._kernel = _kernel_for(
-                CUTOFF * min(input_rate, output_rate) / 2 / input_rate)
+            cutoff = CUTOFF * min(input_rate, output_rate) / 2 / input_rate
+            self._kernel = _kernel_for(cutoff)
+            self._fixed_kernel_key = round(cutoff, 9)
             if input_changed:
                 self._position = 0.0
         kernel = self._kernel
@@ -370,16 +445,30 @@ class BandLimitedResampler:
         result: list[int] = []
         position = self._position
         limit = len(history) - TAPS
-        while position <= limit:
-            base = int(position)
-            phase = int((position - base) * PHASES + 0.5)
-            if phase == PHASES:
-                base, phase = base + 1, 0
-                if base > limit:
-                    break
-            value = _dot(kernel[phase], history[base:base + TAPS])
-            result.append(max(-32768, min(32767, int(round(value)))))
-            position += step
+        native = None
+        # Amortize block marshalling; tiny conversions keep the scalar loop.
+        if (type(position) is float and type(step) is float and step > 0
+                and limit - position >= 31 * step
+                and sys.implementation.name == 'cpython' and _dot is _REFERENCE_DOT
+                and (_FIXED_DOT_MODE or (sum is _REFERENCE_SUM and mul is _REFERENCE_MUL))
+                and self._fixed_kernel_key is not None
+                and kernel is _KERNELS.get(self._fixed_kernel_key)
+                and resample_native.fixed_available()):
+            native = resample_native.fixed(history, _flat_kernel_for(self._fixed_kernel_key),
+                                           step, position, _FIXED_DOT_MODE)
+        if native is not None:
+            result, position = native
+        else:
+            while position <= limit:
+                base = int(position)
+                phase = int((position - base) * PHASES + 0.5)
+                if phase == PHASES:
+                    base, phase = base + 1, 0
+                    if base > limit:
+                        break
+                value = _dot(kernel[phase], history[base:base + TAPS])
+                result.append(max(-32768, min(32767, int(round(value)))))
+                position += step
         consumed = len(history) - TAPS
         self._history = history[consumed:]
         self._position = position - consumed

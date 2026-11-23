@@ -34,7 +34,7 @@ def main():
     (OUT/'receiver.asm').write_text(''.join(listing(words,a,b) for a,b in
         [(0xa881,0xa891),(0xa939,0xa947),(0xaabf,0xaad5)]))
     courier_words = [0]*65536
-    courier_segments=CourierRom.load(ROOT/'artifacts/courier-board-21210-capture-403/courier-board.rom').dsp_program_segments()
+    courier_segments=CourierRom.load(ROOT/'dumps/courier-board-21210-capture-403/courier-board.rom').dsp_program_segments()
     for start,data in (courier_segments[0],courier_segments[1],courier_segments[3]):
         courier_words[start:start+len(data)//2]=struct.unpack(f'<{len(data)//2}H',data)
     (OUT/'transmitter.asm').write_text(''.join(listing(courier_words,a,b) for a,b in

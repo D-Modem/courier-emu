@@ -59,8 +59,13 @@ class SipLine:
     # own counters; they are here so a caller sets them in one place.
     inbound_rings: int = 12
     outbound_rings: int = 30
+    # Additional reserve at the block-consuming emulator boundary. RTP's own
+    # jitter buffer releases audio by wall time, not in codec-sized blocks.
+    receive_buffer_ms: int = 40
 
     def __post_init__(self) -> None:
+        if self.receive_buffer_ms < 0:
+            raise ValueError('SIP receive buffer must not be negative')
         if self.exchange is None:
             self.exchange = LineExchange(sample_rate=self.line_rate)
         self.exchange.sample_rate = self.line_rate
@@ -88,6 +93,16 @@ class SipLine:
         self._to_network = PolyphaseResampler(self.line_rate, PCMU_RATE)
         self._from_network = PolyphaseResampler(PCMU_RATE, self.line_rate)
         self._pending: list[int] = []
+        self._receive_reserve = (self.line_rate * self.receive_buffer_ms // 1000
+                                 if getattr(self.sip, 'realtime', True) else 0)
+        self._receive_started = False
+        self._receive_ever_started = False
+        self._receive_block_samples = 0
+        self._receive_capacity = max(self.line_rate * 2, self._receive_reserve + self.line_rate)
+        self._receive_error = ''
+        self.startup_underrun_samples = 0
+        self.active_underrun_samples = 0
+        self.receive_rebuffers = 0
         self._sip_state = self.sip.state
         self.placed = 0
         self.answered = 0
@@ -133,7 +148,15 @@ class SipLine:
         self._pace(count)
         self.sip.poll()
         self._follow_sip()
-        samples = self.exchange.service(off_hook, transmitted, count)
+        # LineExchange splits this paced block into small transition/DTMF
+        # slices. Receive priming must cover the whole block, not just the
+        # first slice: no further wall-clock delivery is guaranteed between
+        # slices rendered back-to-back in this call.
+        self._receive_block_samples = count
+        try:
+            samples = self.exchange.service(off_hook, transmitted, count)
+        finally:
+            self._receive_block_samples = 0
         self._follow_loop()
         return samples
 
@@ -188,23 +211,45 @@ class SipLine:
         return samples
 
     def _peer_samples(self, count: int, transmitted: list[int]) -> list[int]:
+        if self._receive_error:
+            raise RuntimeError(self._receive_error)
         if transmitted:
             self.sip.send_audio(self._to_network.convert(transmitted))
-        self._pending.extend(self._from_network.convert(self.sip.receive_audio()))
+        incoming = self._from_network.convert(self.sip.receive_audio())
+        if len(self._pending) + len(incoming) > self._receive_capacity:
+            self._receive_error = ('SIP analog receive backlog exceeds queue capacity; '
+                                   'emulator is not keeping up with live audio')
+            raise RuntimeError(self._receive_error)
+        self._pending.extend(incoming)
         self.pending_peak = max(self.pending_peak, len(self._pending))
-        if len(self._pending) < count:
-            # Nothing has arrived yet, or the far end is between packets. An
-            # underrun is silence on the loop, which is what an ATA carries.
-            short = count - len(self._pending)
+        if count == 0:
+            return []
+        if not self._receive_started:
+            # Retain the beginning of the answer/training waveform intact.
+            # Starting on a partial block consumes the reserve before it can
+            # form, making ordinary block-boundary jitter an audible gap.
+            required = max(count, self._receive_block_samples) + self._receive_reserve
+            self._receive_started = (self._receive_reserve == 0
+                                     or len(self._pending) >= required)
+        available = min(count, len(self._pending)) if self._receive_started else 0
+        samples = self._pending[:available]
+        del self._pending[:available]
+        if available:
+            self._receive_ever_started = True
+        short = count - available
+        if short:
             self.underrun_frames += 1
             self.underrun_samples += short
+            if self._receive_ever_started:
+                self.active_underrun_samples += short
+            else:
+                self.startup_underrun_samples += short
             if len(self.underrun_log) < 64:
                 self.underrun_log.append((self.frames, short))
-            samples = self._pending + [0] * short
-            self._pending = []
-            return samples
-        samples = self._pending[:count]
-        del self._pending[:count]
+            if self._receive_started:
+                self.receive_rebuffers += 1
+            self._receive_started = False
+            samples.extend([0] * short)
         return samples
 
     # -- supervision -----------------------------------------------------
@@ -218,6 +263,8 @@ class SipLine:
             if self._sip_state != "connected":
                 self.answered += 1
                 self._pending = []
+                self._receive_started = False
+                self._receive_ever_started = False
                 self._from_network = PolyphaseResampler(PCMU_RATE, self.line_rate)
                 self._to_network = PolyphaseResampler(self.line_rate, PCMU_RATE)
             self.exchange.answer()
@@ -257,6 +304,13 @@ class SipLine:
             "late_spikes": self.late_spikes,
             "underrun_frames": self.underrun_frames,
             "underrun_samples": self.underrun_samples,
+            "startup_underrun_samples": self.startup_underrun_samples,
+            "active_underrun_samples": self.active_underrun_samples,
+            "receive_rebuffers": self.receive_rebuffers,
+            "receive_buffer_samples": self._receive_reserve,
+            "receive_buffered_samples": len(self._pending),
+            "receive_capacity_samples": self._receive_capacity,
+            "receive_error": self._receive_error,
             "underrun_log": self.underrun_log,
             "pending_peak": self.pending_peak,
             "sip": self.sip.status(),

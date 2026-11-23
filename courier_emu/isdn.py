@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, deque
 import os
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 
@@ -14,7 +15,7 @@ from .bri import BriNetwork
 from .timebase import ASIC_DSP_CLOCK_HZ
 from . import imodem_trace
 from .peripheral_clock import PeripheralClock
-from .poll_state import MAX_ASSERTED, PollState
+from .poll_state import MAX_ASSERTED, PollState, native_monotonic_ns
 from .pic import PORTS as PIC_PORTS, InterruptControllers
 from .pit import INSTRUCTIONS_PER_SECOND, ProgrammableIntervalTimer
 from .xmp import XmpImage
@@ -423,6 +424,7 @@ class IsdnRunResult:
     firmware_trace: list[str] = field(default_factory=list)
     mailbox: dict[str, Any] = field(default_factory=dict)
     serial: dict[str, Any] = field(default_factory=dict)
+    native_clock: dict[str, int] = field(default_factory=dict)
     error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -744,7 +746,7 @@ class IsdnMachine:
             offset = port - base
             if not (offset == LSR or (offset == MSR and not channel.deltas
                                       and not channel.mcr & MCR_LOOPBACK)):
-                self._ledger.poll_dirty = 1
+                self._serial_poll_changed()
             return channel.read(port)
         self._ledger.poll_dirty = 1
         if self.dsc.handles(port):
@@ -788,6 +790,11 @@ class IsdnMachine:
                 self.mailbox.flush_pcm()
                 self.mailbox.cancel_lookahead()
         self.io_counts[("out", port)] += 1
+        base = self._uart_of(port)
+        if base is not None and not self.dsc.handles(port):
+            self.channels[base].write(port, value)
+            self._serial_poll_changed()
+            return
         self._ledger.poll_dirty = 1
         if self.with_dsp and (port in (0x18, 0x1a, 0x1c, 0x1e) or 0x40 <= port <= 0x5e):
             self.mailbox.write(port, value)
@@ -832,15 +839,58 @@ class IsdnMachine:
         if base is not None:
             self.channels[base].write(port, value)
 
+    def _serial_poll_changed(self) -> None:
+        # UART side effects need fresh serial/PIC service, not a socket poll.
+        # Never clear dirtiness from an unrelated device. Older native builds
+        # retain the original full-service fallback.
+        if (getattr(getattr(self, '_native_io', None), 'uart_resume_available', False)
+                and self._ledger.elide_on and self._ps.live_ns):
+            self._ps.serial_until = max(1, self.instructions)
+        else:
+            self._ledger.poll_dirty = 1
+
     # -- timing ------------------------------------------------------------
 
-    def _live_bearer(self) -> bool:
-        """Whether a call is up on a far end with its own wall clock (SIP),
-        so the C5x is paced against wall time rather than instructions."""
+    def _paced_bearer(self) -> bool:
         bri = self.bri
         peer = bri.media_peer if bri is not None else None
-        return bool(peer is not None and getattr(peer, "realtime_clock", False)
-                    and bri.call_state == "active")
+        return bool(peer is not None and getattr(peer, 'realtime_clock', False)
+                    and bri.call_state == 'active')
+
+    def _live_bearer(self) -> bool:
+        """An external wall-clock bearer (SIP), not a coupled virtual peer.
+
+        A virtual pair can pace the whole machine while deriving DSP and PIT
+        progress from executed CPU time. Do not give those peripherals separate
+        wall targets which can overtake the CPU or one another on a slow host.
+        """
+        peer = self.bri.media_peer if self.bri is not None else None
+        return self._paced_bearer() and not getattr(peer, 'instruction_clocked', False)
+
+    def _pace_live_cpu(self) -> None:
+        """Keep fallback CPU turns on the same clock as native live polls.
+
+        A slow host may leave instruction time behind wall time. Do not bank
+        an unlimited supervisor sprint: it bunches DSP TOUT service between
+        PIT edges and can trip the firmware's IRQ watchdog. This only rebases
+        the CPU pacing anchor; it never discards DSP cycles or media samples.
+        """
+        state = self._ps
+        if not state.live_cpu_ns or self.instructions < state.live_cpu_count:
+            if (self._paced_bearer()
+                    and getattr(self.bri.media_peer, 'instruction_clocked', False)):
+                state.live_cpu_ns = native_monotonic_ns()
+                state.live_cpu_count = self.instructions
+            return
+        due = state.live_cpu_ns + (
+            (self.instructions - state.live_cpu_count) * 1_000_000_000
+            // INSTRUCTIONS_PER_SECOND)
+        now = native_monotonic_ns()
+        if now > due + 1_000_000:
+            state.live_cpu_ns = now
+            state.live_cpu_count = self.instructions
+        elif due > now + 50_000:
+            time.sleep(min(due - now, 1_000_000) / 1_000_000_000)
 
     def _peripheral_instructions(self) -> int:
         realtime = self.with_dsp and self._live_bearer()
@@ -854,7 +904,7 @@ class IsdnMachine:
     def _dsp_instructions(self, value: int) -> None:
         self._ledger.dsp_instructions = value
 
-    def _advance_dsp(self, quantum: int = 0) -> None:
+    def _advance_dsp(self, quantum: int = 0, *, supervisor_turn: bool = False) -> None:
         """Bring the C5x up to the 386's instruction count.
 
         With a `quantum`, a pass that would advance it by fewer instructions
@@ -877,8 +927,10 @@ class IsdnMachine:
                                and getattr(self.mailbox, "_nb", None) is not None
                                and getattr(self.bri.media_peer, "feeds_ahead", False))
         if hasattr(self.mailbox, 'pcm_frame_service'):
+            peer = self.bri.media_peer if self.bri is not None else None
+            frame_synchronous = getattr(peer, "requires_frame_service", False)
             service = (self._service_pcm_frame
-                       if realtime and not native_realtime else None)
+                       if frame_synchronous or (realtime and not native_realtime) else None)
             if self.mailbox.pcm_frame_service != service:
                 self.mailbox.pcm_frame_service = service
         if (not realtime
@@ -892,7 +944,8 @@ class IsdnMachine:
             # The native model advances the C5x exactly as below, and does the
             # service that follows when it can; it hands back when the harness
             # has a reply to take or frames only Python can settle.
-            result = native_io.advance_serve(self.instructions, quantum)
+            result = native_io.advance_serve(
+                self.instructions, quantum, supervisor_turn=supervisor_turn)
             if result == 2:
                 self.mailbox.service_pending()
             elif result == 3:
@@ -913,8 +966,9 @@ class IsdnMachine:
             mailbox.step_cycles(elapsed * DSP_CYCLES_PER_CPU_INSTRUCTION)
 
     def _service_pcm_frame(self) -> None:
-        # A realtime catch-up pass can span multiple DS0 frames. Exchange
-        # each one's media before the next MUX clock consumes its RX slot.
+        # A DSP catch-up pass can span multiple DS0 frames. Exchange each
+        # one's media before the next MUX RX clock. Synchronous packet peers
+        # need this offline too: the next block can arrive at this boundary.
         if self.bri is not None:
             self.bri._service_media(self.dsc)
 
@@ -925,7 +979,11 @@ class IsdnMachine:
         `_native_poll`): the DSP advance has run, and what it left for the
         harness is done here before the rest.
         """
-        if resume:
+        if resume == 5:
+            # Native DSP/bearer work is complete; only a UART deadline woke
+            # Python. Do not re-poll sockets or re-run the DSP for each byte.
+            pass
+        elif resume:
             self.mailbox.service_pending() if resume == 2 else self.mailbox.resume_service()
         else:
             batching = getattr(self, "_pcm_batch", False)
@@ -951,9 +1009,10 @@ class IsdnMachine:
                 # Deliver newly arrived B octets before advancing the independent
                 # DSP serial clock in this scheduler pass.
                 self.bri.service(self.dsc, self.instructions)
+                self._live_io_due_ns = native_monotonic_ns() + 1_000_000
             if batching and len(self.mailbox._ahead) * 2 <= PCM_LOOKAHEAD_FRAMES:
                 self.mailbox.prefeed()
-            self._advance_dsp()
+            self._advance_dsp(supervisor_turn=True)
         peripheral_instructions = self._peripheral_instructions()
         if self.rtos_service and peripheral_instructions >= self._next_rtos_service:
             self._next_rtos_service = peripheral_instructions + RTOS_SERVICE_INSTRUCTIONS
@@ -1011,13 +1070,16 @@ class IsdnMachine:
         DSP, the PCM exchange, the interrupt controllers, the timers and the
         interrupt that results; see ImodemHostIo::poll) as long as everything
         else in `poll_timers` would find nothing to do: a call is up on the
-        bearer line, the serial lines are idle, nobody has touched a device
+        bearer line, the serial lines have no event due, nobody has touched a device
         (`poll_dirty`), and no timer of the harness's own falls due. This
         works out what the engine needs to know and the first instruction count
         at which that stops holding.
         """
         led = self._ledger
         led.elide_on = 0
+        self._ps.live_ns = 0
+        if not self._paced_bearer():
+            self._ps.live_cpu_ns = 0
         why = self._why
         bri, mailbox, dsc = self.bri, self.mailbox, self.dsc
         native_io = self._native_io
@@ -1029,10 +1091,15 @@ class IsdnMachine:
             return
         peer = bri.media_peer
         active = bri.call_state == "active"
-        if (peer is None or not hasattr(peer, "_octets_seen")
-                or (active and not peer.answered)
-                or peer.cleared or peer._instructions_seen is None
-                or getattr(peer, "realtime_clock", False)):
+        realtime = bool(self._live_bearer()
+                        and os.environ.get("COURIER_LIVE_POLL_ELISION", "0") == "1")
+        if (peer is None or (realtime and (
+                bri.media_channel != 1
+                or getattr(getattr(peer, "session", None), "state", None) != "connected"))
+                or (not realtime and (not hasattr(peer, "_octets_seen")
+                    or (active and not peer.answered)
+                    or peer.cleared or peer._instructions_seen is None
+                    or getattr(peer, "realtime_clock", False)))):
             why["peer"] += 1
             return
         # In a call the channel carrying it is fed ahead; with none up, nothing
@@ -1048,16 +1115,24 @@ class IsdnMachine:
             why["dsc"] += 1
             return
         command = self.channels[self.command_base]
-        if len(command.tx) > command._sent:
+        serial_resume = realtime and getattr(native_io, 'uart_resume_available', False)
+        if command.output_pending and not serial_resume:
             why["output"] += 1
             return
+        serial_deadlines = [self.instructions] if command.output_pending else []
         for channel in self.channels.values():
-            if (channel.staged or channel.tx_shift is not None
-                    or channel.tx_holding is not None):
-                why["serial"] += 1
-                return
+            if serial_resume:
+                due = channel.quiet_until()
+                if due is not None:
+                    serial_deadlines.append(due)
+                    continue
+            elif (not channel.staged and channel.tx_shift is None
+                  and channel.tx_holding is None):
+                continue
+            why["serial"] += 1
+            return
         clock = self._peripheral_clock
-        if clock.origin_time is not None:
+        if clock.origin_time is not None and not realtime:
             why["clock"] += 1
             return
         # Sources that stay asserted are raised again by every poll.
@@ -1076,12 +1151,22 @@ class IsdnMachine:
         if self.serial_pump is not None:
             due = self.serial_pump.next_due(self)
             if due is not None:
-                deadlines.append(due)
-        deadlines.append(peer._instructions_seen
-                         + (HIGHWAY_STALL_SAMPLES - peer._stalled_samples)
-                         * CPU_INSTRUCTIONS_PER_SAMPLE)
+                if serial_resume and command.output_pending and due <= self.instructions:
+                    serial_deadlines.append(due)
+                else:
+                    deadlines.append(due)
+        if realtime:
+            # Socket/signalling work resumes within 1 ms regardless of guest
+            # speed. The instruction bound is an additional conservative gate.
+            deadlines.append(self.instructions + 65536)
+        else:
+            deadlines.append(peer._instructions_seen
+                             + (HIGHWAY_STALL_SAMPLES - peer._stalled_samples)
+                             * CPU_INSTRUCTIONS_PER_SAMPLE)
         mailbox._publish_mode()
         state = self._ps
+        state.serial_until = (max(1, min(serial_deadlines, default=1 << 62))
+                              if serial_resume else 0)
         # The peripheral clock advances one for one with the instruction count
         # while the run is offline: it reads (instructions - origin).
         state.clock_origin = clock.instructions - clock.value
@@ -1090,8 +1175,26 @@ class IsdnMachine:
         state.asserted_count = len(asserted)
         for index, line in enumerate(asserted):
             state.asserted[index] = line
-        led.clock_seen = peer._octets_seen
-        led.clock_pending = len(peer._pending)
+        if realtime:
+            # Publish coherent wall-clock anchors. Native polls extrapolate
+            # both PIT/RTOS and DSP clocks, never guest instruction time.
+            stamp = native_monotonic_ns()
+            peripheral = self._peripheral_instructions()
+            target = mailbox.realtime_target()
+            if not state.live_cpu_ns:
+                state.live_cpu_ns = stamp
+                state.live_cpu_count = self.instructions
+            state.live_ns = stamp
+            # UART-only resumes must not slide socket service indefinitely.
+            state.live_until_ns = min(stamp + 1_000_000,
+                                      getattr(self, '_live_io_due_ns', stamp))
+            state.live_peripheral = peripheral
+            state.live_dsp = target
+            led.clock_seen = bri._media_tx_cursor[1]
+            led.clock_pending = 0
+        else:
+            led.clock_seen = peer._octets_seen
+            led.clock_pending = len(peer._pending)
         led.elide_until = max(0, min(deadlines))
         led.poll_dirty = 0
         led.elide_on = 1
@@ -1406,6 +1509,14 @@ class IsdnMachine:
                             lines[entry] if entry < len(lines) else -1)
                 for port in PIC_PORTS:
                     host_ports[port] |= 3
+                cache_serial_status = (
+                    native_io.serial_status_available
+                    and os.environ.get("COURIER_LIVE_POLL_ELISION", "0") == "1")
+                serial_ports = [port for channel in self.channels.values()
+                                for port in range(channel.base, channel.base + 8)]
+                if cache_serial_status:
+                    for port in serial_ports:
+                        host_ports[port] |= 3
 
                 def refresh_native_io() -> None:
                     mailbox = self.mailbox
@@ -1422,6 +1533,12 @@ class IsdnMachine:
                     # but the C5x is left to pace_realtime's wall clock.
                     native_io.configure(core.handle if live else None, live,
                                         wallclock=self._live_bearer())
+                    if cache_serial_status:
+                        enabled = live and self._live_bearer()
+                        for index, channel in enumerate(self.channels.values()):
+                            native_io.set_serial_status(
+                                index, channel.base, channel.read(channel.base + LSR),
+                                channel.stable_modem_status(), enabled=enabled)
 
                 if os.environ.get("COURIER_NATIVE_BEARER", "1") != "0":
                     self.mailbox.attach_native_bearer()
@@ -1432,18 +1549,21 @@ class IsdnMachine:
                     native_io.function, native_io.context, host_ports)
                 uc.native_host_base = instruction_base
                 uc.native_after_io = refresh_native_io
-                # Only the mailbox's own ports can change what the model
-                # serves; the PIC and the serial ports are a large share of
-                # the exits and cannot.
+                # Mailbox changes and UART fallback accesses must republish
+                # the native view. Pure cached status reads need no callback.
                 after = bytearray(65536)
                 for port in (0x18, 0x1A, 0x1C, 0x1E, 0x58, 0x5A, 0x5C, 0x5E,
                              *range(0x40, 0x58)):
                     after[port] = 1
+                if cache_serial_status:
+                    for port in serial_ports:
+                        after[port] = 1
                 uc.native_after_io_ports = after
                 refresh_native_io()
 
             def service(_uc: Any, retired: int, _data: Any, resume: int = 0) -> None:
                 self.instructions = instruction_base + retired
+                self._pace_live_cpu()
                 self._next_poll = self.instructions + TIMER_POLL_INSTRUCTIONS
                 self.poll_timers(resume)
                 if self._native_io is not None:
@@ -1539,6 +1659,8 @@ class IsdnMachine:
         if native_io is None or not native_io.context:
             return
         reads, writes = native_io.take_counts()
+        for port, count in native_io.take_serial_counts().items():
+            self.io_counts[("in", port)] += count
         for port in range(256):
             if reads[port]:
                 self.io_counts[("in", port)] += reads[port]
@@ -1634,5 +1756,6 @@ class IsdnMachine:
             # reads, so it costs a run nothing to carry it always.
             firmware_trace=imodem_trace.read(self),
             mailbox=self.mailbox.status(),
+            native_clock=self._native_io.clock_stats() if self._native_io is not None else {},
             error=self.error,
         )

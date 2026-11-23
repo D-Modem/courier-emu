@@ -20,7 +20,7 @@ from tools.x86_disasm import disassemble
 from tools.imodem_x2_map import V90_IMAGES
 
 OUT = ROOT / 'artifacts/x2-courier-rate-report-20261005'
-ROM = ROOT / 'artifacts/courier-board-21210-capture-403/courier-board.rom'
+ROM = ROOT / 'dumps/courier-board-21210-capture-403/courier-board.rom'
 
 
 def cpu(image):

@@ -251,7 +251,9 @@ class SerialChannel:
         self.poll_period: int | None = None
         self._advanced_at: int | None = None
         self.rx: deque[int] = deque()
-        self.tx = bytearray()
+        self.tx = bytearray()  # Bounded report capture, not the live DTE stream.
+        self._output = bytearray()
+        self.output_dropped = 0
         self.ier = 0
         self.lcr = 0
         self.mcr = 0
@@ -271,7 +273,6 @@ class SerialChannel:
         self.overruns = 0
         self.received = 0
         self.transmitted = 0
-        self._sent = 0
 
     # -- host side ---------------------------------------------------------
 
@@ -322,17 +323,46 @@ class SerialChannel:
         # next clock advance it transfers to an idle shifter and only then
         # raises THRE. The byte reaches the host after a complete frame.
         while self.tx_shift is not None and instructions >= self._tx_complete:
+            self.transmitted += 1
             if len(self.tx) < self.max_bytes:
                 self.tx.append(self.tx_shift)
-                self.transmitted += 1
+            if len(self._output) < self.max_bytes:
+                self._output.append(self.tx_shift)
             else:
-                self.overruns += 1
+                self.output_dropped += 1
             self.tx_shift = None
         if self.tx_shift is None and self.tx_holding is not None:
             self.tx_shift = self.tx_holding
             self.tx_holding = None
             self._tx_complete = instructions + max(1, character_time)
             self.thre = True
+
+    def stable_modem_status(self) -> int | None:
+        """MSR snapshot only if reading it would acknowledge nothing.
+
+        Keep the first read of modem deltas, and all loopback reads, on the
+        register-file path. Do not call read(MSR) to obtain this snapshot:
+        publishing a snapshot must never itself acknowledge an interrupt.
+        """
+        if self.deltas or self.mcr & MCR_LOOPBACK:
+            return None
+        return self.signals
+
+    def quiet_until(self) -> int | None:
+        """Next transmit event, or None if the next poll must advance us.
+
+        A running shifter (even with THR full) cannot change status before
+        its completion deadline. Pending receive bytes retain their existing
+        per-poll arrival semantics; an idle shifter with THR full must start
+        on the next advance, not at a guessed future completion time.
+        """
+        if self.staged:
+            return None
+        if self.tx_shift is not None:
+            return self._tx_complete
+        if self.tx_holding is not None:
+            return None
+        return 1 << 62
 
     @property
     def baud(self) -> int:
@@ -363,12 +393,16 @@ class SerialChannel:
     def take_output(self) -> bytes:
         """What the firmware has transmitted since the last call.
 
-        ``tx`` itself is kept whole so a run's report can still show the
-        complete stream; this only advances a cursor over it.
+        ``tx`` is a bounded prefix for reports. Live delivery must continue
+        after that capture fills; draining this queue frees host capacity.
         """
-        sent = bytes(self.tx[self._sent :])
-        self._sent = len(self.tx)
+        sent = bytes(self._output)
+        self._output.clear()
         return sent
+
+    @property
+    def output_pending(self) -> int:
+        return len(self._output)
 
     def set_signals(self, signals: int) -> None:
         signals &= 0xF0
@@ -514,5 +548,8 @@ class SerialChannel:
             "queued": self.queued,
             "received": self.received,
             "transmitted": self.transmitted,
+            "output_pending": self.output_pending,
+            "output_dropped": self.output_dropped,
+            "capture_truncated": self.transmitted > len(self.tx),
             "overruns": self.overruns,
         }

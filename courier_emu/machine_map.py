@@ -105,16 +105,19 @@ def courier_machine_map(image: Any) -> CourierMachineMap:
         )
     mmio = AddressRange("80186-peripheral-control", 0xFF00, 0xFFFF, "80186-eb")
     dsp_queue = AddressRange("dsp-host-queue", 0x02CA, 0x030F, "courier-asic")
-    serial_callback = AddressRange("serial-tx-callback", 0x02AA, 0x02AB, "ram")
+    bootmodem = getattr(image, 'firmware_mode', None) == 'bootmodem'
+    callback = 0x02A6 if bootmodem else 0x02AA
+    serial_callback = AddressRange("serial-tx-callback", callback, callback+1, "ram")
+    if hasattr(image, 'firmware_mode'):
+        ram_end = 0xFFFF if bootmodem else 0x3FFFF
+        memory = (AddressRange('ram', 0, ram_end, 'ram'),
+                  AddressRange('flash', ram_end+1, 0xFFFFF, 'flash'))
+    else:
+        memory = (AddressRange('ram', 0, 0x7FFFF, 'ram'),
+                  AddressRange('flash', 0x80000, 0xFFFFF, 'flash'))
     return CourierMachineMap(
         address_bits=20,
-        memory=(
-            AddressRange("ram", 0x00000, 0x7FFFF, "ram"),
-            AddressRange("flash", 0x80000, 0xFFFFF, "flash"),
-            serial_callback,
-            dsp_queue,
-            mmio,
-        ),
+        memory=(*memory, serial_callback, dsp_queue, mmio),
         mmio=mmio,
         dsp_queue=dsp_queue,
         serial_callback=serial_callback,

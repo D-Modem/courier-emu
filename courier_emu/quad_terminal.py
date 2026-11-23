@@ -2,7 +2,8 @@
 
 This substitutes for raw-pin autobaud, not the AT parser or result generator.
 It installs the firmware's fixed-baud receive entry and attention callback at
-command boundaries. The scheduler, command buffer, command dispatcher, Q/V
+command boundaries. Online data is delivered to the UART without changing
+any of the guest's receive callbacks. The scheduler, command buffer, command dispatcher, Q/V
 settings and every output byte remain firmware-owned. It is deliberately not
 an assertion that the Quad DSP, NIC or physical DTE timing is emulated.
 """
@@ -14,10 +15,15 @@ from typing import Any
 class QuadTerminal:
     next_byte: int = 2_000_000
     interval: int = 100_000
+    online_interval: int | None = None
     command_start: bool = True
     received: int = 0
     opened: int = 0
     output_start: int | None = None
+
+    def __post_init__(self):
+        if self.interval <= 0 or (self.online_interval is not None and self.online_interval <= 0):
+            raise ValueError("terminal byte intervals must be positive")
 
     @staticmethod
     def validate(image: Any) -> None:
@@ -37,15 +43,21 @@ class QuadTerminal:
 
     def service(self, machine: Any, interrupts_on: bool) -> None:
         if (not interrupts_on or not machine.serial_rx or machine.uart.pending
+                or machine.uart.receive_unread
                 or machine.instructions < self.next_byte):
             return
+        # Interrupt dispatch can clear pending before the ISR reads S0RBUF.
+        # This byte adapter is backpressured: never overwrite that unread byte,
+        # even if its instruction-based character deadline has elapsed.
         uc = machine.uc
         state = int.from_bytes(uc.mem_read(0x81f8, 2), 'little')
         # In particular, do not inject the next command while the preceding
         # command is still being parsed or its result is being transmitted.
-        if state not in (0x91e6, 0x92af):
+        command_mode = state in (0x91e6, 0x92af)
+        online = bool(uc.mem_read(0x8311, 1)[0] & 4)
+        if not command_mode and (not online or not machine.uart.receive_enabled):
             return
-        if self.command_start:
+        if command_mode and self.command_start:
             if state != 0x91e6:
                 return
             if self.output_start is None:
@@ -65,5 +77,7 @@ class QuadTerminal:
         byte = machine.serial_rx.popleft()
         machine.uart.deliver(byte)
         self.received += 1
-        self.command_start = byte == 13
-        self.next_byte = machine.instructions + self.interval
+        if command_mode:
+            self.command_start = byte == 13
+        interval = self.interval if command_mode or self.online_interval is None else self.online_interval
+        self.next_byte = machine.instructions + interval

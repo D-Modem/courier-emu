@@ -43,11 +43,134 @@ inline double tl_to_d(TripleLength total)
 }
 
 // math.sumprod(a, b) for `count` floats.
-inline double sumprod(const double *a, const double *b, long count)
+inline double sumprod_portable(const double *a, const double *b, long count)
 {
     TripleLength total{0.0, 0.0, 0.0};
     for (long index = 0; index < count; ++index) total = tl_fma(a[index], b[index], total);
     return tl_to_d(total);
+}
+
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+// The portable x86-64 ABI does not include FMA. Without a targeted version,
+// every tap's explicit std::fma is a libm call, even on CPUs with hardware
+// FMA. Specialize only this exact compensated dot product: -march=native or
+// fast-math for the whole library could change the audio's rounding elsewhere.
+__attribute__((target("fma"))) inline double sumprod_fma(
+    const double *a, const double *b, long count)
+{
+    TripleLength total{0.0, 0.0, 0.0};
+    for (long index = 0; index < count; ++index) total = tl_fma(a[index], b[index], total);
+    return tl_to_d(total);
+}
+#endif
+
+inline double sumprod(const double *a, const double *b, long count)
+{
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+    // Select once, not once per tap. The fallback remains safe on older CPUs.
+    static const auto dot = __builtin_cpu_supports("fma") ? sumprod_fma : sumprod_portable;
+    return dot(a, b, count);
+#else
+    return sumprod_portable(a, b, count);
+#endif
+}
+
+// Match separate Python multiply/add operations, including on FMA targets.
+inline double sumprod_sequential(const double *a, const double *b, long count)
+{
+    double total = 0.0;
+    for (long k = 0; k < count; ++k) {
+        volatile double product = a[k] * b[k];
+        total += product;
+    }
+    return total;
+}
+
+inline int16_t pcm16_even(double value)
+{
+    if (value >= 32767.0) return 32767;
+    if (value <= -32768.0) return -32768;
+    double rounded = std::floor(value);
+    const double fraction = value - rounded;
+    if (fraction > 0.5 || (fraction == 0.5 && std::fmod(rounded, 2.0) != 0.0))
+        rounded += 1.0;
+    return static_cast<int16_t>(rounded);
+}
+
+// Stateless block kernels. Status 0: complete, 1: decline to Python, 2: output
+// scratch full (resume at the returned position). No stream state is committed.
+inline std::size_t fixed(const double *history, std::size_t length,
+    const double *kernel, std::size_t kernel_length, double step, double position,
+    int16_t *out, std::size_t capacity, double *position_out, int *status, unsigned mode)
+{
+    if (!status) return 0;
+    *status = 1;
+    constexpr double limit_exact = 4503599627370496.0;
+    if (!history || !kernel || !position_out || (!out && capacity)
+        || length < TAPS || uint64_t(length) > UINT64_C(4503599627370496)
+        || kernel_length != PHASES * TAPS || mode > 1
+        || !std::isfinite(position) || position < 0 || position > limit_exact
+        || !std::isfinite(step) || step <= 0) return 0;
+    const double limit = double(length - TAPS);
+    std::size_t written = 0;
+    *status = 0;
+    while (position <= limit) {
+        auto base = static_cast<std::size_t>(position);
+        auto phase = static_cast<long>((position - double(base)) * PHASES + 0.5);
+        if (phase == PHASES) {
+            ++base; phase = 0;
+            if (double(base) > limit) break;
+        }
+        if (written == capacity) { *status = 2; break; }
+        const double *taps = kernel + phase * TAPS;
+        const double value = mode ? sumprod(taps, history + base, TAPS)
+                                  : sumprod_sequential(taps, history + base, TAPS);
+        if (!std::isfinite(value)) { *status = 1; return 0; }
+        out[written++] = pcm16_even(value);
+        position += step;
+    }
+    *position_out = position;
+    return written;
+}
+
+inline std::size_t polyphase(const double *history, std::size_t length,
+    const double *kernel, std::size_t kernel_length, uint64_t up, uint64_t down,
+    uint64_t taps, int64_t half, int64_t origin, int64_t output,
+    int16_t *out, std::size_t capacity, int64_t *output_out, int *status)
+{
+    if (!status) return 0;
+    *status = 1;
+    constexpr int64_t limit = INT64_C(4503599627370496);
+    if ((!history && length) || !kernel || !output_out || (!out && capacity)
+        || !up || up > 1024 || !down || down > (1u << 20)
+        || !taps || taps > 4096 || half < 0 || uint64_t(half) > taps
+        || kernel_length != up * taps || uint64_t(length) > uint64_t(limit)
+        || origin < -limit || origin > limit || output < 0
+        || output > limit / int64_t(down)) return 0;
+    const int64_t newest = origin + int64_t(length) - 1;
+    std::size_t written = 0;
+    *status = 0;
+    while (true) {
+        if (output > limit / int64_t(down)) { *status = 1; return 0; }
+        const int64_t position = output * int64_t(down);
+        const int64_t base = position / int64_t(up);
+        if (base + half > newest) break;
+        if (written == capacity) { *status = 2; break; }
+        const double *row = kernel + (position % int64_t(up)) * int64_t(taps);
+        double total = 0.0;
+        for (uint64_t k = 0; k < taps; ++k) {
+            const int64_t sample = base + half - int64_t(k) - origin;
+            if (sample >= 0 && uint64_t(sample) < length) {
+                volatile double product = row[k] * history[sample];
+                total += product;
+            }
+        }
+        if (!std::isfinite(total)) { *status = 1; return 0; }
+        out[written++] = pcm16_even(total);
+        ++output;
+    }
+    *output_out = output;
+    return written;
 }
 
 constexpr double KAISER_BETA = 8.0;
@@ -65,6 +188,31 @@ inline double bessel_i0(double x)
         ++k;
     }
     return total;
+}
+
+// resample._windows(), operation for operation. Build the immutable Kaiser
+// table outside Python's 131,072-tap loop; do not change its coefficients.
+inline void windows(double *out, double norm)
+{
+#pragma clang fp contract(off)
+    static_assert((PHASES & (PHASES - 1)) == 0);
+    static_assert((HALF_TAPS & (HALF_TAPS - 1)) == 0);
+    for (long phase = 0; phase <= PHASES / 2; ++phase) {
+        const double fraction = double(phase) / PHASES;
+        for (long k = 0; k < TAPS; ++k) {
+            const double t = double(k - (HALF_TAPS - 1)) - fraction;
+            const double ratio = t / HALF_TAPS;
+            const double value = std::abs(ratio) < 1
+                ? bessel_i0(KAISER_BETA * std::sqrt(1 - ratio * ratio)) / norm : 0.0;
+            out[phase * TAPS + k] = value;
+            // The paired row has exactly -t at the reversed tap. Both t
+            // and ratio are exact binary fractions on this power-of-two
+            // grid, so the squared argument (and every output bit) agrees.
+            // Phase zero has no PHASES row; compute it independently.
+            if (phase != 0)
+                out[(PHASES - phase) * TAPS + (TAPS - 1 - k)] = value;
+        }
+    }
 }
 
 // The sample whose window crosses a clock edge: Kaiser-windowed sinc weights

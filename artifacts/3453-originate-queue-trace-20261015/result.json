@@ -1,0 +1,1787 @@
+{
+  "bc-origin-branch": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 10000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "call-options": "00",
+        "call-options2": "02",
+        "capabilities": "00",
+        "lease": "00",
+        "max-rate": "01",
+        "mode-a": "00",
+        "mode-b": "00",
+        "orig-mode": "00"
+      },
+      "pc_watch_counts": {
+        "call-wait": 1
+      },
+      "pc_watch": [
+        {
+          "ax": "1771",
+          "bx": "5140",
+          "cs": "57bb",
+          "cx": "0000",
+          "flags": "0207",
+          "instructions": 3925184,
+          "name": "call-wait",
+          "pc": "639b8"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 26,
+        "007d:0028": 2,
+        "0080:0000": 26,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "tx_peak_line": 10222,
+      "rx_peak_line": 0,
+      "dsp_cells": {}
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 10000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "call-options": "00",
+        "call-options2": "00",
+        "capabilities": "00",
+        "lease": "00",
+        "max-rate": "01",
+        "mode-a": "00",
+        "mode-b": "00",
+        "orig-mode": "00"
+      },
+      "pc_watch_counts": {
+        "call-wait": 1,
+        "fallback-mode": 1,
+        "orig-config": 1,
+        "orig-fallback": 1,
+        "orig-mode": 1,
+        "orig-skip": 1,
+        "orig-start": 1,
+        "orig-test": 1
+      },
+      "pc_watch": [
+        {
+          "ax": "0002",
+          "bx": "32dc",
+          "cs": "57bb",
+          "cx": "0000",
+          "flags": "0246",
+          "instructions": 2977664,
+          "name": "orig-config",
+          "pc": "635a1"
+        },
+        {
+          "ax": "0400",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992640,
+          "name": "orig-start",
+          "pc": "635ef"
+        },
+        {
+          "ax": "0400",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992640,
+          "name": "orig-mode",
+          "pc": "6405b"
+        },
+        {
+          "ax": "005a",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992704,
+          "name": "orig-test",
+          "pc": "64066"
+        },
+        {
+          "ax": "005a",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992704,
+          "name": "orig-skip",
+          "pc": "640b4"
+        },
+        {
+          "ax": "0019",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992832,
+          "name": "orig-fallback",
+          "pc": "63603"
+        },
+        {
+          "ax": "0019",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992832,
+          "name": "fallback-mode",
+          "pc": "640b8"
+        },
+        {
+          "ax": "008c",
+          "bx": "0954",
+          "cs": "57bb",
+          "cx": "0000",
+          "flags": "0a06",
+          "instructions": 2992984,
+          "name": "call-wait",
+          "pc": "639b8"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 2,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 26,
+        "007d:0028": 2,
+        "0080:0000": 26,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "tx_peak_line": 0,
+      "rx_peak_line": 1947,
+      "dsp_cells": {}
+    }
+  },
+  "bc-queue-drop": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 9000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "queue-read-high": "02",
+        "queue-read-low": "f0",
+        "queue-write-high": "02",
+        "queue-write-low": "f0"
+      },
+      "pc_watch_counts": {
+        "queue-drop": 16,
+        "queue-used": 36
+      },
+      "pc_watch": [
+        {
+          "ax": "000f",
+          "bx": "0600",
+          "cs": "675b",
+          "cx": "0002",
+          "flags": "0002",
+          "instructions": 1416576,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0000",
+          "flags": "0046",
+          "instructions": 2233408,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1468",
+          "cs": "675b",
+          "cx": "000a",
+          "flags": "0016",
+          "instructions": 2233882,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1408",
+          "cs": "675b",
+          "cx": "0010",
+          "flags": "0002",
+          "instructions": 2233984,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0016",
+          "flags": "0012",
+          "instructions": 2234318,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0002",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "001e",
+          "flags": "0016",
+          "instructions": 2234564,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "0502",
+          "cs": "675b",
+          "cx": "0000",
+          "flags": "0046",
+          "instructions": 2295562,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0004",
+          "flags": "0002",
+          "instructions": 2296832,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1468",
+          "cs": "675b",
+          "cx": "000e",
+          "flags": "0012",
+          "instructions": 2297664,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1408",
+          "cs": "675b",
+          "cx": "0014",
+          "flags": "0006",
+          "instructions": 2297728,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001f",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "0006",
+          "flags": "0006",
+          "instructions": 2967232,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0019",
+          "bx": "020d",
+          "cs": "675b",
+          "cx": "000c",
+          "flags": "0007",
+          "instructions": 2967360,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "0014",
+          "flags": "0007",
+          "instructions": 2967507,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0048",
+          "bx": "7fff",
+          "cs": "675b",
+          "cx": "0002",
+          "flags": "0012",
+          "instructions": 2980288,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0051",
+          "bx": "21ff",
+          "cs": "675b",
+          "cx": "0008",
+          "flags": "0012",
+          "instructions": 2980416,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0052",
+          "bx": "1ef8",
+          "cs": "675b",
+          "cx": "000e",
+          "flags": "0012",
+          "instructions": 2980480,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0052",
+          "bx": "1ef8",
+          "cs": "675b",
+          "cx": "0014",
+          "flags": "0016",
+          "instructions": 2980632,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001c",
+          "bx": "0008",
+          "cs": "675b",
+          "cx": "0022",
+          "flags": "0007",
+          "instructions": 2980992,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001d",
+          "bx": "0014",
+          "cs": "675b",
+          "cx": "0028",
+          "flags": "0007",
+          "instructions": 2981056,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2981120,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2981120,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2981120,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2981184,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0042",
+          "bx": "0191",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2981184,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0042",
+          "bx": "0191",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2981184,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0049",
+          "bx": "8885",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2981272,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0049",
+          "bx": "8885",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2981272,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "00c1",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981568,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "00c1",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981568,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0105",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981568,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0105",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981568,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0210",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981632,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0210",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981632,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981696,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981696,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981696,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981696,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981760,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981760,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981848,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981848,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981888,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981888,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2981952,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2981952,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2982016,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2982016,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2982016,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2982016,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0002",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2982112,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0002",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2982112,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0014",
+          "bx": "5140",
+          "cs": "675b",
+          "cx": "0002",
+          "flags": "0002",
+          "instructions": 3925120,
+          "name": "queue-used",
+          "pc": "67d6f"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 24,
+        "007d:0028": 2,
+        "0080:0000": 24,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "tx_peak_line": 10222,
+      "rx_peak_line": 0,
+      "dsp_cells": {}
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 9000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "queue-read-high": "02",
+        "queue-read-low": "f2",
+        "queue-write-high": "02",
+        "queue-write-low": "f2"
+      },
+      "pc_watch_counts": {
+        "orig-command17": 1,
+        "queue-drop": 17,
+        "queue-used": 38
+      },
+      "pc_watch": [
+        {
+          "ax": "000f",
+          "bx": "0600",
+          "cs": "675b",
+          "cx": "0002",
+          "flags": "0002",
+          "instructions": 1416576,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0000",
+          "flags": "0046",
+          "instructions": 2232067,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1468",
+          "cs": "675b",
+          "cx": "0008",
+          "flags": "0012",
+          "instructions": 2232603,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1408",
+          "cs": "675b",
+          "cx": "000e",
+          "flags": "0012",
+          "instructions": 2232704,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0014",
+          "flags": "0016",
+          "instructions": 2233036,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0002",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "001c",
+          "flags": "0012",
+          "instructions": 2233282,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "0502",
+          "cs": "675b",
+          "cx": "0000",
+          "flags": "0046",
+          "instructions": 2293332,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "000f",
+          "bx": "1200",
+          "cs": "675b",
+          "cx": "0004",
+          "flags": "0002",
+          "instructions": 2294592,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1468",
+          "cs": "675b",
+          "cx": "000e",
+          "flags": "0012",
+          "instructions": 2295680,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0084",
+          "bx": "1408",
+          "cs": "675b",
+          "cx": "0014",
+          "flags": "0006",
+          "instructions": 2295744,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001f",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "0006",
+          "flags": "0006",
+          "instructions": 2965824,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0019",
+          "bx": "020d",
+          "cs": "675b",
+          "cx": "000c",
+          "flags": "0006",
+          "instructions": 2965888,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0002",
+          "bx": "7658",
+          "cs": "675b",
+          "cx": "0012",
+          "flags": "0007",
+          "instructions": 2966117,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "0000",
+          "flags": "0046",
+          "instructions": 2977600,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0048",
+          "bx": "7fff",
+          "cs": "675b",
+          "cx": "0002",
+          "flags": "0002",
+          "instructions": 2990104,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0051",
+          "bx": "21ff",
+          "cs": "675b",
+          "cx": "0008",
+          "flags": "0002",
+          "instructions": 2990208,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0052",
+          "bx": "1ef8",
+          "cs": "675b",
+          "cx": "000c",
+          "flags": "0006",
+          "instructions": 2990412,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0052",
+          "bx": "1ef8",
+          "cs": "675b",
+          "cx": "0012",
+          "flags": "0006",
+          "instructions": 2990528,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001c",
+          "bx": "0008",
+          "cs": "675b",
+          "cx": "0020",
+          "flags": "0003",
+          "instructions": 2990848,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001d",
+          "bx": "0014",
+          "cs": "675b",
+          "cx": "0026",
+          "flags": "0003",
+          "instructions": 2990976,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991040,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991040,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991040,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991040,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0042",
+          "bx": "0191",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991104,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0042",
+          "bx": "0191",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991104,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0049",
+          "bx": "8885",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991168,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0049",
+          "bx": "8885",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991168,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "00c1",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991360,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "00c1",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991360,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0105",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991424,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0105",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991424,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0210",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991424,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0210",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991424,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991488,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991488,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991552,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991552,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991552,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991552,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991616,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991616,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991680,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991680,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991744,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991744,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991832,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991832,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0003",
+          "instructions": 2991872,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 2991872,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "001f",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "0028",
+          "flags": "0007",
+          "instructions": 2992704,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0019",
+          "bx": "020d",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2992832,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0019",
+          "bx": "020d",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2992832,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0019",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 2992832,
+          "name": "orig-command17",
+          "pc": "640c2"
+        },
+        {
+          "ax": "0017",
+          "bx": "5040",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0007",
+          "instructions": 2992832,
+          "name": "queue-used",
+          "pc": "67d6f"
+        },
+        {
+          "ax": "0017",
+          "bx": "5040",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 2992832,
+          "name": "queue-drop",
+          "pc": "67d89"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 2,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 24,
+        "007d:0028": 2,
+        "0080:0000": 24,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "tx_peak_line": 0,
+      "rx_peak_line": 1947,
+      "dsp_cells": {}
+    }
+  },
+  "bc-call-queue-fixed": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 30000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {},
+      "pc_watch_counts": {
+        "queue-drop": 12
+      },
+      "pc_watch": [
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3129420,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3129420,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0210",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3135872,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3135872,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3135936,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136000,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136064,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136064,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136192,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136192,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136256,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0002",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3136335,
+          "name": "queue-drop",
+          "pc": "67d89"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0042:0191": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0049:8885": 1,
+        "0050:00c1": 1,
+        "0050:0105": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 61,
+        "007d:0028": 2,
+        "0080:0000": 61,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "tx_peak_line": 10033,
+      "rx_peak_line": 0,
+      "dsp_cells": {
+        "mode-word": "5140",
+        "rx-callback": "2208",
+        "state-callback": "2030",
+        "tx-callback": "0456"
+      }
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 30000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n\r\nNO CARRIER\r\n",
+      "peek": {},
+      "pc_watch_counts": {
+        "orig-command17": 1,
+        "queue-drop": 11
+      },
+      "pc_watch": [
+        {
+          "ax": "002a",
+          "bx": "0006",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 3167360,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "001a",
+          "bx": "32dc",
+          "cs": "675b",
+          "cx": "002e",
+          "flags": "0002",
+          "instructions": 3167424,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0105",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3173568,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0310",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3173824,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "040d",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3173888,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0050",
+          "bx": "0500",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3173888,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0053",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3173952,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0071",
+          "bx": "0001",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3174016,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0077",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3174144,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0076",
+          "bx": "0000",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3174144,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "005b",
+          "bx": "0101",
+          "cs": "675b",
+          "cx": "002c",
+          "flags": "0002",
+          "instructions": 3174208,
+          "name": "queue-drop",
+          "pc": "67d89"
+        },
+        {
+          "ax": "0019",
+          "bx": "0101",
+          "cs": "57bb",
+          "cx": "000b",
+          "flags": "0246",
+          "instructions": 3551960,
+          "name": "orig-command17",
+          "pc": "640c2"
+        }
+      ],
+      "runtime_message_counts": {
+        "0001:0000": 6,
+        "0002:0000": 2,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 4,
+        "0015:0000": 1,
+        "0017:5040": 1,
+        "0019:020d": 2,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 2,
+        "0042:0191": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0049:8885": 1,
+        "0050:00c1": 1,
+        "0050:0210": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 3,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 56,
+        "007d:0028": 4,
+        "0080:0000": 56,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 4,
+        "0083:0002": 3,
+        "0083:003f": 1,
+        "0084:0502": 1,
+        "0084:1408": 4,
+        "0084:1468": 4
+      },
+      "tx_peak_line": 10471,
+      "rx_peak_line": 1911,
+      "dsp_cells": {
+        "mode-word": "0000",
+        "rx-callback": "1172",
+        "state-callback": "0000",
+        "tx-callback": "1173"
+      }
+    }
+  },
+  "bc-all-delays": {
+    "status": "worker-error",
+    "message": "3453C overlay did not acknowledge at 1278, PC=1133",
+    "note": "1278 is the pre-interrupt BMAR diagnostic, not a verified transfer destination. No carrier is established."
+  },
+  "bc-drain-fixed": {
+    "status": "worker-error",
+    "configuration": "timer, busy-loop and queue-drain waits preserved (current implementation)",
+    "instruction_budget": 40000000,
+    "requested_line_frames": 100,
+    "errors": {
+      "a": "3453C overlay mismatch at FFFE",
+      "b": "3453C overlay did not acknowledge at 124C, PC=1133"
+    },
+    "note": "No complete paired result or negotiated carrier. 124C is pre-interrupt BMAR, not a verified payload destination."
+  },
+  "validation": {
+    "focused_tests_passed": 22,
+    "aggregate_tests_passed": 116,
+    "aggregate_seconds": 389.09,
+    "negotiated_carrier": false
+  }
+}

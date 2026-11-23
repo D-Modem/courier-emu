@@ -58,7 +58,7 @@ to the client/server role pair.  The symmetric server mode is analysed in
 This is deliberately separate from `codec-sample-rates.md`.  That document
 describes the six-row V.34 rate machinery; it must not be used to identify the
 V.90 protocol selector.  Addresses below are for
-`artifacts/courier-board-21210-capture-403/courier-board.rom`; the bundled
+`dumps/courier-board-21210-capture-403/courier-board.rom`; the bundled
 update ROMs retain x2/V.90 result vocabulary but relocate their executable
 code, so an absolute-address match is not a cross-version test.
 
@@ -4718,6 +4718,15 @@ At this checkpoint there were two later interop gaps (the analog Phase 2 gap is 
   `ffd9` bit 1 is clear. No marker/B1 follows. The engine also lacks a
   symmetric x2 session; a successful native symmetric control is evidence
   of that separate mode, not proof of software-engine interoperability.
+
+The 19 October native continuation audit clarifies the I-modem sequence:
+`8cbb` schedules callbacks rather than returning through them, and `96be`
+uses a computed return to skip fallback while counter `031a <= 48000`.
+Thus `92ef` is the eventual recovery boundary, not an immediate rejection
+after INFO0. Both asymmetric orientations arm the same seven-bit receiver
+without selecting a transmit script. See the original-instruction cases
+and fresh digital peer traces in
+[`quad-imodem-role-decomp-20261019`](../artifacts/quad-imodem-role-decomp-20261019/README.md).
 
 The closed loop also exposed two recovery omissions now fixed in the
 software session: it must stop Tone A during MARKER_WAIT, and it must still

@@ -9,7 +9,7 @@ from courier_emu.nvram import CourierNvram
 
 out = Path('artifacts/aty4dt123-403-01')
 machine = CourierMachine(
-    load_image('artifacts/courier-board-21210-capture-403/courier-board.rom'),
+    load_image('dumps/courier-board-21210-capture-403/courier-board.rom'),
     nvram=CourierNvram.idsl302_fixture(), tick_ms=5, board_id=7,
     serial_input=b'ATY4DT123\r', with_dsp=True,
     daa=CourierDaa(line_state='dial-tone'),

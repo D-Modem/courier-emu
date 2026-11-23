@@ -74,8 +74,8 @@ def test_line_fifo_occupancy_is_measured_at_line_rate_after_adc_retune():
         assert core.codec_state()['rx_empty_frames'] == 0
 
 
-def test_ideal_exchange_reconstruction_preserves_upper_pcm_band():
-    frequency = 3800
+@pytest.mark.parametrize('frequency,min_snr', [(1000, 84), (3000, 88), (3800, 75)])
+def test_ideal_exchange_reconstruction_preserves_upper_pcm_band(frequency, min_snr):
     with NativeC5x.from_program(0, struct.pack('<H', 0xbe22)) as core:
         core.configure_rom_codec()
         core.configure_line_frame_interrupt(5, 0xffff)
@@ -102,5 +102,7 @@ def test_ideal_exchange_reconstruction_preserves_upper_pcm_band():
             input_time += state['frame_period'] / 40320000
         assert core.codec_state()['rx_empty_frames'] == 0
         # Includes amplitude and phase error without fitting either away.
-        # The previous 0.49 cutoff produced only 39.4 dB here.
-        assert 10 * math.log10(signal / error) > 60
+        # Nearest-phase lookup gave 74.1/64.0/61.9 dB at these frequencies;
+        # interpolation must remove that artificial phase-quantization floor.
+        # FIFO accounting, FIR delay, cutoff, length and clocks stay unchanged.
+        assert 10 * math.log10(signal / error) > min_snr

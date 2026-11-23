@@ -86,7 +86,7 @@ To do this again offline:
 
 ```sh
 .venv/bin/python -m courier_emu.mailbox_compare \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --capture artifacts/dsp-mailbox-312-comparison-01/manifest.json \
   --output /tmp/courier-mailbox-comparison.json
 ```

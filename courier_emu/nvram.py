@@ -66,7 +66,7 @@ IDSDL302_EXTENDED = bytes.fromhex(
 # board lands offset 0, and ten bytes is exactly five words.
 #
 # The content is the board's own provisioning, read out of the read-only RAM
-# capture in artifacts/courier-board-21210-ram-403/ at 0x071b, identical across
+# capture in dumps/courier-board-21210-ram-403/ at 0x071b, identical across
 # both passes. Its last word is the giveaway that the alignment is right: 302
 # ends the block with the ASCII "3.02" and this ends with 0x0193 - 403.
 #
@@ -75,7 +75,7 @@ IDSDL302_EXTENDED = bytes.fromhex(
 # 0x1a and 0x1b; with the 302 fixture those lanes read zero and the DSP dials
 # silently (docs/datapump-dispatch-gate.md).
 # The board's whole settings part, lifted from the read-only RAM capture in
-# artifacts/courier-board-21210-ram-403/. The boot block copies the 512-byte
+# dumps/courier-board-21210-ram-403/. The boot block copies the 512-byte
 # part to RAM 0x058e..0x078d before checksumming it there, so that window is
 # the part's contents; it is identical across both passes of the capture, its
 # stored checksum byte validates against `settings_checksum`, and it carries

@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <stdexcept>
+#include <map>
+#include <mutex>
 
 namespace courier {
 
@@ -93,6 +95,8 @@ C5xCore::C5xCore(Model model)
 
 void C5xCore::reset()
 {
+    ++m_reset_generation;
+    if (m_board_lane_trace && m_board_lane_trace->armed) m_board_lane_trace->arm();
     m_delay_move_ignored = 0;
     m_delay_move_last_pc = m_delay_move_last_address = 0;
     m_pc = m_op = 0;
@@ -117,8 +121,8 @@ void C5xCore::reset()
     m_st1.c = 1; m_st1.hm = 1; m_st1.sxm = 1; m_st1.xf = 1;
     m_xf_falling_edges = 0;
     m_ifr = m_imr = 0;
-    m_timer.tss = false;
     m_ff.nmi_pending = false;
+    m_ff.idle2 = false;
     m_interrupt_vectors.fill(0xffff);
     m_line_frame_irq = -1;
     m_event_deadline = 0;
@@ -139,7 +143,11 @@ void C5xCore::reset()
     m_pcstack_ptr = 0;
     m_rpt_start = m_rpt_end = 0;
     m_cbcr = m_cbsr1 = m_cber1 = m_cbsr2 = m_cber2 = 0;
-    m_timer = {}; m_tail_cycle = 0; m_serial = {}; m_tdm = {}; m_shadow = {};
+    // Hold the timer in reset after DSP reset. Firmware explicitly writes
+    // TCR/TRB before it relies on TINT; running zeroed TIM/PRD would raise a
+    // spurious IRQ3 on the first instruction.
+    m_timer = {}; m_timer.tss = true;
+    m_tail_cycle = 0; m_serial = {}; m_tdm = {}; m_shadow = {};
     // On this board RS is shared with the AC01.  configure_rom_codec() opts
     // into that board wiring; later DSP resets must therefore return the
     // external codec's control registers and frame state to power-up too.
@@ -171,6 +179,7 @@ void C5xCore::reset()
     m_codec_rx.clear();
     m_codec_line_input = false;
     m_codec_line_rx.clear();
+    m_codec_line_queued_total = m_codec_line_consumed_total = 0;
     m_codec_line_history.fill(0);
     m_codec_line_position = 0;
     m_codec_boot.clear();
@@ -197,7 +206,9 @@ void C5xCore::reset()
     m_io.fill(0xffff);
     m_mailbox_output.fill(0);
     m_asic_output.fill(0xffff);
+    m_data_busy_writes.fill(0);
     m_io_events.clear();
+    m_io_event_total = 0;
     m_mailbox_events.clear();
     m_io_port_stats.fill({});
     m_data_events.clear();
@@ -417,6 +428,10 @@ void C5xCore::codec_recompute_rate()
 // One secondary word: [DS15:14 control][DS13 R/W][DS12:8 address][DS7:0 data].
 void C5xCore::codec_apply_register(uint16_t word)
 {
+    // -2 selects accepted secondary codec controls, not DXR loads. On
+    // Si3034 acceptance happens at FSYNC; this PC is the event context.
+    if (m_trace_register == -2 && m_register_trace.size() < m_trace_capacity)
+        m_register_trace.push_back({m_cycles, m_pc, word});
     m_codec.last_control_word = word;
     ++m_codec.secondary_frames;
     const unsigned address = (word >> 8) & 0x1f;
@@ -715,43 +730,79 @@ static double codec_i0(double x)
     return total;
 }
 
+// Shared immutable tables: hardware prepares every allowed ratio before HAL
+// startup. Retuning an active ADC must neither allocate a FIR nor relabel FIFO
+// samples. Socket users retain their original lazy construction behavior.
+static const std::vector<std::array<double, 128>> &line_input_kernel(double cutoff, bool build)
+{
+    static std::map<double, std::vector<std::array<double, 128>>> tables;
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    if (const auto found = tables.find(cutoff); found != tables.end()) return found->second;
+    if (!build) throw std::runtime_error("unprepared physical ADC resampling ratio");
+    constexpr double pi = 3.14159265358979323846;
+    std::vector<std::array<double, 128>> kernel(1025);
+    const double norm = codec_i0(8);
+    for (unsigned phase = 0; phase <= 1024; ++phase) {
+        double total = 0;
+        for (unsigned k = 0; k < 128; ++k) {
+            const double t = double(k) - 63 - double(phase) / 1024;
+            const double x = 2 * cutoff * t;
+            const double sinc = x == 0 ? 1 : std::sin(pi * x) / (pi * x);
+            const double ratio = t / 64;
+            const double window = std::abs(ratio) < 1
+                ? codec_i0(8 * std::sqrt(1 - ratio * ratio)) / norm : 0;
+            total += (kernel[phase][k] = 2 * cutoff * sinc * window);
+        }
+        for (double &tap : kernel[phase]) tap /= total;
+    }
+    return tables.emplace(cutoff, std::move(kernel)).first->second;
+}
+
+void C5xCore::prepare_line_input(double source_rate, double codec_rate)
+{
+    if (!(source_rate > 0 && std::isfinite(source_rate)
+          && codec_rate > 0 && std::isfinite(codec_rate)))
+        throw std::runtime_error("invalid ADC source/codec rate");
+    line_input_kernel(0.5 * std::min(1.0, codec_rate / source_rate), true);
+}
+
+void C5xCore::set_line_input_rate(double rate, unsigned cushion, bool prepared_only)
+{
+    if (!(rate > 0 && std::isfinite(rate)) || cushion > 128)
+        throw std::runtime_error("invalid ADC input grid");
+    if (m_codec_line_input && (rate != m_codec_line_rate || cushion != m_codec_line_cushion))
+        throw std::runtime_error("cannot change the source clock of an active ADC FIFO");
+    if (rate != m_codec_line_rate) m_codec_line_kernel = nullptr;
+    m_codec_line_rate = rate;
+    m_codec_line_cushion = cushion;
+    m_codec_line_prepared_only = prepared_only;
+}
+
 void C5xCore::queue_line_rx(const uint16_t *samples, std::size_t count)
 {
     if (!m_codec_line_input) {
         m_codec_line_input = true;
         // Prime once, in line samples. A codec retune must never insert a
         // fresh cushion into an already continuous receive waveform.
-        m_codec_line_rx.insert(m_codec_line_rx.end(), 32, 0);
+        m_codec_line_rx.insert(m_codec_line_rx.end(), m_codec_line_cushion, 0);
+        m_codec_line_queued_total += m_codec_line_cushion;
     }
+    m_codec_line_queued_total += count;
     for (std::size_t k = 0; k < count; ++k)
         m_codec_line_rx.push_back(samples[k]);
 }
 
 bool C5xCore::codec_line_sample(int32_t &sample)
 {
-    constexpr double pi = 3.14159265358979323846;
     const double rate = double(C5X_CLOCK_HZ) / m_line_frame_period;
     // Reconstruct the ideal exchange waveform through the lower Nyquist
     // limit. An additional 2% cutoff reduction attenuates the upper PCM
     // band before the client's equalizer and reduces the negotiated x2 rate.
-    const double cutoff = 0.5 * std::min(1.0, rate / 8000.0);
-    if (cutoff != m_codec_line_cutoff || m_codec_line_kernel.empty()) {
+    const double cutoff = 0.5 * std::min(1.0, rate / m_codec_line_rate);
+    if (cutoff != m_codec_line_cutoff || !m_codec_line_kernel) {
+        m_codec_line_kernel = &line_input_kernel(cutoff, !m_codec_line_prepared_only);
         m_codec_line_cutoff = cutoff;
-        m_codec_line_kernel.resize(1025);
-        const double norm = codec_i0(8);
-        for (unsigned phase = 0; phase <= 1024; ++phase) {
-            double total = 0;
-            for (unsigned k = 0; k < 128; ++k) {
-                const double t = double(k) - 63 - double(phase) / 1024;
-                const double x = 2 * cutoff * t;
-                const double sinc = x == 0 ? 1 : std::sin(pi * x) / (pi * x);
-                const double ratio = t / 64;
-                const double window = std::abs(ratio) < 1
-                    ? codec_i0(8 * std::sqrt(1 - ratio * ratio)) / norm : 0;
-                total += (m_codec_line_kernel[phase][k] = 2 * cutoff * sinc * window);
-            }
-            for (double &tap : m_codec_line_kernel[phase]) tap /= total;
-        }
     }
     bool present = true;
     const unsigned advance = unsigned(m_codec_line_position);
@@ -764,15 +815,26 @@ bool C5xCore::codec_line_sample(int32_t &sample)
         } else {
             m_codec_line_history.back() = int16_t(m_codec_line_rx.front());
             m_codec_line_rx.pop_front();
+            ++m_codec_line_consumed_total;
         }
     }
     m_codec_line_position -= advance;
-    const unsigned phase = unsigned(std::round(m_codec_line_position * 1024));
+    // Interpolate the tabulated kernels at the actual ADC instant. Rounding
+    // to one of 1024 phases adds periodic timing error at ratios such as 6/5
+    // (8 kHz exchange -> 9.6 kHz x2 ADC), despite exact clock accounting.
+    // The table includes phase 1024, so the upper endpoint is available
+    // without moving the history or consuming/splicing an extra sample.
+    const double phase_position = m_codec_line_position * 1024;
+    const unsigned phase = unsigned(phase_position);
+    const double fraction = phase_position - phase;
     double value = 0;
-    for (unsigned k = 0; k < 128; ++k)
-        value += m_codec_line_history[k] * m_codec_line_kernel[phase][k];
+    for (unsigned k = 0; k < 128; ++k) {
+        const double a = (*m_codec_line_kernel)[phase][k];
+        const double b = (*m_codec_line_kernel)[phase + 1][k];
+        value += m_codec_line_history[k] * (a + fraction * (b - a));
+    }
     sample = int32_t(std::clamp(std::round(value), -32768.0, 32767.0));
-    m_codec_line_position += 8000.0 / rate;
+    m_codec_line_position += m_codec_line_rate / rate;
     return present;
 }
 
@@ -809,6 +871,21 @@ uint16_t C5xCore::io_output(uint16_t port) const
     return (m_rom_codec || m_host_mailbox) && port >= 0x5e && port <= 0x60
         ? m_mailbox_output[port - 0x5e] : m_io[port];
 }
+uint16_t C5xCore::data_channel_status() const
+{
+    return uint16_t(~m_io[0x56] & 0x3f3f);
+}
+void C5xCore::post_data_channels(uint16_t mask)
+{
+    mask &= 0x3f;
+    m_io[0x56] |= mask;
+}
+void C5xCore::ack_data_channels(uint16_t mask)
+{
+    mask &= 0x3f;
+    m_io[0x56] |= mask << 8;
+}
+
 uint16_t C5xCore::program(uint16_t address) const
 {
     // Inspect the mapped bus view without changing execution counters.
@@ -1116,7 +1193,21 @@ uint16_t C5xCore::fetch_slow(uint16_t address)
     }
 }
 
-inline __attribute__((always_inline)) uint16_t C5xCore::ROPCODE() { return fetch(m_pc++); }
+inline __attribute__((always_inline)) uint16_t C5xCore::ROPCODE() {
+    const uint16_t address = m_pc++;
+    const uint16_t opcode = fetch(address);
+    // Block-repeat redirection belongs to sequential fetch, before an
+    // instruction changes control flow, including at a delay-slot edge.
+    // A single-instruction repeat at the block end must finish before
+    // consuming the outer block iteration. Its intermediate fetches do not
+    // cross the block boundary.
+    if (m_pmst.braf && address == uint16_t(m_paer - 1)
+        && !(m_repeat_active && m_rptc > 0)) {
+        if (m_brcr > 0) CHANGE_PC(m_pasr);
+        if (--m_brcr <= 0) m_pmst.braf = 0;
+    }
+    return opcode;
+}
 void C5xCore::CHANGE_PC(uint16_t new_pc) { m_pc = new_pc; }
 inline __attribute__((always_inline)) uint16_t C5xCore::PM_READ16(uint16_t address) { return fetch(address); }
 void C5xCore::PM_WRITE16(uint16_t address, uint16_t value)
@@ -1148,10 +1239,17 @@ uint16_t C5xCore::dm_read_slow(uint16_t address)
     else value = m_program[address];
     // The read side traces a fixed set of cells. A caller watching one cell
     // wants only that cell, and these reads otherwise flood the buffer.
-    if (m_trace_data_writes && !m_trace_filtered &&
-        (address == 0x006f || address == 0x035c || address == 0x069c ||
-         address == 0x0b49 || address == 0x039f || address == 0x03c8 || address == 0x03ca)) {
-        if (m_data_events.size() >= m_data_event_limit) m_data_events.erase(m_data_events.begin());
+    if (m_trace_data_writes &&
+        ((m_trace_filtered && m_trace_selected_reads
+          && address >= m_trace_filter && address <= m_trace_filter_last) ||
+         (!m_trace_filtered && (address == 0x001e || address == 0x001f || address == 0x0020 ||
+         address == 0x0021 || address == 0x0050 || address == 0x0051 ||
+         address == 0x0058 || address == 0x0059 || address == 0x005a ||
+         address == 0x006f || address == 0x035c || address == 0x039f ||
+         address == 0x03c8 || address == 0x03ca || address == 0xff08 ||
+         address == 0xff18 || address == 0xff20 || address == 0xffd9 ||
+         address == 0xffdd)))) {
+        if (m_data_events.size() >= m_data_event_limit) m_data_events.pop_front();
         m_data_events.push_back({address, value, static_cast<uint16_t>(m_pc - 1), m_instructions});
     }
     return value;
@@ -1160,9 +1258,9 @@ void C5xCore::dm_write_slow(uint16_t address, uint16_t value)
 {
     ++m_data_write_counts[address];
     if (m_trace_data_writes && (!m_trace_filtered || (address >= m_trace_filter && address <= m_trace_filter_last))
-        && !(m_trace_filtered && m_trace_changes_only && !m_data_events.empty()
+        && !(m_trace_filtered && !m_trace_selected_reads && m_trace_changes_only && !m_data_events.empty()
              && m_data_events.back().address == address && m_data_events.back().value == value)) {
-        if (m_data_events.size() >= m_data_event_limit) m_data_events.erase(m_data_events.begin());
+        if (m_data_events.size() >= m_data_event_limit) m_data_events.pop_front();
         m_data_events.push_back({address, value, static_cast<uint16_t>(m_pc - 1), m_instructions});
     }
     if (address < 0x60) cpuregs_w(address, value);
@@ -1214,6 +1312,20 @@ uint16_t C5xCore::IO_READ16(uint16_t port)
     stat.last_read_pc = static_cast<uint16_t>(m_pc - 1);
     if (m_io_events.size() >= 8192) m_io_events.pop_front();
     m_io_events.push_back({false, port, value, static_cast<uint16_t>(m_pc - 1), m_instructions});
+    if (m_board_lane_trace && m_board_lane_trace->enabled && m_board_lane_trace->armed
+            && (port == 0x56 || (port >= 0x58 && port <= 0x5d))) {
+        auto &trace = *m_board_lane_trace;
+        const bool full = port == 0x56 && !(value & 0x3f00);
+        const bool eligible = !trace.trigger_pc ||
+            (uint16_t(m_pc - 1) == trace.trigger_pc && stack_entry(0) == trace.trigger_return
+             && data(trace.trigger_data) != trace.idle_word);
+        if (full && eligible && trace.trigger_pc)
+            trace.record({0, m_instructions, m_cycles, 11, trace.trigger_data,
+                          data(trace.trigger_data), uint16_t(m_pc - 1), 0});
+        trace.record({0, m_instructions, m_cycles, 8, port, value,
+                      uint16_t(m_pc - 1), 0}, full, eligible);
+    }
+    ++m_io_event_total;
     return value;
 }
 
@@ -1226,8 +1338,13 @@ void C5xCore::IO_WRITE16(uint16_t port, uint16_t value)
         // (artifacts/dsp-status-03). Assigning FFFF during resident init used
         // to invent download-ready bit 9; with NDX working the firmware then
         // consumed nonexistent download words indefinitely.
-        m_io[port] = (m_host_io_base == 0x8000 && value == 0xffff)
-            ? 0x0006 : m_io[port] & uint16_t(~value);
+        // An all-ones link reset releases the DSP-to-host holding slot.
+        // Clearing its FREE bit instead strands the next reply forever:
+        // the host cannot acknowledge a reply that was never presented.
+        // I-modem also exposes its board-specific bit 2 after that reset.
+        m_io[port] = value == 0xffff && m_host_io_base == 0x8000
+            ? 0x0006 : (value == 0xffff && m_host_mailbox
+                ? 0x0002 : m_io[port] & uint16_t(~value));
     else if (m_host_mailbox && port == 0x56)
         // The download-ready bitmap works the same way: the host sets bits
         // via set_io when overlay data is available at 0x58-0x5b, and the
@@ -1248,8 +1365,11 @@ void C5xCore::IO_WRITE16(uint16_t port, uint16_t value)
         // writing it back (82de, 8332), as it does PA7's.
         if (port == 0x56) m_io[port] &= uint16_t(~value);
     }
-    else if (m_host_mailbox && port >= 0x58 && port <= 0x5d)
+    else if (m_host_mailbox && port >= 0x58 && port <= 0x5d) {
+        if (!(m_io[0x56] & (0x100u << (port - 0x58))))
+            ++m_data_busy_writes[port - 0x58];
         m_asic_output[port - 0x50] = value;
+    }
     else m_io[port] = value;
     if (m_rom_codec && port == 0x006b) codec_apply_asic_timing(value);
     PortStat &stat = m_io_port_stats[port];
@@ -1258,6 +1378,11 @@ void C5xCore::IO_WRITE16(uint16_t port, uint16_t value)
     stat.last_write_pc = static_cast<uint16_t>(m_pc - 1);
     if (m_io_events.size() >= 8192) m_io_events.pop_front();
     m_io_events.push_back({true, port, value, static_cast<uint16_t>(m_pc - 1), m_instructions});
+    if (m_board_lane_trace && m_board_lane_trace->enabled && m_board_lane_trace->armed
+            && (port == 0x56 || (port >= 0x58 && port <= 0x5d)))
+        m_board_lane_trace->record({0, m_instructions, m_cycles, 9, port, value,
+                                   uint16_t(m_pc - 1), 0});
+    ++m_io_event_total;
     // The tag, word and stream ports, kept apart from the general log so a
     // call's worth of mailbox traffic survives the datapump's PCM.
     if (port >= 0x5e && port <= 0x60) {
@@ -1635,6 +1760,10 @@ void C5xCore::delay_slot(uint16_t startpc)
     // middle of the routine with the wrong ARP.
     const bool outer = m_in_delay_slot;
     m_in_delay_slot = true;
+    // The delayed transfer separates the preceding ALU instruction from
+    // the first slot, making its conditions stable for an XC there.
+    // Later slots retain ordinary one-cycle condition sampling.
+    m_xc_condition = condition_state();
     m_op = ROPCODE(); execute_opcode();
     while (uint16_t(m_pc - startpc) < 2) { m_op = ROPCODE(); execute_opcode(); }
     m_in_delay_slot = outer;
@@ -1648,10 +1777,16 @@ void C5xCore::save_interrupt_context()
 }
 void C5xCore::restore_interrupt_context()
 {
+    // SPRU056D 4.4.3: INTM and XF are not context-shadowed. In particular,
+    // an ISR's XF doorbell must survive RETE/RETI.
+    const auto intm = m_st0.intm;
+    const auto xf = m_st1.xf;
     m_acc = m_shadow.acc; m_accb = m_shadow.accb; m_arcr = m_shadow.arcr;
     const unsigned modes = map_modes();
     m_indx = m_shadow.indx; m_pmst = m_shadow.pmst; m_preg = m_shadow.preg;
     m_st0 = m_shadow.st0; m_st1 = m_shadow.st1;
+    m_st0.intm = intm;
+    m_st1.xf = xf;
     if (map_modes() != modes) invalidate_maps();
     m_treg0 = m_shadow.treg0; m_treg1 = m_shadow.treg1; m_treg2 = m_shadow.treg2;
     note_dp(4);
@@ -1726,9 +1861,12 @@ void C5xCore::interrupt(unsigned irq)
     // disabled. IMR and INTM govern recognition, not latching. An enabled
     // source also wakes IDLE while INTM is set, leaving IFR pending.
     m_ifr |= uint16_t(1u << irq);
+    // IDLE2 wakes on the peripheral edge even when INTM masks vectoring; the
+    // instruction stream then decides whether the source is actionable.
     if (m_imr & (1u << irq)) {
         m_ff.idle = false;
     }
+    m_ff.idle2 = false;
     check_interrupts();
 }
 
@@ -1757,6 +1895,7 @@ bool C5xCore::check_nmi()
     m_st0.intm = 1;
     m_pc = uint16_t((m_pmst.iptr << 11) | 0x0024);
     m_ff.idle = false;
+    m_ff.idle2 = false;
     return true;
 }
 
@@ -1853,6 +1992,15 @@ bool C5xCore::step_front_rare()
     // Both checks refuse at once with nothing pending, which is nearly every
     // step, so the calls are skipped then.
     if (m_ff.nmi_pending) check_nmi();
+    // IDLE2 stops instruction fetch until a peripheral interrupt or NMI wakes
+    // the clock domain. INTM still controls whether that interrupt vectors;
+    // the Quad's 8329 loop deliberately sets INTM and polls its mailbox after
+    // waking. Do this before normal IRQ recognition so the pending source can
+    // wake the core without being lost to the mask.
+    if (m_ff.idle2) {
+        if (m_ifr) m_ff.idle2 = false;
+        else { consume_cycles(1); return true; }
+    }
     // Taking a vector is this step's work: PC is left at the handler's first
     // word for the next one, the way the part spends its own cycles getting
     // there rather than fetching the handler in the same instruction slot.
@@ -1887,10 +2035,6 @@ bool C5xCore::step_front_rare()
             CHANGE_PC(uint16_t(m_line_frame_entry));
             m_line_frame_entry = -1;
             m_ff.entry = false;
-        }
-        if (m_pmst.braf && m_pc == m_paer) {
-            if (m_brcr > 0) CHANGE_PC(m_pasr);
-            if (--m_brcr <= 0) m_pmst.braf = 0;
         }
         uint16_t previous_pc = m_pc;
         if (m_step_probes && m_v8_dispatch_map[previous_pc]) {
@@ -1981,20 +2125,25 @@ bool C5xCore::step_front_rare()
 // is nothing else for it to do.
 inline __attribute__((always_inline)) bool C5xCore::step_is_rare() const
 {
-    uint32_t front;
-    std::memcpy(&front, &m_ff, sizeof front);
-    const bool pending = (m_ifr & m_imr) != 0;
-    const bool vector_due = pending & !m_st0.intm & !m_repeat_active;
-    return front | (m_pmst.braf ? pending : vector_due);
+    // Test every flag, including the distinct IDLE2 wake state. A memcpy
+    // avoids aliasing/alignment assumptions while replacing four sequential
+    // byte-test branches in every threaded instruction with one word test.
+    // Entry is the fifth byte; do not read beyond the five-byte structure.
+    static_assert(offsetof(FrontFlags, entry) == sizeof(uint32_t));
+    uint32_t flags;
+    std::memcpy(&flags, &m_ff, sizeof(flags));
+    if (__builtin_expect((flags != 0) | m_ff.entry, 0))
+        return true;
+    // Usually no enabled interrupt is pending. Do not load INTM, repeat and
+    // BRAF on every instruction just to AND them with a known-false pending.
+    if (__builtin_expect((m_ifr & m_imr) == 0, 1))
+        return false;
+    return m_pmst.braf || (!m_st0.intm && !m_repeat_active);
 }
 
 // The common step up to the dispatch.
 inline __attribute__((always_inline)) void C5xCore::step_begin()
 {
-    if (m_pmst.braf && m_pc == m_paer) {
-        if (m_brcr > 0) CHANGE_PC(m_pasr);
-        if (--m_brcr <= 0) m_pmst.braf = 0;
-    }
     m_previous_pc = m_pc;
     m_op = ROPCODE();
     m_condition_start = condition_state();
@@ -2126,7 +2275,13 @@ void C5xCore::step_events()
                 return octet;
             };
             if (m_serial.spc & SPC_FO) {
-                m_serial.drr = next_octet();
+                // SP byte mode guarantees only DRR's low byte (SPRU056D
+                // 9-32); the upper byte is indeterminate, not zero-filled.
+                // Model the 16-bit receive shifter retaining the preceding
+                // byte as eight new MSB-first bits arrive. QF's 8406 ISR
+                // deliberately consumes that delayed upper byte. This is a
+                // deterministic shifter model, not BSP sign extension.
+                m_serial.drr = uint16_t((m_serial.drr << 8) | next_octet());
                 m_g711_tx.push_back(uint8_t(m_serial.dxr & 0xff));
             } else {
                 // Sixteen-bit words, MSB first: the frame's first time slot
@@ -2296,7 +2451,7 @@ void C5xCore::run_cycles(uint64_t cycle_limit, bool yield_on_pcm_frame)
         // running. Skip only cycles on which no modeled event can occur, then
         // use the ordinary step() for the event boundary itself. This keeps
         // timer, serial-frame and interrupt recognition in one implementation.
-        if (m_ff.idle && !m_ff.nmi_pending && !(m_ifr & m_imr)) {
+        if (m_ff.idle && !m_ff.idle2 && !m_ff.nmi_pending && !(m_ifr & m_imr)) {
             sync_timer_view();
             uint64_t distance = target - m_cycles;
             if (!m_timer.tss)
@@ -2343,7 +2498,7 @@ C5xCore::State C5xCore::state() const
         uint16_t((m_st0.intm << 7) | (m_st0.ovm << 6) | (m_st0.ov << 5) |
                  (m_st1.sxm << 4) | (m_st1.c << 3) | (m_st1.tc << 2) |
                  (m_st1.xf << 1) | m_st1.cnf),
-        m_ff.idle, m_instructions, m_cycles};
+        m_ff.idle || m_ff.idle2, m_instructions, m_cycles};
     std::copy(std::begin(m_ar), std::end(m_ar), result.ar.begin());
     return result;
 }
@@ -2355,7 +2510,7 @@ C5xCore::SerialState C5xCore::serial_state() const
         m_line_rx_consumed, m_line_rx.size(),
         m_serial.rx_consumed, m_serial.rx_consumed + (m_codec_line_input
             ? uint64_t(std::ceil(m_codec_line_rx.size() * double(C5X_CLOCK_HZ)
-                / m_line_frame_period / 8000.0)) : m_codec_rx.size()),
+                / m_line_frame_period / m_codec_line_rate)) : m_codec_rx.size()),
         m_serial.last_drr_pc, m_serial.last_dxr_pc, m_serial.last_spc_pc,
         m_tdm.trcv, m_tdm.tdxr, m_tdm.tspc,
         m_tdm.trcv_reads, m_tdm.tdxr_writes, m_tdm.tspc_writes,

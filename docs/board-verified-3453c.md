@@ -4,7 +4,7 @@ The board is a Courier V.Everything V.92, "CTR21 External", on
 `/dev/cu.usbserial-FT4TQOFT` at 19200. We probed it for the first time on
 2026-10-03. It has stock firmware - no ID_SDL - and it is exactly the image that
 the repo already has, `docs/3453C_v2.3.33/2_3_33.XMF`. The raw captures are in
-`artifacts/3453c-board-identity-20261003/` and `artifacts/3453c-parameter-sector-20261003/`.
+`artifacts/3453c-board-identity-20261003/` and `dumps/3453c-parameter-sector-20261003/`.
 The working notes for each address below are in
 [atg-monitor-2.3.33.md](../artifacts/3453c-board-identity-20261003/atg-monitor-2.3.33.md).
 
@@ -133,7 +133,7 @@ the SDL Xmodem recovery loader and the reset vector
 
 ## What is still needed
 
-**2026-10-03 ROM recovery update:** We have now recovered the DSP mask ROM of the 3453C with a temporary PMST.MP/MC mapping probe. It is **4,096 words at 0000..0FFF**. We captured it two times, and the two captures are identical. The live PMST was 18B8 before and after. The tail of the mapped window at 1000..1FFF agrees with the downloaded RAM. The bootstrap at 0F46..0F7C uses I/O 8057 and 8058..805B. This confirms the different first-download protocol that we describe below. [Capture, binary, disassembly, and verification](../artifacts/3453c-dsp-mask-rom-read-20261003/README.md). The older observations below that the ROM is not available describe the investigation before this recovery. The recovered boot loader is now integrated. The ROM downloads the resident, the resident loads its low overlay, and the CPU gets to command mode. [Idle comparison and remaining peripheral gaps](../artifacts/3453c-emulator-boot-20261003/README.md).
+**2026-10-03 ROM recovery update:** We have now recovered the DSP mask ROM of the 3453C with a temporary PMST.MP/MC mapping probe. It is **4,096 words at 0000..0FFF**. We captured it two times, and the two captures are identical. The live PMST was 18B8 before and after. The tail of the mapped window at 1000..1FFF agrees with the downloaded RAM. The bootstrap at 0F46..0F7C uses I/O 8057 and 8058..805B. This confirms the different first-download protocol that we describe below. [Capture, binary, disassembly, and verification](../dumps/3453c-dsp-mask-rom-read-20261003/README.md). The older observations below that the ROM is not available describe the investigation before this recovery. The recovered boot loader is now integrated. The ROM downloads the resident, the resident loads its low overlay, and the CPU gets to command mode. [Idle comparison and remaining peripheral gaps](../artifacts/3453c-emulator-boot-20261003/README.md).
 
 1. **The DSP's first download - the 3453 family's own loader.** `./courier run 2_3_33.XMF`
    stops at "C51 mask ROM did not arm its NMI vector". This is because the

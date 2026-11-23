@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_16, UC_HOOK_CODE
 from unicorn.x86_const import *
-rom=Path('artifacts/courier-board-21210-capture-403/courier-board.rom').read_bytes()
+rom=Path('dumps/courier-board-21210-capture-403/courier-board.rom').read_bytes()
 rows=[]
 for command,suffix,entry in [('ATG?','?',0x25c02)]+[('ATZ'+s,s,0x2631c) for s in ('','0','1','2','3','4','5','!')]:
  u=Uc(UC_ARCH_X86,UC_MODE_16);u.mem_map(0,0x100000);u.mem_write(0x80000,rom)

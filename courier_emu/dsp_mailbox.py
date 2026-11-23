@@ -593,7 +593,7 @@ def _payload() -> dict[int, int]:
     """The DSP program image, so a program-word prediction can be computed."""
     import struct
     from pathlib import Path as _Path
-    capture = _Path("artifacts/courier-board-21210-capture-01/courier-board.rom")
+    capture = _Path("dumps/courier-board-21210-capture-01/courier-board.rom")
     if not capture.exists():
         return {}
     data = capture.read_bytes()

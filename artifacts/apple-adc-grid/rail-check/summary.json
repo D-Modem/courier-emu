@@ -1,0 +1,232 @@
+[
+  {
+    "rate": 10286,
+    "off_hook": false,
+    "samples": 12360,
+    "minimum": -32768,
+    "maximum": 32767,
+    "mean": 2133.3637540453074,
+    "most_common": [
+      [
+        -32768,
+        1440
+      ],
+      [
+        32767,
+        1222
+      ],
+      [
+        18769,
+        14
+      ],
+      [
+        18752,
+        13
+      ],
+      [
+        18765,
+        13
+      ]
+    ],
+    "status": {
+      "backend": "apple-usb-modem",
+      "connected": false,
+      "sample_rate": 10286,
+      "codec_direct": true,
+      "native_receive": false,
+      "codec_rates": [
+        10286
+      ],
+      "frames": 60,
+      "prepared_codec_rates": [
+        7200.0,
+        7578.9473684210525,
+        7800.3482298316885,
+        7980.997624703088,
+        8000.0,
+        8211.812627291243,
+        8228.0,
+        8228.57142857143,
+        8229.0,
+        8400.0,
+        8520.710059171597,
+        8641.23446206601,
+        8667.239896818573,
+        8867.385089069716,
+        8969.96662958843,
+        9000.0,
+        9095.420708323934,
+        9241.347696539078,
+        9467.011035454332,
+        9600.0,
+        9727.382388419783,
+        10266.666666666666,
+        10267.379679144386,
+        10285.0,
+        10285.714285714286,
+        10286.0
+      ],
+      "preparation_ms": 742.9874590598047,
+      "live_filter_misses": [],
+      "off_hook": false,
+      "ringing": false,
+      "resetting": false,
+      "control_updates": 0,
+      "samples_sent": 12360,
+      "samples_received": 12360,
+      "off_hook_pcm_seconds": 0.0,
+      "output_gap_samples": 0,
+      "input_overflow_samples": 0,
+      "raw_rx_peak": 32768,
+      "raw_rx_near_rail_samples": 2662,
+      "raw_rx_mean": 2133.3637540453074,
+      "tx_gain": 1.0,
+      "error": null
+    }
+  },
+  {
+    "rate": 7200,
+    "off_hook": false,
+    "samples": 8640,
+    "minimum": -30069,
+    "maximum": 30067,
+    "mean": 2132.0653935185187,
+    "most_common": [
+      [
+        -30069,
+        1045
+      ],
+      [
+        30067,
+        915
+      ],
+      [
+        -7173,
+        8
+      ],
+      [
+        18687,
+        7
+      ],
+      [
+        18717,
+        7
+      ]
+    ],
+    "status": {
+      "backend": "apple-usb-modem",
+      "connected": false,
+      "sample_rate": 7200,
+      "codec_direct": true,
+      "native_receive": false,
+      "codec_rates": [
+        7200
+      ],
+      "frames": 60,
+      "prepared_codec_rates": [
+        7200.0
+      ],
+      "preparation_ms": 0.17349899280816317,
+      "live_filter_misses": [],
+      "off_hook": false,
+      "ringing": false,
+      "resetting": false,
+      "control_updates": 0,
+      "samples_sent": 8640,
+      "samples_received": 8640,
+      "off_hook_pcm_seconds": 0.0,
+      "output_gap_samples": 0,
+      "input_overflow_samples": 0,
+      "raw_rx_peak": 30069,
+      "raw_rx_near_rail_samples": 0,
+      "raw_rx_mean": 2132.0653935185187,
+      "tx_gain": 1.0,
+      "error": null
+    }
+  },
+  {
+    "rate": 10286,
+    "off_hook": false,
+    "samples": 12360,
+    "minimum": -32768,
+    "maximum": 32767,
+    "mean": 2124.8249190938513,
+    "most_common": [
+      [
+        -32768,
+        1439
+      ],
+      [
+        32767,
+        1239
+      ],
+      [
+        18753,
+        14
+      ],
+      [
+        18757,
+        11
+      ],
+      [
+        -7299,
+        11
+      ]
+    ],
+    "status": {
+      "backend": "apple-usb-modem",
+      "connected": false,
+      "sample_rate": 10286,
+      "codec_direct": true,
+      "native_receive": false,
+      "codec_rates": [
+        10286
+      ],
+      "frames": 60,
+      "prepared_codec_rates": [
+        7200.0,
+        7578.9473684210525,
+        7800.3482298316885,
+        7980.997624703088,
+        8000.0,
+        8211.812627291243,
+        8228.0,
+        8228.57142857143,
+        8229.0,
+        8400.0,
+        8520.710059171597,
+        8641.23446206601,
+        8667.239896818573,
+        8867.385089069716,
+        8969.96662958843,
+        9000.0,
+        9095.420708323934,
+        9241.347696539078,
+        9467.011035454332,
+        9600.0,
+        9727.382388419783,
+        10266.666666666666,
+        10267.379679144386,
+        10285.0,
+        10285.714285714286,
+        10286.0
+      ],
+      "preparation_ms": 1.6534579917788506,
+      "live_filter_misses": [],
+      "off_hook": false,
+      "ringing": false,
+      "resetting": false,
+      "control_updates": 0,
+      "samples_sent": 12360,
+      "samples_received": 12360,
+      "off_hook_pcm_seconds": 0.0,
+      "output_gap_samples": 0,
+      "input_overflow_samples": 0,
+      "raw_rx_peak": 32768,
+      "raw_rx_near_rail_samples": 2678,
+      "raw_rx_mean": 2124.8249190938513,
+      "tx_gain": 1.0,
+      "error": null
+    }
+  }
+]

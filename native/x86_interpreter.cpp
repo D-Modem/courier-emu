@@ -316,18 +316,12 @@ extern "C" uint32_t courier_x86_run(uint32_t *regs,uint8_t *mem,const uint8_t *g
 }
 
 #include <Python.h>
-static PyObject *run_python(PyObject *, PyObject *args) {
-    PyObject *registers, *memory, *guard, *fast_out, *io_events;
-    PyObject *int_mode = Py_None, *int_counts = Py_None;
-    PyObject *host_io = Py_None, *host_context = Py_None, *host_ports = Py_None;
-    PyObject *host_base = Py_None;
-    PyObject *poll_fn = Py_None, *poll_context = Py_None, *poll_state = Py_None;
-    PyObject *mmio_events = Py_None;
-    unsigned int count;
-    if (!PyArg_ParseTuple(args, "OOOOOI|OOOOOOOOOO", &registers, &memory, &guard,
-        &fast_out, &io_events, &count, &int_mode, &int_counts,
-        &host_io, &host_context, &host_ports, &host_base,
-        &poll_fn, &poll_context, &poll_state, &mmio_events)) return nullptr;
+static PyObject *run_objects(PyObject *registers, PyObject *memory, PyObject *guard,
+    PyObject *fast_out, PyObject *io_events, unsigned int count,
+    PyObject *int_mode, PyObject *int_counts, PyObject *host_io,
+    PyObject *host_context, PyObject *host_ports, PyObject *host_base,
+    PyObject *poll_fn, PyObject *poll_context, PyObject *poll_state,
+    PyObject *mmio_events, bool extended=false, bool polling=false) {
     if (!PyList_Check(registers) || PyList_GET_SIZE(registers)!=14 ||
         !PyByteArray_Check(memory) || !PyByteArray_Check(guard) ||
         !PyByteArray_Check(fast_out) || PyByteArray_GET_SIZE(fast_out)!=65536 ||
@@ -401,9 +395,253 @@ static PyObject *run_python(PyObject *, PyObject *args) {
             PyList_SetItem(registers,i,v);
         }
     }
+    if (extended)
+        return Py_BuildValue("IIIIIIIKIIO",done,c.reason,c.io_direction,c.io_port,
+            c.io_size,c.io_value,c.io_event_count,
+            (unsigned long long)c.poll_next,c.poll_code,c.mmio_count,
+            polling ? Py_True : Py_False);
     return Py_BuildValue("IIIIIIIKII",done,c.reason,c.io_direction,c.io_port,
         c.io_size,c.io_value,c.io_event_count,
         (unsigned long long)c.poll_next,c.poll_code,c.mmio_count);
+}
+
+static PyObject *run_python(PyObject *, PyObject *args) {
+    PyObject *registers, *memory, *guard, *fast_out, *io_events;
+    PyObject *int_mode = Py_None, *int_counts = Py_None;
+    PyObject *host_io = Py_None, *host_context = Py_None, *host_ports = Py_None;
+    PyObject *host_base = Py_None;
+    PyObject *poll_fn = Py_None, *poll_context = Py_None, *poll_state = Py_None;
+    PyObject *mmio_events = Py_None;
+    unsigned int count;
+    if (!PyArg_ParseTuple(args, "OOOOOI|OOOOOOOOOO", &registers, &memory, &guard,
+        &fast_out, &io_events, &count, &int_mode, &int_counts,
+        &host_io, &host_context, &host_ports, &host_base,
+        &poll_fn, &poll_context, &poll_state, &mmio_events)) return nullptr;
+    return run_objects(registers, memory, guard, fast_out, io_events, count,
+        int_mode, int_counts, host_io, host_context, host_ports, host_base,
+        poll_fn, poll_context, poll_state, mmio_events);
+}
+
+// Whole Python/native call setup, not a different execution or polling policy.
+// Names are passed as an immutable tuple so dictionary lookups do not allocate
+// temporary strings on every batch. Only exact harness classes use this path.
+enum RunnerField {
+    RF_REGS, RF_MEMORY, RF_HOST, RF_HOST_BASE, RF_RETIRED, RF_POLL,
+    RF_CLOCK_CALLBACK, RF_CLOCK_NEXT, RF_CLOCK_PERIOD, RF_MMIO_CALLBACK,
+    RF_MMIO_BATCH, RF_BEFORE, RF_AFTER, RF_INT_MODE, RF_GUARD, RF_FAST_OUT,
+    RF_IO_EVENTS, RF_INT_COUNTS, RF_MMIO_EVENTS, RF_RUN, RF_LEGACY_RUN,
+    RF_AFTER_GATE, RF_COUNT
+};
+struct RunnerRef {
+    PyObject *p;
+    explicit RunnerRef(PyObject *value=nullptr):p(value) {}
+    ~RunnerRef() { Py_XDECREF(p); }
+    RunnerRef(const RunnerRef&)=delete;
+    RunnerRef& operator=(const RunnerRef&)=delete;
+    explicit operator bool() const { return p!=nullptr; }
+};
+static PyObject *runner_field(PyObject *dict, PyObject *keys, int index) {
+    PyObject *key=PyTuple_GET_ITEM(keys,index);
+    PyObject *value=PyDict_GetItemWithError(dict,key);
+    if (!value && !PyErr_Occurred())
+        PyErr_Format(PyExc_AttributeError,"missing native runner field %R",key);
+    return Py_XNewRef(value);
+}
+static bool runner_callback(PyObject *function) {
+    if (function==Py_None) return true;
+    RunnerRef result(PyObject_CallNoArgs(function));
+    return bool(result);
+}
+// A worker request which is already false does nothing. While AT input is
+// queued outside data mode, _serial_receive_quiet_until is necessarily None;
+// timer_poll_static therefore rejects arm. _serial_started independently
+// rejects fast_service_static. All other cases keep the full Python checks.
+static int worker_before_needed(PyObject *cpu, PyObject *callback) {
+    RunnerRef gate(PyObject_GetAttrString(cpu,"native_before_run_gate"));
+    if (!gate) {
+        if (!PyErr_ExceptionMatches(PyExc_AttributeError)) return -1;
+        PyErr_Clear();
+        return 1;
+    }
+    if (!PyTuple_Check(gate.p) || PyTuple_GET_SIZE(gate.p)!=5
+        || PyTuple_GET_ITEM(gate.p,0)!=callback) return 1;
+    PyObject *request=PyTuple_GET_ITEM(gate.p,1);
+    if (!PyList_CheckExact(request) || PyList_GET_SIZE(request)!=1) return 1;
+    if (PyList_GET_ITEM(request,0)==Py_False) return 0;
+    if (PyList_GET_ITEM(request,0)!=Py_True) return 1;
+    PyObject *names=PyTuple_GET_ITEM(gate.p,3);
+    if (!PyTuple_Check(names) || PyTuple_GET_SIZE(names)!=3) return 1;
+    RunnerRef machine(PyObject_GenericGetDict(PyTuple_GET_ITEM(gate.p,2),nullptr));
+    if (!machine) return -1;
+    PyObject *started=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,0));
+    if (PyErr_Occurred()) return -1;
+    bool reject=started==Py_True;
+    if (!reject) {
+        PyObject *online=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,1));
+        if (PyErr_Occurred()) return -1;
+        if (online==Py_False) {
+            PyObject *rx=PyDict_GetItemWithError(machine.p,PyTuple_GET_ITEM(names,2));
+            if (PyErr_Occurred()) return -1;
+            PyObject *deque_type=PyTuple_GET_ITEM(gate.p,4);
+            if (rx && reinterpret_cast<PyObject*>(Py_TYPE(rx))==deque_type) {
+                const Py_ssize_t length=PyObject_Length(rx);
+                if (length<0) return -1;
+                reject=length!=0;
+            }
+        }
+    }
+    if (reject) {
+        // arm() begins by clearing this request, even when it rejects.
+        PyList_SetItem(request,0,Py_NewRef(Py_False));
+        return 0;
+    }
+    return 1;
+}
+
+static PyObject *run_cpu_python(PyObject *, PyObject *args) {
+    PyObject *cpu, *wrapper, *keys;
+    unsigned int count;
+    if (!PyArg_ParseTuple(args,"OOIO",&cpu,&wrapper,&count,&keys)) return nullptr;
+    if (!PyTuple_Check(keys) || PyTuple_GET_SIZE(keys)!=RF_COUNT) {
+        PyErr_SetString(PyExc_ValueError,"invalid native runner field names");
+        return nullptr;
+    }
+    RunnerRef initial(PyObject_GenericGetDict(cpu,nullptr));
+    if (!initial) return nullptr;
+    RunnerRef host(runner_field(initial.p,keys,RF_HOST));
+    if (!host) return nullptr;
+    RunnerRef host_parts(host.p==Py_None ? Py_NewRef(Py_None)
+        : PySequence_Fast(host.p,"invalid native host I/O tuple"));
+    if (!host_parts) return nullptr;
+    if (host.p!=Py_None && PySequence_Fast_GET_SIZE(host_parts.p)!=3) {
+        PyErr_SetString(PyExc_ValueError,"invalid native host I/O tuple");
+        return nullptr;
+    }
+    RunnerRef host_base, poll_parts, poll_values, mmio;
+    bool polling=false, batching=false;
+    if (host.p!=Py_None) {
+        RunnerRef base(runner_field(initial.p,keys,RF_HOST_BASE));
+        RunnerRef retired(runner_field(initial.p,keys,RF_RETIRED));
+        if (!base || !retired) return nullptr;
+        host_base.p=PyNumber_Add(base.p,retired.p);
+        if (!host_base) return nullptr;
+        RunnerRef poll(runner_field(initial.p,keys,RF_POLL));
+        if (!poll) return nullptr;
+        if (poll.p!=Py_None) {
+            RunnerRef clock(runner_field(initial.p,keys,RF_CLOCK_CALLBACK));
+            if (!clock) return nullptr;
+            if (clock.p!=Py_None) {
+                polling=true;
+                poll_parts.p=PySequence_Fast(poll.p,"invalid native poll tuple");
+                if (!poll_parts) return nullptr;
+                if (PySequence_Fast_GET_SIZE(poll_parts.p)!=2) {
+                    PyErr_SetString(PyExc_ValueError,"invalid native poll tuple");
+                    return nullptr;
+                }
+                RunnerRef next(runner_field(initial.p,keys,RF_CLOCK_NEXT));
+                RunnerRef period(runner_field(initial.p,keys,RF_CLOCK_PERIOD));
+                if (!next || !period) return nullptr;
+                poll_values.p=PyTuple_Pack(3,retired.p,next.p,period.p);
+                if (!poll_values) return nullptr;
+            }
+        }
+    }
+    RunnerRef mmio_callback(runner_field(initial.p,keys,RF_MMIO_CALLBACK));
+    if (!mmio_callback) return nullptr;
+    if (mmio_callback.p!=Py_None) {
+        RunnerRef batch(runner_field(initial.p,keys,RF_MMIO_BATCH));
+        if (!batch) return nullptr;
+        const int truth=PyObject_IsTrue(batch.p);
+        if (truth<0) return nullptr;
+        batching=truth;
+        if (batching) {
+            mmio.p=PyObject_GetAttr(wrapper,PyTuple_GET_ITEM(keys,RF_MMIO_EVENTS));
+            if (!mmio) return nullptr;
+        }
+    }
+    // Preserve ordering: host/poll/MMIO metadata is captured before the hook;
+    // registers, memory and interrupt buffers are obtained after it. Keep every
+    // borrowed execution buffer alive even if a native I/O callback replaces it.
+    RunnerRef before(PyObject_GetAttr(cpu,PyTuple_GET_ITEM(keys,RF_BEFORE)));
+    if (!before) return nullptr;
+    const int before_needed=before.p==Py_None ? 0 : worker_before_needed(cpu,before.p);
+    if (before_needed<0 || (before_needed && !runner_callback(before.p))) return nullptr;
+    RunnerRef state(PyObject_GenericGetDict(cpu,nullptr));
+    RunnerRef buffers(PyObject_GenericGetDict(wrapper,nullptr));
+    if (!state || !buffers) return nullptr;
+    RunnerRef registers(runner_field(state.p,keys,RF_REGS));
+    RunnerRef memory(runner_field(state.p,keys,RF_MEMORY));
+    RunnerRef mode(runner_field(state.p,keys,RF_INT_MODE));
+    RunnerRef guard(runner_field(buffers.p,keys,RF_GUARD));
+    RunnerRef fast(runner_field(buffers.p,keys,RF_FAST_OUT));
+    RunnerRef events(runner_field(buffers.p,keys,RF_IO_EVENTS));
+    RunnerRef counts(runner_field(buffers.p,keys,RF_INT_COUNTS));
+    RunnerRef run(runner_field(buffers.p,keys,RF_RUN));
+    RunnerRef legacy(runner_field(buffers.p,keys,RF_LEGACY_RUN));
+    if (!registers || !memory || !mode || !guard || !fast || !events || !counts
+        || !run || !legacy) return nullptr;
+    PyObject *fn=host.p==Py_None ? Py_None : PySequence_Fast_GET_ITEM(host_parts.p,0);
+    PyObject *context=host.p==Py_None ? Py_None : PySequence_Fast_GET_ITEM(host_parts.p,1);
+    PyObject *ports=host.p==Py_None ? Py_None : PySequence_Fast_GET_ITEM(host_parts.p,2);
+    PyObject *poll_fn=polling ? PySequence_Fast_GET_ITEM(poll_parts.p,0) : Py_None;
+    PyObject *poll_context=polling ? PySequence_Fast_GET_ITEM(poll_parts.p,1) : Py_None;
+    RunnerRef result;
+    if (run.p==legacy.p) {
+        result.p=run_objects(registers.p,memory.p,guard.p,fast.p,events.p,count,
+            mode.p,counts.p,fn,context,ports,host_base.p ? host_base.p : Py_None,
+            poll_fn,poll_context,poll_values.p ? poll_values.p : Py_None,
+            batching ? mmio.p : Py_None,true,polling);
+    } else {
+        // Retain private/debug run replacements, including their original arity.
+        const int n=batching ? 16 : polling ? 15 : host.p!=Py_None ? 12 : 8;
+        RunnerRef budget(PyLong_FromUnsignedLong(count));
+        RunnerRef callargs(PyTuple_New(n));
+        if (!budget || !callargs) return nullptr;
+        PyObject *values[]={registers.p,memory.p,guard.p,fast.p,events.p,budget.p,
+            mode.p,counts.p,fn,context,ports,host_base.p ? host_base.p : Py_None,
+            poll_fn,poll_context,poll_values.p ? poll_values.p : Py_None,
+            batching ? mmio.p : Py_None};
+        for (int i=0;i<n;++i) PyTuple_SET_ITEM(callargs.p,i,Py_NewRef(values[i]));
+        RunnerRef old(PyObject_CallObject(run.p,callargs.p));
+        if (!old) return nullptr;
+        RunnerRef sequence(PySequence_Fast(old.p,"invalid native run result"));
+        if (!sequence) return nullptr;
+        if (PySequence_Fast_GET_SIZE(sequence.p)!=10) {
+            PyErr_SetString(PyExc_ValueError,"invalid native run result length");
+            return nullptr;
+        }
+        result.p=PyTuple_New(11);
+        if (!result) return nullptr;
+        for (int i=0;i<10;++i)
+            PyTuple_SET_ITEM(result.p,i,Py_NewRef(PySequence_Fast_GET_ITEM(sequence.p,i)));
+        PyTuple_SET_ITEM(result.p,10,Py_NewRef(polling ? Py_True : Py_False));
+    }
+    if (!result) return nullptr;
+    RunnerRef after(PyObject_GetAttr(cpu,PyTuple_GET_ITEM(keys,RF_AFTER)));
+    if (!after) return nullptr;
+    bool call_after=after.p!=Py_None;
+    if (call_after) {
+        RunnerRef gate(PyObject_GetAttr(cpu,PyTuple_GET_ITEM(keys,RF_AFTER_GATE)));
+        if (!gate) {
+            if (!PyErr_ExceptionMatches(PyExc_AttributeError)) return nullptr;
+            PyErr_Clear();
+        } else if (PyTuple_Check(gate.p) && PyTuple_GET_SIZE(gate.p)==3
+            && PyTuple_GET_ITEM(gate.p,0)==after.p
+            && PyLong_Check(PyTuple_GET_ITEM(gate.p,1))
+            && PyLong_Check(PyTuple_GET_ITEM(gate.p,2))) {
+            const auto fn=PyLong_AsUnsignedLongLong(PyTuple_GET_ITEM(gate.p,1));
+            const auto context=PyLong_AsUnsignedLongLong(PyTuple_GET_ITEM(gate.p,2));
+            if (PyErr_Occurred()) return nullptr;
+            if (fn) {
+                using AfterGate=int (*)(void*);
+                call_after=reinterpret_cast<AfterGate>(fn)(reinterpret_cast<void*>(context))!=0;
+            }
+        }
+    }
+    if (call_after && !runner_callback(after.p)) return nullptr;
+    PyObject *answer=result.p;
+    result.p=nullptr;
+    return answer;
 }
 
 static PyObject *inject_interrupt_python(PyObject *, PyObject *args) {
@@ -448,6 +686,7 @@ static PyObject *inject_interrupt_python(PyObject *, PyObject *args) {
 
 static PyMethodDef methods[]={
     {"run",run_python,METH_VARARGS,"Execute guarded interpreter instructions."},
+    {"run_cpu",run_cpu_python,METH_VARARGS,"Run with native argument setup and before/after hooks."},
     {"inject_interrupt",inject_interrupt_python,METH_VARARGS,"Enter a real-mode interrupt."},
     {nullptr,nullptr,0,nullptr}
 };

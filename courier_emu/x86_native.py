@@ -9,11 +9,21 @@ import subprocess
 import sys
 import tempfile
 
-from .x86_interpreter import UC_X86_REG_AX, UC_X86_REG_CS, UC_X86_REG_IP
+from .x86_interpreter import Uc, UC_X86_REG_AX, UC_X86_REG_CS, UC_X86_REG_IP
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "native" / "x86_interpreter.cpp"
 LIBRARY = ROOT / ".build" / ("_x86_native" + sysconfig.get_config_var("EXT_SUFFIX"))
+
+# Matches RunnerField in the extension. Pass these interned keys rather than
+# constructing host/poll argument tuples and buffer argument lists every batch.
+_RUN_CPU_FIELDS = (
+    'regs', 'memory', 'native_host_io', 'native_host_base', 'retired', 'native_poll',
+    '_clock_callback', '_clock_next', '_clock_period', 'native_mmio_callback',
+    'native_mmio_batch', 'native_before_run', 'native_after_run', 'native_int_mode',
+    'guard', 'fast_out', 'io_events', 'int_counts', 'mmio_events', 'run', '_legacy_run',
+    'native_after_run_gate',
+)
 
 
 def build_library():
@@ -39,7 +49,12 @@ class NativeInterpreter:
         spec = importlib.util.spec_from_file_location("_x86_native", build_library())
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        self.run = module.run
+        self.run = self._legacy_run = module.run
+        self._run_cpu = (
+            getattr(module, 'run_cpu', None)
+            if os.environ.get('COURIER_X86_NATIVE_WRAPPER', '1') != '0'
+            and type(cpu) is Uc and type(self) is NativeInterpreter
+            and getattr(cpu, 'native_after_run_gate', None) is not None else None)
         self._inject_interrupt = module.inject_interrupt
         self.guard = bytearray(len(cpu.memory))
         self.signature = None
@@ -105,27 +120,31 @@ class NativeInterpreter:
                 for address in range(first, last + 1):
                     self.guard[address] |= 64
             self.signature = signature
-        host_io = ()
-        polling = False
-        if cpu.native_host_io is not None:
-            # The instruction count a port model sees is the harness's own:
-            # its base plus everything retired before this batch.
-            host_io = (*cpu.native_host_io, cpu.native_host_base + cpu.retired)
-            if cpu.native_poll is not None and cpu._clock_callback is not None:
-                polling = True
-                host_io += (*cpu.native_poll, (cpu.retired, cpu._clock_next, cpu._clock_period))
-        batching = cpu.native_mmio_callback is not None and cpu.native_mmio_batch
-        if batching:
-            host_io = (*host_io, *((None,) * (7 - len(host_io))), self.mmio_events)
-        if cpu.native_before_run is not None:
-            cpu.native_before_run()
-        done, reason, direction, port, size, value, event_count, poll_next, poll_code, mmio_count = self.run(
-            cpu.regs, cpu.memory, self.guard, self.fast_out, self.io_events, count,
-            cpu.native_int_mode, self.int_counts, *host_io,
-        )
-        if cpu.native_after_run is not None:
-            # Before anything else in Python sees the state a native poll kept.
-            cpu.native_after_run()
+        if self._run_cpu is not None:
+            (done, reason, direction, port, size, value, event_count, poll_next,
+             poll_code, mmio_count, polling) = self._run_cpu(cpu, self, count, _RUN_CPU_FIELDS)
+        else:
+            host_io = ()
+            polling = False
+            if cpu.native_host_io is not None:
+                # The instruction count a port model sees is the harness's own:
+                # its base plus everything retired before this batch.
+                host_io = (*cpu.native_host_io, cpu.native_host_base + cpu.retired)
+                if cpu.native_poll is not None and cpu._clock_callback is not None:
+                    polling = True
+                    host_io += (*cpu.native_poll, (cpu.retired, cpu._clock_next, cpu._clock_period))
+            batching = cpu.native_mmio_callback is not None and cpu.native_mmio_batch
+            if batching:
+                host_io = (*host_io, *((None,) * (7 - len(host_io))), self.mmio_events)
+            if cpu.native_before_run is not None:
+                cpu.native_before_run()
+            done, reason, direction, port, size, value, event_count, poll_next, poll_code, mmio_count = self.run(
+                cpu.regs, cpu.memory, self.guard, self.fast_out, self.io_events, count,
+                cpu.native_int_mode, self.int_counts, *host_io,
+            )
+            if cpu.native_after_run is not None:
+                # Before anything else in Python sees the state a native poll kept.
+                cpu.native_after_run()
         self.poll_code = poll_code
         if polling and poll_next != cpu._clock_next:
             # Polls the engine ran itself: the next one falls due later.

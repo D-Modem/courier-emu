@@ -1,0 +1,19 @@
+
+USRobotics Courier V.Everything Configuration Profile...
+
+Product type           US/Canada External
+Product ID             00345303
+Options                HST,V32bis,Terbo,VFC,V34+,V90,V92
+Fax Options            Class 1,Class 2.0
+Clock Freq             25 MHz
+Flash ROM              1024k, 20-22EC
+Ram                    256k
+
+Supervisor date        06/01/06
+DSP date               05/24/06
+
+Supervisor rev         2.2.09
+DSP rev                2.0.34
+DAA rev                0013
+
+Serial Number          4MBRYA8G1514

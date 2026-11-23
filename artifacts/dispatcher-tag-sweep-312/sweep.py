@@ -2,7 +2,7 @@ import re, sys; sys.path.insert(0,'tools')
 from c5x_disasm import decode
 from courier_emu.mailbox_compare import program
 from courier_emu.rom import CourierRom
-w = program(CourierRom.load('artifacts/courier-board-21210-capture-403/courier-board.rom'))
+w = program(CourierRom.load('dumps/courier-board-21210-capture-403/courier-board.rom'))
 TABLE, REPLY = 0x83E9, {0x83b1, 0x83a6}
 TX = {0x0390:'work ptr',0x0392:'gain',0x039a:'callback',0x03c0:'phaseA',0x03c1:'phaseB',
       0x03c7:'MIXER ACC',0x03f1:'ampsrc',0x03f2:'incA',0x03f3:'ampA',0x03f4:'incB',0x03f5:'ampB'}

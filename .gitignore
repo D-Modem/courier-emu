@@ -35,13 +35,15 @@ dist/
 !docs/usrdl/*.exe
 
 # Emulator captures and diagnostic output.
-# Primary evidence under artifacts/ is tracked: assembled ROM/RAM images,
+# Primary evidence under artifacts/ and dumps/ is tracked: assembled ROM/RAM images,
 # manifests, audits, page hashes and hardware transcripts. The per-page
 # intermediates are not -- responses/ holds one raw serial reply per page and
 # blocks/ holds the 256-byte pages that the assembled images are built from,
 # together ~32 MB across ~8,200 files, all reconstructible from what is kept.
 artifacts/**/responses/
 artifacts/**/blocks/
+dumps/**/responses/
+dumps/**/blocks/
 # Compressed local experiment archives and regenerable bulk capture output.
 # Tracked evidence is unaffected by these rules.
 .artifact-archives/

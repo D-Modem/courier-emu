@@ -1,0 +1,1883 @@
+{
+  "bc-line-decomp": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 24000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "progress": "00",
+        "state": "00"
+      },
+      "dsp_cells": {
+        "input-callback": "0456",
+        "output-callback": "2208",
+        "tx-sample": "0d27"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 50,
+        "007d:0028": 2,
+        "0080:0000": 50,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 10,
+        "0016:0000": 231,
+        "0047:0007": 5,
+        "007c:0000": 6,
+        "007c:0024": 44
+      },
+      "line": {
+        "frames": 53,
+        "rx_peak": 0
+      },
+      "tx_peak_line": 10332
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 24000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "progress": "00",
+        "state": "00"
+      },
+      "dsp_cells": {
+        "input-callback": "1173",
+        "output-callback": "2127",
+        "tx-sample": "0000"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 2,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 50,
+        "007d:0028": 2,
+        "0080:0000": 50,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 18,
+        "0008:0001": 1,
+        "0008:0800": 2,
+        "0008:0804": 1,
+        "0008:0805": 100,
+        "0008:0809": 119,
+        "0047:0007": 5,
+        "007c:0000": 6,
+        "007c:0024": 44
+      },
+      "line": {
+        "frames": 53,
+        "rx_peak": 1968
+      },
+      "tx_peak_line": 0
+    }
+  },
+  "bc-classifier": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 32000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "answer-tone-count": "00",
+        "command-flags": "00",
+        "message-callback-high": "62",
+        "message-callback-low": "7d"
+      },
+      "dsp_cells": {
+        "detected-flags": "0000",
+        "mode-word": "5140",
+        "state-callback": "2030",
+        "state-delay": "0000",
+        "state-timer": "ffbd"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 65,
+        "007d:0028": 2,
+        "0080:0000": 64,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 10,
+        "000b:0000": 1,
+        "0016:0000": 324,
+        "0047:0007": 5,
+        "007c:0000": 6,
+        "007c:0024": 58
+      },
+      "line": {
+        "frames": 72,
+        "rx_peak": 0
+      },
+      "tx_peak_line": 10332,
+      "call_progress_writes": [
+        {
+          "address": "1d78",
+          "instructions": 484352,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d78",
+          "instructions": 484352,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d78",
+          "instructions": 484352,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d76",
+          "instructions": 484352,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d76",
+          "instructions": 484352,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d76",
+          "instructions": 484352,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d74",
+          "instructions": 484416,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d74",
+          "instructions": 484416,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d74",
+          "instructions": 484416,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d72",
+          "instructions": 484416,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d72",
+          "instructions": 484416,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d72",
+          "instructions": 484416,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d70",
+          "instructions": 484416,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d70",
+          "instructions": 484416,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d70",
+          "instructions": 484416,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 484416,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 484416,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 484416,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 484416,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 484416,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 484416,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d6a",
+          "instructions": 484480,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d6a",
+          "instructions": 484480,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d6a",
+          "instructions": 484480,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d68",
+          "instructions": 484480,
+          "pc": "58491",
+          "size": 2,
+          "value": "5555"
+        },
+        {
+          "address": "1d68",
+          "instructions": 484480,
+          "pc": "58497",
+          "size": 2,
+          "value": "aaaa"
+        },
+        {
+          "address": "1d68",
+          "instructions": 484480,
+          "pc": "58499",
+          "size": 2,
+          "value": "0000"
+        },
+        {
+          "address": "1d6a",
+          "instructions": 2967232,
+          "pc": "64111",
+          "size": 1,
+          "value": "0005"
+        },
+        {
+          "address": "1d68",
+          "instructions": 2967232,
+          "pc": "6411b",
+          "size": 1,
+          "value": "0005"
+        },
+        {
+          "address": "1d6b",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d70",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d71",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d72",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d73",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d74",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d75",
+          "instructions": 2967232,
+          "pc": "64126",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d77",
+          "instructions": 2967616,
+          "pc": "6368d",
+          "size": 2,
+          "value": "e7fb"
+        },
+        {
+          "address": "1d68",
+          "instructions": 3063168,
+          "pc": "6db77",
+          "size": 1,
+          "value": "0004"
+        },
+        {
+          "address": "1d69",
+          "instructions": 3063168,
+          "pc": "6db7c",
+          "size": 1,
+          "value": "00ff"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3063168,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3063168,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3063168,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3063168,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d68",
+          "instructions": 3148544,
+          "pc": "6db77",
+          "size": 1,
+          "value": "0003"
+        },
+        {
+          "address": "1d69",
+          "instructions": 3148544,
+          "pc": "6db7c",
+          "size": 1,
+          "value": "00ff"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3148544,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3148544,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3148544,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3148544,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d68",
+          "instructions": 3235776,
+          "pc": "6db77",
+          "size": 1,
+          "value": "0002"
+        },
+        {
+          "address": "1d69",
+          "instructions": 3235776,
+          "pc": "6db7c",
+          "size": 1,
+          "value": "00ff"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3235776,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3235776,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3235776,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3235776,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d68",
+          "instructions": 3323008,
+          "pc": "6db77",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d69",
+          "instructions": 3323008,
+          "pc": "6db7c",
+          "size": 1,
+          "value": "00ff"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3323008,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3323008,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3323008,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3323008,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d68",
+          "instructions": 3409472,
+          "pc": "6db77",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 3409472,
+          "pc": "6db7c",
+          "size": 1,
+          "value": "00ff"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3409472,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3409472,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3409472,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3409472,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 3497472,
+          "pc": "6dbf0",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3497472,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3497472,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3497472,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3497472,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 3584384,
+          "pc": "6dbf0",
+          "size": 1,
+          "value": "0002"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3584384,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3584384,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3584384,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3584384,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 3671936,
+          "pc": "6dbf0",
+          "size": 1,
+          "value": "0003"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3671936,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3671936,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3671936,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3671936,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 3759168,
+          "pc": "6dbf0",
+          "size": 1,
+          "value": "0004"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3759168,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3759168,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3759168,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3759168,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6f",
+          "instructions": 3846400,
+          "pc": "6dbf0",
+          "size": 1,
+          "value": "0005"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 3846400,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 3846400,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3846400,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 3846400,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        }
+      ]
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 32000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "peek": {
+        "answer-tone-count": "00",
+        "command-flags": "01",
+        "message-callback-high": "62",
+        "message-callback-low": "7d"
+      },
+      "dsp_cells": {
+        "detected-flags": "0800",
+        "mode-word": "0000",
+        "state-callback": "0000",
+        "state-delay": "0000",
+        "state-timer": "0000"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 2,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 65,
+        "007d:0028": 2,
+        "0080:0000": 64,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 18,
+        "0008:0001": 1,
+        "0008:0800": 2,
+        "0008:0804": 1,
+        "0008:0805": 100,
+        "0008:0809": 211,
+        "0047:0007": 5,
+        "007c:0000": 6,
+        "007c:0024": 58
+      },
+      "line": {
+        "frames": 72,
+        "rx_peak": 1968
+      },
+      "tx_peak_line": 0,
+      "call_progress_writes": [
+        {
+          "address": "1d6e",
+          "instructions": 30386624,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30473627,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30473664,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30473664,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30473664,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30473664,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30560832,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30560832,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30560832,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30560832,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30560832,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30648064,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30648064,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30648064,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30648064,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30648064,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30735323,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30735360,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30735360,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30735360,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30735360,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30822555,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30822592,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30822592,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30822592,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30822592,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30909760,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30909760,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30909760,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30909760,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30909760,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 30995904,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 30995904,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 30995904,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30995904,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 30995904,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31084251,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31084288,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31084288,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31084288,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31084288,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31170779,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31170816,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31170816,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31170816,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31170816,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31256832,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31256832,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31256832,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31256832,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31256832,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31344064,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31344064,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31344064,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31344064,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31344064,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31431296,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31431296,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31431296,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31431296,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31431296,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31518592,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31518592,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31518592,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31518592,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31518592,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31605440,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31605440,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31605440,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31605440,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31605440,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31693056,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31693056,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31693056,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31693056,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31693056,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31780288,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31780288,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31780288,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31780288,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31780288,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31780384,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31780608,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31780608,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31780608,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31780608,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31867520,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31867520,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31867520,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31867520,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31867520,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        },
+        {
+          "address": "1d69",
+          "instructions": 31954779,
+          "pc": "6db84",
+          "size": 1,
+          "value": "00fe"
+        },
+        {
+          "address": "1d6c",
+          "instructions": 31954816,
+          "pc": "6dc4b",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6d",
+          "instructions": 31954816,
+          "pc": "6dc4e",
+          "size": 1,
+          "value": "0009"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31954816,
+          "pc": "6dc59",
+          "size": 1,
+          "value": "0001"
+        },
+        {
+          "address": "1d6e",
+          "instructions": 31954816,
+          "pc": "6dc62",
+          "size": 1,
+          "value": "0000"
+        }
+      ]
+    }
+  },
+  "bc-manual-pair": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 60000000,
+      "serial_text": "\r\nNO CARRIER\r\n",
+      "peek": {
+        "call-flags": "80",
+        "command-flags": "00",
+        "rate": "00",
+        "timer-low": "00"
+      },
+      "dsp_cells": {
+        "detected-flags": "0000",
+        "mode-word": "0000",
+        "rx-callback": "1172",
+        "state-callback": "0000",
+        "state-delay": "0000",
+        "state-timer": "0000",
+        "tx-callback": "1173"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 6,
+        "0002:0000": 2,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 4,
+        "0013:0001": 2,
+        "0013:0002": 2,
+        "0013:0005": 3,
+        "0015:0000": 1,
+        "0016:0000": 14,
+        "0019:020d": 9,
+        "001a:3000": 7,
+        "001a:32dc": 1,
+        "001b:0c08": 7,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 8,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 3,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 59,
+        "007d:0028": 10,
+        "007d:003f": 1,
+        "0080:0000": 59,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 4,
+        "0083:0002": 11,
+        "0084:0502": 1,
+        "0084:1408": 4,
+        "0084:1468": 4
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 23,
+        "0008:0001": 11,
+        "0008:0020": 1,
+        "0008:0800": 28,
+        "0008:0804": 1,
+        "0008:0805": 99,
+        "0008:0808": 1,
+        "0008:0809": 107,
+        "0047:0007": 6,
+        "007c:0000": 6,
+        "007c:0024": 51
+      },
+      "line": {
+        "frames": 134,
+        "rx_peak": 1905
+      },
+      "tx_peak_line": 32205
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 60000000,
+      "serial_text": "\r\nNO CARRIER\r\n",
+      "peek": {
+        "call-flags": "80",
+        "command-flags": "01",
+        "rate": "00",
+        "timer-low": "00"
+      },
+      "dsp_cells": {
+        "detected-flags": "0000",
+        "mode-word": "0000",
+        "rx-callback": "1172",
+        "state-callback": "0000",
+        "state-delay": "0000",
+        "state-timer": "0000",
+        "tx-callback": "1173"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 6,
+        "0002:0000": 2,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 4,
+        "0014:5140": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0050:0500": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 3,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 51,
+        "007d:0028": 3,
+        "007d:003f": 1,
+        "0080:0000": 51,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 4,
+        "0083:0002": 4,
+        "0084:0502": 1,
+        "0084:1408": 4,
+        "0084:1468": 4
+      },
+      "dsp_originated_tags": {
+        "0016:0000": 192,
+        "0016:0008": 20,
+        "0016:0200": 3,
+        "0016:0208": 2,
+        "0016:020a": 1,
+        "0016:0308": 1,
+        "0047:0007": 6,
+        "007c:0000": 6,
+        "007c:0024": 45
+      },
+      "line": {
+        "frames": 134,
+        "rx_peak": 6136
+      },
+      "tx_peak_line": 10521
+    }
+  },
+  "bc-factory-pair": {
+    "a": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 30000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "dsp_cells": {
+        "mode-word": "5140",
+        "rx-callback": "2208",
+        "state-callback": "2030",
+        "tx-callback": "0456"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 4,
+        "0014:5140": 1,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0053:0000": 1,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 60,
+        "007d:0028": 2,
+        "0080:0000": 61,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 10,
+        "000b:0000": 1,
+        "0016:0000": 299,
+        "0047:0007": 5,
+        "007c:0000": 5,
+        "007c:0024": 55
+      },
+      "line": {
+        "frames": 67,
+        "rx_peak": 0
+      },
+      "tx_peak_line": 10624
+    },
+    "b": {
+      "status": "main-loop",
+      "error": null,
+      "instructions": 30000000,
+      "serial_text": "\r\nOK\r\n\r\nOK\r\n",
+      "dsp_cells": {
+        "mode-word": "0000",
+        "rx-callback": "2127",
+        "state-callback": "0000",
+        "tx-callback": "1173"
+      },
+      "runtime_message_counts": {
+        "0001:0000": 5,
+        "0002:0000": 1,
+        "0002:7658": 1,
+        "0004:0000": 1,
+        "000f:0600": 1,
+        "000f:1200": 3,
+        "0015:0000": 1,
+        "0019:020d": 1,
+        "001a:32dc": 1,
+        "001c:0008": 1,
+        "001d:0014": 1,
+        "001f:0000": 1,
+        "0043:003f": 1,
+        "0048:7fff": 1,
+        "0051:21ff": 1,
+        "0052:1ef8": 2,
+        "0067:0000": 2,
+        "0068:0000": 1,
+        "0069:000a": 1,
+        "006b:0000": 1,
+        "007c:0000": 61,
+        "007d:0028": 2,
+        "0080:0000": 61,
+        "0082:0000": 2,
+        "0082:0020": 1,
+        "0082:0060": 1,
+        "0082:00a0": 2,
+        "0083:0002": 2,
+        "0084:0502": 1,
+        "0084:1408": 2,
+        "0084:1468": 2
+      },
+      "dsp_originated_tags": {
+        "0008:0000": 19,
+        "0008:0001": 1,
+        "0008:0800": 2,
+        "0008:0804": 1,
+        "0008:0805": 100,
+        "0008:0809": 188,
+        "0047:0007": 5,
+        "007c:0000": 6,
+        "007c:0024": 55
+      },
+      "line": {
+        "frames": 67,
+        "rx_peak": 2024
+      },
+      "tx_peak_line": 0
+    }
+  }
+}

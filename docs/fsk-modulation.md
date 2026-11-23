@@ -90,7 +90,7 @@ is exact - when the bit stays constant, we measure 1270.0 Hz and 1070.0 Hz.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/fsk --mode v21-answer
 ```
 
@@ -180,7 +180,7 @@ centre. We do not know what it follows.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk --loopback \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --output /tmp/loopback --mode v21-answer   # BROKEN, see above
 ```
 
@@ -244,7 +244,7 @@ call listens to the band that it transmits in.
 
 ```sh
 .venv/bin/python -m courier_emu.fsk --band-scan --mode v21-answer \
-  --rom artifacts/courier-board-21210-capture-403/courier-board.rom \
+  --rom dumps/courier-board-21210-capture-403/courier-board.rom \
   --bits 111111111000000000... --output /tmp/band
 ```
 

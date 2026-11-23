@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ctypes
+import math
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 from typing import Any
@@ -25,7 +27,8 @@ SOURCES = (
     NATIVE_DIRECTORY / "c5x_optable.ipp",
 )
 LIBRARY_SOURCES = (SOURCES[:1] + (NATIVE_DIRECTORY / "c5x_capi.cpp",) + SOURCES[2:]
-                   + (NATIVE_DIRECTORY / "bearer.hpp", NATIVE_DIRECTORY / "resample.hpp"))
+                   + (NATIVE_DIRECTORY / "bearer.hpp", NATIVE_DIRECTORY / "resample.hpp",
+                      NATIVE_DIRECTORY / "g711.hpp"))
 _LIBRARY_HANDLE = None
 _SIZE_T_MAX = ctypes.c_size_t(-1).value
 
@@ -37,7 +40,7 @@ def build_runner(*, force: bool = False) -> Path:
             return RUNNER
     BUILD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     command = [
-        "c++",
+        *shlex.split(os.environ.get('CXX') or 'c++'),
         "-std=c++17",
         "-O3",
         "-Wall",
@@ -67,7 +70,8 @@ def build_library(*, force: bool = False) -> Path:
     BUILD_DIRECTORY.mkdir(parents=True, exist_ok=True)
     link_flags = ["-dynamiclib"] if sys.platform == "darwin" else ["-shared", "-fPIC"]
     command = [
-        "c++", "-std=c++17", "-O3", "-Wall", "-Wextra", "-Wpedantic",
+        *shlex.split(os.environ.get('CXX') or 'c++'),
+        "-std=c++17", "-O3", "-Wall", "-Wextra", "-Wpedantic",
         # Calls inside the library must not go through the PLT (and so can be
         # inlined): the core's accessors run several times per DSP instruction.
         "-fno-semantic-interposition",
@@ -90,6 +94,11 @@ def load_library(*, rebuild: bool = False):
         return ctypes.CDLL(str(path))
     if _LIBRARY_HANDLE is None:
         _LIBRARY_HANDLE = ctypes.CDLL(str(path))
+    return _LIBRARY_HANDLE
+
+
+def loaded_library():
+    """Return the cached core library, without building or loading native code."""
     return _LIBRARY_HANDLE
 
 
@@ -171,6 +180,17 @@ _SERIAL_STATE_NAMES = (
             "negotiation_d26", "negotiation_indx", "negotiation_arp", "negotiation_pm",
             "hybrid_frames", "hybrid_peak",
         )
+
+def prepare_line_input(source_rate: float, codec_rate: float) -> None:
+    """Prewarm the clocked ADC's immutable FIR without creating/running a core."""
+    library = load_library()
+    function = library.courier_c5x_prepare_line_input
+    function.argtypes = [ctypes.c_double, ctypes.c_double, ctypes.c_char_p, ctypes.c_size_t]
+    function.restype = ctypes.c_int
+    error = ctypes.create_string_buffer(512)
+    if function(source_rate, codec_rate, error, len(error)):
+        raise RuntimeError(error.value.decode())
+
 
 class NativeC5x:
     """Incrementally stepped C5x instance used by the dual-processor harness."""
@@ -300,6 +320,12 @@ class NativeC5x:
         ]
         lib.courier_c5x_get_io_output.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
         lib.courier_c5x_get_io_output.restype = ctypes.c_uint16
+        lib.courier_c5x_data_channel_status.argtypes = [ctypes.c_void_p]
+        lib.courier_c5x_data_channel_status.restype = ctypes.c_uint16
+        for name in ('post_data_channels', 'ack_data_channels'):
+            function = getattr(lib, 'courier_c5x_' + name)
+            function.argtypes = [ctypes.c_void_p, ctypes.c_uint16]
+            function.restype = None
         lib.courier_c5x_set_io.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16]
         lib.courier_c5x_queue_io_rx.argtypes = [
             ctypes.c_void_p, ctypes.c_uint16,
@@ -308,6 +334,17 @@ class NativeC5x:
         lib.courier_c5x_configure_host_mailbox.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.courier_c5x_get_xf_falling_edges.argtypes = [ctypes.c_void_p]
         lib.courier_c5x_get_xf_falling_edges.restype = ctypes.c_uint64
+        # Retain compatibility with explicitly selected older prebuilt libraries.
+        self._xf_frame_state_function = getattr(lib, 'courier_c5x_get_xf_frame_state', None)
+        self._xf_frame_state_values = (ctypes.c_uint64 * 2)()
+        if self._xf_frame_state_function is not None:
+            self._xf_frame_state_function.argtypes = [
+                ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint64)]
+            self._xf_frame_state_function.restype = None
+        lib.courier_c5x_get_cycle_count.argtypes = [ctypes.c_void_p]
+        lib.courier_c5x_get_cycle_count.restype = ctypes.c_uint64
+        lib.courier_c5x_get_reset_generation.argtypes = [ctypes.c_void_p]
+        lib.courier_c5x_get_reset_generation.restype = ctypes.c_uint64
         lib.courier_c5x_host_write.argtypes = [
             ctypes.c_void_p, ctypes.c_uint16, ctypes.c_uint16
         ]
@@ -417,6 +454,7 @@ class NativeC5x:
         ]
         lib.courier_c5x_get_delay_move_state.restype = None
         lib.courier_c5x_set_data_trace.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.courier_c5x_set_data_trace_reads.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.courier_c5x_clear_data_events.argtypes = [ctypes.c_void_p]
         lib.courier_c5x_get_data_event_count.argtypes = [ctypes.c_void_p]
         lib.courier_c5x_get_data_event_count.restype = ctypes.c_size_t
@@ -425,6 +463,8 @@ class NativeC5x:
         ]
         lib.courier_c5x_get_io_event_count.argtypes = [ctypes.c_void_p]
         lib.courier_c5x_get_io_event_count.restype = ctypes.c_size_t
+        lib.courier_c5x_get_io_event_total.argtypes = [ctypes.c_void_p]
+        lib.courier_c5x_get_io_event_total.restype = ctypes.c_uint64
         lib.courier_c5x_get_io_port_stats.argtypes = [
             ctypes.c_void_p, ctypes.c_uint16,
             ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t,
@@ -686,6 +726,24 @@ class NativeC5x:
     def xf_falling_edges(self) -> int:
         return int(self.library.courier_c5x_get_xf_falling_edges(self.handle))
 
+    def xf_frame_state(self) -> tuple[int, int]:
+        """Read XF edge count and reset epoch with one native boundary crossing.
+
+        Like stepping and the other getters, the caller must own the core;
+        this reusable buffer is not a concurrent-observer API.
+        """
+        if self._xf_frame_state_function is None:
+            return self.xf_falling_edges(), self.reset_generation()
+        values = self._xf_frame_state_values
+        self._xf_frame_state_function(self.handle, values)
+        return values[0], values[1]
+
+    def cycle_count(self) -> int:
+        return int(self.library.courier_c5x_get_cycle_count(self.handle))
+
+    def reset_generation(self) -> int:
+        return int(self.library.courier_c5x_get_reset_generation(self.handle))
+
     def queue_serial_rx(self, samples: list[int] | tuple[int, ...]) -> None:
         if not samples:
             return
@@ -698,8 +756,21 @@ class NativeC5x:
         storage = (ctypes.c_uint16 * len(samples))(*(sample & 0xFFFF for sample in samples))
         self.library.courier_c5x_queue_codec_rx(self.handle, storage, len(storage))
 
+    def set_line_input_rate(self, rate: float, *, cushion: int = 32,
+                            prepared_only: bool = False) -> None:
+        """Set the fixed source clock before queuing input (default: 8 kHz)."""
+        if not math.isfinite(rate) or rate <= 0 or not 0 <= cushion <= 128:
+            raise ValueError('invalid ADC input grid')
+        function = self.library.courier_c5x_set_line_input_rate
+        function.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_uint,
+                             ctypes.c_int, ctypes.c_char_p, ctypes.c_size_t]
+        function.restype = ctypes.c_int
+        error = ctypes.create_string_buffer(512)
+        if function(self.handle, rate, cushion, prepared_only, error, len(error)):
+            raise RuntimeError(error.value.decode())
+
     def queue_line_rx(self, samples: list[int] | tuple[int, ...]) -> None:
-        """Queue 8 kHz line audio for conversion at actual ADC clock edges."""
+        """Queue fixed-source-clock audio for conversion at actual ADC edges."""
         if not samples:
             return
         # ctypes keeps the low sixteen bits, as & 0xffff would.
@@ -828,6 +899,15 @@ class NativeC5x:
     def io(self, port: int) -> int:
         return int(self.library.courier_c5x_get_io(self.handle, port))
 
+    def data_channel_status(self) -> int:
+        return int(self.library.courier_c5x_data_channel_status(self.handle))
+
+    def post_data_channels(self, mask: int) -> None:
+        self.library.courier_c5x_post_data_channels(self.handle, mask)
+
+    def ack_data_channels(self, mask: int) -> None:
+        self.library.courier_c5x_ack_data_channels(self.handle, mask)
+
     def io_output(self, port: int) -> int:
         return int(self.library.courier_c5x_get_io_output(self.handle, port))
 
@@ -864,6 +944,14 @@ class NativeC5x:
     def trace_register(self, register: int, capacity: int) -> None:
         """Record writes to one memory-mapped register (see register_trace)."""
         self.library.courier_c5x_trace_register(self.handle, register, capacity)
+
+    def trace_codec_controls(self, capacity: int = 4096) -> None:
+        """Trace accepted secondary words as (cycle, event PC, word).
+
+        Uses the register-trace buffer exclusively. Unlike tracing DXR loads,
+        these records identify words actually decoded as codec controls.
+        """
+        self.trace_register(-2, capacity)
 
     def register_trace(self) -> list[tuple[int, int, int]]:
         """The traced writes as (cycle, pc, value)."""
@@ -1019,6 +1107,10 @@ class NativeC5x:
             self.library.courier_c5x_clear_data_events(self.handle)
         self.library.courier_c5x_set_data_trace(self.handle, int(enabled))
 
+    def trace_filtered_reads(self, enabled: bool = True) -> None:
+        """Include reads in the selected memory-range trace, preserving repeated reads."""
+        self.library.courier_c5x_set_data_trace_reads(self.handle, int(enabled))
+
     def data_events(self) -> list[dict[str, int]]:
         count = int(self.library.courier_c5x_get_data_event_count(self.handle))
         result: list[dict[str, int]] = []
@@ -1117,6 +1209,10 @@ class NativeC5x:
                 "pc": int(values[3]), "instruction": int(values[4]),
             })
         return result
+
+    def io_event_total(self) -> int:
+        """Events emitted since reset, including those evicted from the ring."""
+        return int(self.library.courier_c5x_get_io_event_total(self.handle))
 
     def io_events(self, *, limit: int | None = None,
                   ports: tuple[int, ...] | None = None) -> list[dict[str, int | bool]]:
@@ -1297,6 +1393,19 @@ class LaneHostIo:
         lib.courier_laneio_take_boot.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t,
             ctypes.c_char_p, ctypes.c_size_t]
+        lib.courier_laneio_set_recent.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        lib.courier_laneio_arm_bank_trace.argtypes = [ctypes.c_void_p] + [ctypes.c_uint16] * 4
+        lib.courier_laneio_bank_trace.argtypes = [
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t,
+            ctypes.POINTER(ctypes.c_uint64)]
+        lib.courier_laneio_bank_trace.restype = ctypes.c_size_t
+        lib.courier_laneio_record_irq.argtypes = [ctypes.c_void_p] + [ctypes.c_uint64] * 6
+        lib.courier_laneio_recent.argtypes = [ctypes.c_void_p,
+                                             ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t]
+        lib.courier_laneio_recent.restype = ctypes.c_size_t
+        lib.courier_laneio_clock_trace.argtypes = [ctypes.c_void_p,
+                                                  ctypes.POINTER(ctypes.c_uint64), ctypes.c_size_t]
+        lib.courier_laneio_clock_trace.restype = ctypes.c_size_t
         lib.courier_laneio_capture_size.restype = ctypes.c_size_t
         lib.courier_laneio_capture_size.argtypes = [ctypes.c_void_p]
         lib.courier_laneio_take_capture.restype = ctypes.c_size_t
@@ -1413,6 +1522,71 @@ class LaneHostIo:
                   for i in range(taken)]
         return events, error.value.decode("utf-8", "replace")
 
+    def set_recent(self, enabled: bool = True) -> None:
+        """Enable a separate, non-draining 2048-row CPU/DSP diagnostic ring."""
+        self.library.courier_laneio_set_recent(self.context, int(enabled))
+
+    def arm_bank_trace(self, *, pc: int = 0, caller: int = 0,
+                       address: int = 0, idle_word: int = 0) -> None:
+        """Freeze the first qualifying full PA6 read and 256 later events.
+
+        Optional pc/caller/data filters distinguish a resident output attempt
+        from other PA6 callers and repeated idle FF00 tokens. PC zero accepts
+        any full read. This is diagnostic filtering, never a bus modification.
+
+        Call at CONNECT. Re-arming or rebuilding/resetting the DSP starts a
+        fresh capture, so instruction counters from different epochs cannot mix.
+        """
+        self.library.courier_laneio_arm_bank_trace(self.context, pc, caller, address, idle_word)
+
+    def bank_trace(self) -> dict[str, Any]:
+        """Non-draining native execution-order trace; DSP CPU times are unknown.
+
+        Kinds 1..7 match recent_events; 8/9 are DSP reads/writes of PA6 or
+        data banks, 10 is a CPU status read, and 11 is the filtered DSP data
+        cell at a qualifying full read. EOI kinds 5/7 remain delayed
+        observations, not exact writes. A full status read alone proves no loss.
+        """
+        values = (ctypes.c_uint64 * (2304 * 8))()
+        info = (ctypes.c_uint64 * 5)()
+        count = self.library.courier_laneio_bank_trace(self.context, values, 2304, info)
+        names = ('cpu_instructions', 'dsp_instructions', 'dsp_cycles', 'kind',
+                 'port_or_vector', 'value', 'pc', 'flags')
+        return {'armed': bool(info[0]), 'full_status_reads': info[1],
+                'post_events_remaining': info[2], 'epoch': info[3],
+                'trigger_index': info[4] if count else None,
+                'rows': [dict(zip(names, values[i * 8:(i + 1) * 8])) for i in range(count)]}
+
+    def record_irq(self, now: int, kind: int, vector: int, value: int,
+                   pc: int, flags: int) -> None:
+        self.library.courier_laneio_record_irq(self.context, now, kind, vector, value, pc, flags)
+
+    def recent_events(self) -> list[dict[str, int]]:
+        values = (ctypes.c_uint64 * (2048 * 8))()
+        count = self.library.courier_laneio_recent(self.context, values, 2048)
+        names = ('cpu_instructions', 'dsp_instructions', 'dsp_cycles', 'kind',
+                 'port_or_vector', 'value', 'pc', 'flags')
+        return [dict(zip(names, values[i * 8:(i + 1) * 8])) for i in range(count)]
+
+    def clock_trace(self, limit: int = 8192) -> list[dict[str, int]]:
+        """Non-draining clock/PCM accounting at sparse frame-IRQ observations.
+
+        Counters are sampled together, but DSP execution may lag CPU device
+        time by a service chunk. Epochs separate DSP resets/rebuilds. EOI
+        counters describe observations, not exact hardware completion times.
+        """
+        if not 0 <= limit <= 8192:
+            raise ValueError('clock trace limit must be in 0..8192')
+        values = (ctypes.c_uint64 * (limit * 20))()
+        count = self.library.courier_laneio_clock_trace(self.context, values, limit)
+        names = ('cpu_instructions', 'dsp_instructions', 'dsp_cycles', 'dsp_xf_edges',
+                 'codec_primary_frames', 'codec_period', 'line_input_queued',
+                 'line_input_consumed', 'line_input_pending', 'codec_tx_samples',
+                 'frame_irq_entries', 'frame_eoi_observations', 'serial_rx_entries',
+                 'serial_tx_entries', 'tick_entries', 'pa6', 'pc', 'flags', 'epoch',
+                 'max_frame_irq_gap_instructions')
+        return [dict(zip(names, values[i * 20:(i + 1) * 20])) for i in range(count)]
+
     def set_capture(self, enabled: bool) -> None:
         """Record the lanes' traffic; see LaneHostIo::record."""
         self.library.courier_laneio_set_capture(self.context, int(enabled))
@@ -1507,6 +1681,10 @@ class ImodemHostIo:
         lib.courier_imodemio_advance_serve.argtypes = [
             ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint]
         lib.courier_imodemio_advance_serve.restype = ctypes.c_int
+        advance_turn = getattr(lib, 'courier_imodemio_advance_turn_serve',
+                               lib.courier_imodemio_advance_serve)
+        advance_turn.argtypes = [ctypes.c_void_p, ctypes.c_uint64, ctypes.c_uint]
+        advance_turn.restype = ctypes.c_int
         lib.courier_imodemio_take_counts.argtypes = [
             ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
         lib.courier_imodemio_set_bearer.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
@@ -1514,6 +1692,7 @@ class ImodemHostIo:
         lib.courier_imodemio_set_wallclock.argtypes = [ctypes.c_void_p, ctypes.c_int]
         lib.courier_imodemio_set_wall_target.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
         self._set_wall_target = lib.courier_imodemio_set_wall_target
+        lib.courier_imodemio_clock_stats.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
         self.poll_function = ctypes.cast(
             lib.courier_imodemio_poll, ctypes.c_void_p).value
         self.shared = shared
@@ -1525,13 +1704,26 @@ class ImodemHostIo:
         self._counts = ((ctypes.c_uint32 * 256)(), (ctypes.c_uint32 * 256)())
         self._advance = lib.courier_imodemio_advance
         self._advance_serve = lib.courier_imodemio_advance_serve
+        self._advance_turn_serve = advance_turn
+        self._set_serial_status = getattr(lib, 'courier_imodemio_set_serial_status', None)
+        self.uart_resume_available = hasattr(lib, 'courier_imodemio_uart_resume_supported')
+        self._take_serial_counts = None
+        if self._set_serial_status is not None:
+            self._set_serial_status.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                               ctypes.c_uint16, ctypes.c_uint8,
+                                               ctypes.c_uint8, ctypes.c_uint8]
+            self._set_serial_status.restype = None
+            self._take_serial_counts = lib.courier_imodemio_take_serial_counts
+            self._take_serial_counts.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                                ctypes.c_void_p]
+            self._take_serial_counts.restype = None
         self._applied: tuple | None = None
         self.configure(None, False)
 
     def configure(self, core_handle: int | None, live: bool,
                   wallclock: bool = False) -> None:
-        """`wallclock`: serve the ports while the harness paces the C5x
-        against wall time, without stepping it (a live bearer)."""
+        """`wallclock`: advance toward the harness's published cycle target
+        instead of deriving elapsed DSP time from CPU instructions."""
         state = (core_handle, live, wallclock)
         if state == self._applied:
             return
@@ -1548,6 +1740,32 @@ class ImodemHostIo:
     def set_wall_target(self, cycles: int) -> None:
         """In wallclock mode, the core cycle to run the C5x up to."""
         self._set_wall_target(self.context, cycles)
+
+    def clock_stats(self) -> dict[str, int]:
+        values = (ctypes.c_uint64 * 13)()
+        self.library.courier_imodemio_clock_stats(self.context, values)
+        return dict(zip(('peak_lag_cycles', 'bounded_advances', 'advances',
+                         'data_posts', 'data_acks', 'data_byte_reads',
+                         *(f'bank_{bank}_busy_writes' for bank in range(6)),
+                         'data_torn_words'), values))
+
+    @property
+    def serial_status_available(self) -> bool:
+        return self._set_serial_status is not None
+
+    def set_serial_status(self, index: int, base: int, lsr: int,
+                          msr: int | None = None, *, enabled: bool = True) -> None:
+        """Publish LSR and, optionally, an already-acknowledged stable MSR."""
+        if self._set_serial_status is not None:
+            valid = (1 | (2 if msr is not None else 0)) if enabled else 0
+            self._set_serial_status(self.context, index, base, lsr, msr or 0, valid)
+
+    def take_serial_counts(self) -> dict[int, int]:
+        if self._take_serial_counts is None:
+            return {}
+        ports, reads = (ctypes.c_uint16 * 6)(), (ctypes.c_uint64 * 6)()
+        self._take_serial_counts(self.context, ports, reads)
+        return {port: count for port, count in zip(ports, reads) if count}
 
     def set_poll_state(self, state) -> None:
         """Serve the interrupt controllers' ports from the harness's shared state."""
@@ -1567,10 +1785,15 @@ class ImodemHostIo:
         """Run the C5x to `now` (see IsdnMachine._advance_dsp); False: service."""
         return bool(self._advance(self.context, now, quantum))
 
-    def advance_serve(self, now: int, quantum: int = 0) -> int:
+    def advance_serve(self, now: int, quantum: int = 0, *,
+                      supervisor_turn: bool = False) -> int:
         """`advance`, and the service it hands back when the native model can
-        do it: 1 done, 2 ImodemDsp.service_pending, 3 ImodemDsp.resume_service."""
-        return self._advance_serve(self.context, now, quantum)
+        do it: 1 done, 2 ImodemDsp.service_pending, 3 ImodemDsp.resume_service.
+        Only a scheduler poll may grant the paced-live frame allowance; a
+        zero-quantum port write remains an ordinary instruction-bound access.
+        """
+        call = self._advance_turn_serve if supervisor_turn else self._advance_serve
+        return call(self.context, now, quantum)
 
     def close(self) -> None:
         if self.context:

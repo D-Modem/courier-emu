@@ -1282,10 +1282,22 @@ void C5xCore::op_cala()
 	CYCLES(4);
 }
 
+// A delayed call pushes before its two delay words execute. If those words
+// finish an active RPTB iteration, sequential fetch resumes at PASR, not at
+// the linear address after the block. Keep the stack push timing, but predict
+// the same redirection ROPCODE performs on the last delay-word fetch. The
+// final iteration (BRCR == 0) still returns to the ordinary fall-through PC.
+uint16_t C5xCore::delayed_call_return_pc() const
+{
+	if (m_pmst.braf && m_brcr > 0 && uint16_t(m_pc + 2) == m_paer)
+		return m_pasr;
+	return uint16_t(m_pc + 2);
+}
+
 void C5xCore::op_calad()
 {
 	uint16_t pma = m_acc;
-	PUSH_STACK(m_pc+2);
+	PUSH_STACK(delayed_call_return_pc());
 
 	delay_slot(m_pc);
 	CHANGE_PC(pma);
@@ -1308,7 +1320,7 @@ void C5xCore::op_calld()
 {
 	uint16_t pma = ROPCODE();
 	GET_ADDRESS();      // update AR/ARP
-	PUSH_STACK(m_pc+2);
+	PUSH_STACK(delayed_call_return_pc());
 
 	delay_slot(m_pc);
 	CHANGE_PC(pma);
@@ -1343,7 +1355,7 @@ void C5xCore::op_ccd()
 
 	if (GET_ZLVC_CONDITION((m_op >> 4) & 0xf, m_op & 0xf) && GET_TP_CONDITION((m_op >> 8) & 0x3))
 	{
-		PUSH_STACK(m_pc+2);
+		PUSH_STACK(delayed_call_return_pc());
 
 		// clear overflow
 		if (m_op & 0x2)
@@ -1420,9 +1432,8 @@ void C5xCore::op_reti()
 	uint16_t pc = POP_STACK();
 	CHANGE_PC(pc);
 	restore_interrupt_context();
-	// Unlike RETE, RETI leaves interrupts globally disabled. INTM is not a
-	// context-shadowed bit, so force the state that the interrupt established.
-	m_st0.intm = 1;
+	// Unlike RETE, RETI does not affect INTM (SPRU056D 6-207).
+	// restore_interrupt_context preserves the ISR's current INTM value.
 	CYCLES(4);
 }
 
@@ -2243,7 +2254,10 @@ void C5xCore::op_idle()
 
 void C5xCore::op_idle2()
 {
-	fatalerror("TMS320C5x: unimplemented op idle2 at %08X\n", m_pc-1);
+	// IDLE2 stops instruction fetch until a peripheral edge or NMI wakes the
+	// clock domain. INTM still controls vectoring after wake; the Quad's
+	// 0x8329 loop intentionally wakes and polls its mailbox itself.
+	m_ff.idle2 = true;
 }
 
 void C5xCore::op_lst_st0()

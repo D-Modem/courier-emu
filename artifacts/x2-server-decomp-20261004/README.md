@@ -9,7 +9,7 @@ equivalents of selected routines. They are not original source or a complete ser
 
 - `x2_server_lift.c`: I-modem mailbox, capability packing, bit reversal,
   mode dispatch, scramblers, width setup, training source, startup probe source
-  and sample callbacks.
+  and sample callbacks, local PA6 payload lanes and receive octet assembly.
 - `quad_pcm_lift.c`: Quad parameter setup, codeword-table copy and selectors.
 - `server-focused.asm`: the original words and instructions. This includes the
   asymmetric callback chain around the lifted routines.
@@ -131,8 +131,9 @@ x2 payload mapping is still open.
 .venv/bin/python tools/recover_x2_server.py
 ```
 
-The script compiles the two C lifts with `clang`, and compares them with the
-original instructions in the native C5x emulator. **6,562 cases pass**:
+The script compiles both C lifts with `clang` and compares them against the
+original instructions in the native C5x emulator. The original **6,562 cases**
+are listed below; the payload-path additions bring the total to **9,122**:
 
 | Check | Cases |
 |---|---|
@@ -156,3 +157,73 @@ durations, and they do not prove a signal that is equivalent to the V.90 Sd.
 No modem hardware is accessed. These items are still open: the full-call negotiation, the asymmetric
 receive training state machine, the downstream constellation mapper and the
 end-to-end payload buffering.
+
+## Symmetric startup receiver (bounded lift)
+
+The receiver helpers around `e2b1`, `e2d4`, `e2db`, and `e438` are now modeled
+in `server_training_receiver_step`/`server_training_receiver_pair`. The lift
+covers the observed qualification contract: seven `007e` run-in words,
+seven zero separator words, then 128 ascending/complement pairs. A one-bit
+low-order tolerance is accepted and recorded in a six-phase bitmap (both
+words of each delayed pair contribute); a bad word restarts acquisition. This is intentionally a protocol-level lift, not
+a claim that the delayed callback ABI and every report/timeout side effect of
+`e438` have been recovered. Those remain targets for native instruction
+comparison.
+
+## PA6 payload lanes and open receive sink (2026-10-13)
+
+The lift now also covers local source `843e..8456`, local sink `84a0..84ae`,
+and receive octet assembly `8483..8499`. There are **9,122** total comparison
+cases, including 2,560 payload-path cases:
+
+| Check | Cases |
+|---|---:|
+| Local source, six lanes, ready/empty, reset flag | 384 |
+| Local sink, six lanes, ready/full, reset flag | 384 |
+| Reservoir, widths 7/8/9, every residual count, ready/full | 768 |
+| Original RX callback with sink gate open | 256 |
+| Bit-15 source: PA6 fallback and patched-port stream | 384 |
+| Bit-15 sink: PA6 fallback, duplicate filter and patched-port stream | 384 |
+
+The local path requires `[039f]` bit 15 clear; its set branch is now lifted
+as `server_stream_source`/`server_stream_sink` from `e6fe`/`e732`. That
+bit-15 path is page-sensitive: normal TX DP=7 and RX DP=6 fall back to
+PA6. Other pages use DP=13 storage and self-modify the IN/OUT operand from
+`[0987]`/`[09a7]`, respectively. The verified stream cursor range is
+`0062..0067`, wrapping to `0062`; these are actual port operands, not six
+slots all read through port `0062`. Status masks shift by the cursor's low
+four bits (plus eight for the sink). Data address `0057` aliases board
+status/ack port `0057`, and **both** directions acknowledge successful
+transfers. The source sets its empty sentinel to `ff00` before dispatch.
+The sink suppresses only repeated `ff00` when page offset `71` bit 1 is
+**set**; repeated ordinary payload is delivered. Its last-word cell updates
+even when a full sink drops the word. These corrections replace the earlier
+unverified alternate-stream interpretation. The PA6 path remains separate: low bits
+0..5 mean an input word is present in `0058..005d`. High bits 8..13 mean the
+host has made the corresponding output lane available. Incoming and outgoing
+holding registers are separate. Consumption writes a single mask back to
+PA6, clearing only that bit. The PA6 source resets its cursor to `0058`
+only on an empty read with `[039f]` bit 14 set, and otherwise preserves the
+caller-supplied empty sentinel.
+
+The receive reservoir appends sample bits least significant first and emits
+octets whenever its count reaches eight. It advances the reservoir even when
+the sink is full: no retry and no cursor advance on that dropped octet. An
+8-bit sample with residual bits retains its alignment; a 7-bit sample carries
+residual bits across callbacks. Width 9 with seven residual bits emits two
+octets and is checked as a boundary case, not claimed as a DS0 mode.
+
+The open-sink comparison enters the original `e67b` callback with `[006f]`
+bit 3 set and `[0326]=8483`. It verifies sample capture, optional reversal,
+optional GPC descrambling, octet assembly, outgoing lane values and PA6
+acknowledgements together. The earlier preloaded checks remain valid and
+still close their source/sink gates. This extends verified emulator coverage
+through both firmware payload-delivery branches; it does not establish a
+negotiated call or the supervisor's end-to-end terminal buffer. The standalone
+`tests/test_x2_server_lift.py` covers the alternate ring, acknowledgement,
+reset, duplicate suppression, and wrap behavior. The recovery script also
+executes the original bit-15 dispatch and both helpers in 768 contexts,
+checking normal-page fallback, all six alternate port operands, full/ready
+status, reset flags, filter flags and repeated/nonrepeated words. Scratch
+ST0 saves and program patch writes are outside the C data-effects contract;
+the native checks execute those instructions rather than bypassing them.

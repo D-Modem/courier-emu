@@ -1,0 +1,12 @@
+{
+  "device": "/dev/cu.usbserial-FT4TQOFT",
+  "baud": 19200,
+  "bytes": 278528,
+  "blocks": 272,
+  "retries": 0,
+  "sha256": "457e2c634b32aef741d12557c2421536a113a0af8c0f6dabfa9540c6cabb794a",
+  "integrity": "Every accepted block passed CRC16 and sequence checks; EOT acknowledged.",
+  "transfer_option": "# Read bootmodem",
+  "board_serial": "4MBRYA8G1514",
+  "post_transfer_identity_ok": true
+}

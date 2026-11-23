@@ -1253,7 +1253,7 @@ to other tags.
 
 ## The 403 board ROM: the whole chain, and the flag that is never set
 
-Disassembled from `artifacts/courier-board-21210-capture-403/courier-board.rom`,
+Disassembled from `dumps/courier-board-21210-capture-403/courier-board.rom`,
 with the branch measured rather than assumed.
 
 **The reset belongs to the downloader.** Every edge of the DSP reset net comes
